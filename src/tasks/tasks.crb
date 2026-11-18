@@ -68,7 +68,22 @@ pub fn record_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let exclusive = expected >= 40;
     let mut binding: u64 = 0;
     let mut root: u64 = 0;
-    if nodes[argument].kind == 13 {
+    let mut reborrow = false;
+    if nodes[argument].kind == 13 && nodes[graph[argument].first_child].kind == 14 {
+        let place = graph[argument].first_child;
+        let operand = graph[place].first_child;
+        if nodes[operand].kind != 7 { return -9; }
+        binding = graph[operand].binding;
+        if values[binding].state != 1 || values[binding].target == 0 { return 0 - violation(4, start); }
+        if values[binding].origin_call != 0 || values[binding].ty >= 60 { return -9; }
+        if loan_element(&values[0..values.len()], copy(binding)) != expected % 20 || graph[argument].mutable != exclusive {
+            return 0 - violation(1, start);
+        }
+        if exclusive && !values[binding].exclusive { return 0 - violation(5, start); }
+        if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) { return 0 - violation(4, start); }
+        root = values[binding].target;
+        reborrow = true;
+    } else if nodes[argument].kind == 13 {
         let place = graph[argument].first_child;
         if nodes[place].kind != 7 { return -9; }
         root = graph[place].binding;
@@ -103,8 +118,10 @@ pub fn record_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         prior = values[prior].origin_call;
     }
     let owner = values[binding].loan_parent;
+    let parent = if reborrow && !values[binding].exclusive { copy(owner) }
+        else if owner == 0 { copy(binding) } else { copy(owner) };
     values[argument] = CheckedValue { ty: expected, state: 1, mutable: false, target: root,
-        loan_parent: if owner == 0 { binding } else { owner }, origin_call: previous, exclusive: exclusive };
+        loan_parent: parent, origin_call: previous, exclusive: exclusive };
     return 1;
 }
 

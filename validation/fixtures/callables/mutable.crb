@@ -1,0 +1,10 @@
+fn twice(f: &mut fn() -> i64) -> i64 { let a = f(); let b = f(); a + b }
+fn owned(mut f: fn() -> i64) -> i64 { f() }
+fn main() {
+    let mut counter: i64 = 1;
+    let mut c = move || { counter += 1; counter };
+    print(c());
+    print(twice(&mut c));
+    print(c());
+    print(owned(c));
+}

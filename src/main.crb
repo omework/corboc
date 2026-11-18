@@ -1,3 +1,4 @@
+use bootstrap::callables::{has_callables, specialize_callables};
 use bootstrap::lowering_types::unsigned as raw_offset;
 use bootstrap::lowering_types::signed as source_offset;
 use bootstrap::pipelines::{iterator_factory, specialize_factory,has_pipeline, specialize_pipelines};
@@ -2653,7 +2654,75 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()], generic);
     }
+    if check != 0 && has_callables(&source[0..source.len()], &nodes[..node]) {
+        return parse_callables(&source[0..source.len()], check, env_call, package, visibility);
+    }
     emit_static_tree(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()], check, env_call, package, visibility)
+}
+
+// Callable expansion reuses its syntax and graph workspace. Generated capture
+// records enter the ordinary verifier, summaries and placement plan.
+fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
+    visibility: &[LayoutVisibility]) -> i32 {
+    if source.len() >= 4194304 { return 4; }
+    let mut current: [u8; 4194304] = [0; 4194304];
+    let mut expanded: [u8; 4194304] = [0; 4194304];
+    let mut offsets: [u64; 4194304] = [0; 4194304];
+    let mut syntax = [AstNode { kind: 0, parent: 0, start: 0, end: 0,
+        name_start: 0, name_end: 0, public: false }; 524289];
+    let mut tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
+    let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
+        scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
+        fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
+        private_start: 0, private_end: 0 }; 524289];
+    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let mut length = source.len() as u64;
+    let mut byte: u64 = 0;
+    while byte < length { current[byte] = source[byte]; byte = byte + 1; }
+    let mut view: usize = 0;
+    while view < visibility.len() && visibility[view].name != 0 {
+        views[view] = LayoutVisibility { kind: visibility[view].kind, name: visibility[view].name,
+            start: visibility[view].start, end: visibility[view].end };
+        view = view + 1;
+    }
+    let mut env = env_call;
+    loop {
+        let (error, count) = scan_tokens(&current[..length], &mut tokens[..], 2);
+        if error != 0 { return error; }
+        let selected = select_target(&current[..length], &mut tokens[..count + 3]);
+        if selected == 0 { return 7; }
+        mark_nominal_names(&current[..length], &mut tokens[..selected]);
+        let used = parse_nodes(&tokens[..selected], &mut syntax[..]);
+        if used == 0 { return 7; }
+        let mut reset: u64 = 0;
+        while reset < used {
+            graph[reset] = StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
+                scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
+                fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
+                private_start: 0, private_end: 0 };
+            reset = reset + 1;
+        }
+        build_graph(&current[..length], &syntax[..used], &tokens[..selected], &mut graph[..], true);
+        let (status, written) = specialize_callables(&current[..length], &syntax[..used], &graph[..used],
+            &tokens[..selected], &mut expanded[..], &mut offsets[..]);
+        if status != 0 { return status; }
+        if written == 0 {
+            return emit_static_tree(&current[..length], &syntax[..used], &tokens[..selected],
+                check, env, package, &views[..view]);
+        }
+        if written >= 4194304 { return 4; }
+        let mut item: usize = 0;
+        while item < view {
+            views[item] = LayoutVisibility { kind: views[item].kind, name: offsets[views[item].name],
+                start: offsets[views[item].start], end: offsets[views[item].end] };
+            item = item + 1;
+        }
+        if env != 0 { env = offsets[env]; }
+        byte = 0;
+        while byte < written { current[byte] = expanded[byte]; byte = byte + 1; }
+        length = written;
+    }
+    9
 }
 
 fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
@@ -2702,6 +2771,9 @@ fn parse_pipeline(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32
     if used == 0 { return 7; }
     if generic || factory != 0 {
         return parse(&expanded[..length], &rewritten[..selected], check, env, package, &relocated[..item]);
+    }
+    if has_callables(&expanded[..length], &syntax[..used]) {
+        return parse_callables(&expanded[..length], check, env, package, &relocated[..item]);
     }
     emit_static_tree(&expanded[..length], &syntax[..used], &rewritten[..selected],
         check, env, package, &relocated[..item])

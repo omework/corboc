@@ -1,0 +1,35 @@
+use std::iter::iter;
+
+struct Counter {
+    position: i64,
+    end: i64
+}
+
+impl Counter {
+    fn next(&mut self) -> Option<i64> {
+        let value = (*self).position;
+        if copy(value) >= (*self).end { return None; }
+        let position = &mut (*self).position;
+        *position = copy(value) + 1;
+        Some(value)
+    }
+}
+
+fn apply(f: fn(i64) -> i64, value: i64) -> i64 {
+    f(value)
+}
+
+fn main() {
+    print(apply(|value: i64| { value + 2 }, 40));
+    let mut counter = Counter { position: 1, end: 7 };
+    let mut storage = pool<Vector<i64>>(1);
+    let mut destination = storage.new();
+    iter(&mut counter)
+        .filter(|item: &i64| { *item % 2 == 0 })
+        .map(|item: i64| { item * 10 })
+        .reduce(|acc: i64, item: i64| { acc + item })
+        .collect(&mut destination);
+    print(destination.len());
+    print(destination[0]);
+    print(counter.position);
+}

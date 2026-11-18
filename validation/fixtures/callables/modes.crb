@@ -1,0 +1,13 @@
+fn owned(f: fn(i64) -> i64, x: i64) -> i64 { f(x) }
+fn shared(f: &fn(i64) -> i64, x: i64) -> i64 { f(x) }
+fn relay(f: fn(i64) -> i64, x: i64) -> i64 { owned(f, x) }
+fn main() {
+    let offset: i64 = 2;
+    let c: fn(i64) -> i64 = |x: i64| { x + offset };
+    print(c(40));
+    print(shared(&c, 8));
+    print(relay(c, 18));
+    print(offset);
+    print(owned(|x: i64| { x * 2 }, 21));
+    print((|x: i64| { x + 1 })(41));
+}

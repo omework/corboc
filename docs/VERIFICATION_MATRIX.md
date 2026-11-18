@@ -35,3 +35,14 @@ compiled and executed with stdout `42` at O1 under fatal UBSan. One successful
 compiler build was performed; no broad suite or full self-reconstruction ran.
 The matching source pin is `0e49415`. Details are recorded in the language
 repository's `docs/cycles/BARE_TYPE_ANNOTATION_CYCLE.md`.
+
+## General callable integration
+
+| Rules / mechanism | Executed evidence | Scope |
+| --- | --- | --- |
+| N1/N8: concrete callable signatures and passing modes | Direct/immediate calls, owned/shared/mutable parameters, owned mutable parameters and forwarding executed; incompatible signature refused. | macOS ARM64, O1 and fatal UBSan |
+| N2/N3/N6/N7: capture, move and cleanup | Automatic capture copy, explicit move, persistent mutable state and a distinct single destructor marker executed; missing move and consumed-binding reuse refused. | Six focused programs in the compiler suite |
+| N4/N5: capture dependencies and reborrows | Shared/exclusive captures, local record reborrow and target access after cleanup executed; early target mutation, shared mutation and local-target escape refused. | Existing loan/constructor contracts reused |
+| Iterator composition / documentation | Callback plus STD filter/map/reduce/collect executed; updated README and former rejected fixture also executed. | Eight distinct programs and seven refusals overall; no broad corpus or platform rerun |
+
+[Detailed results, reproduction and limits](GENERAL_CALLABLES_CYCLE.md).

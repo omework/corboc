@@ -1,0 +1,10 @@
+struct Resource { value: i64 }
+impl Resource { fn drop(&mut self) { print(90); } }
+fn consume(f: fn() -> i64) -> i64 { f() }
+fn main() {
+    let resource = Resource { value: 9 };
+    let c = move || -> i64 { let r = &resource; (*r).value };
+    print(c());
+    let d = c;
+    print(consume(d));
+}

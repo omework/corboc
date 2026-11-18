@@ -178,8 +178,25 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
 
 pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], destination: u64, initializer: u64) -> i64 {
-    let place = graph[initializer].first_child;
+    let mut place = graph[initializer].first_child;
+    while nodes[place].kind == 19 { place = graph[place].first_child; }
     let projected = graph[place].first_child;
+    // A local reborrow retains the same record identity and parent loan as a
+    // borrowed record argument; its destination is a new reference binding.
+    if nodes[place].kind == 14 && nodes[projected].kind == 7 {
+        let from = graph[projected].binding;
+        if values[from].ty == 734 {
+            let shape = values[from].origin_call;
+            let checked = check_record_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(initializer), shape,
+                graph[initializer].mutable, false);
+            if checked < 0 { return checked; }
+            values[destination] = CheckedValue { ty: 734, state: 1, mutable: graph[destination].mutable,
+                target: values[initializer].target, loan_parent: values[initializer].loan_parent,
+                origin_call: values[initializer].origin_call, exclusive: values[initializer].exclusive };
+            return 1;
+        }
+    }
     if nodes[place].kind == 14 && nodes[projected].kind == 17 {
         return reborrow_record_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], destination, initializer, projected);

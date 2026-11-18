@@ -1,0 +1,11 @@
+fn apply(f: &mut fn() -> i64) -> i64 { f() }
+fn main() {
+    let mut n: i64 = 10;
+    {
+        let mut view = &mut n;
+        let mut c = move || { *view += 1; *view };
+        print(apply(&mut c));
+        print(c());
+    }
+    print(n);
+}

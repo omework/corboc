@@ -1,0 +1,9 @@
+fn inspect(f: &fn() -> i64) -> i64 { f() }
+
+fn main() {
+    let target: i64 = 7;
+    let view = &target;
+    let c = || { *view };
+    print(inspect(&c));
+    print(*view);
+}

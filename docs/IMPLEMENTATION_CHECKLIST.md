@@ -1,3 +1,13 @@
+# General callable support (compiler/core)
+
+- [x] Reuse the existing closure and `fn` / `&fn` / `&mut fn` syntax.
+- [x] Materialize concrete capture records and specialize callable parameters.
+- [x] Preserve explicit moves, Copy captures, field dependencies and module visibility.
+- [x] Reuse a bounded expansion workspace before ordinary verification and placement.
+- [x] Complete the bootstrap build and six executions/seven rejection checks.
+- [x] Execute the former rejected package, the README example and iterator composition.
+- [x] Finalize the [cycle report](GENERAL_CALLABLES_CYCLE.md), verification matrix and installed compiler.
+
 # Bare type parameter declaration
 
 - [x] Accept the bare form and reject the former star spelling in parse_annotation.

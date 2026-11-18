@@ -747,6 +747,22 @@ pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[Sta
         if conflict < 0 { return -9; }
         return 1;
     }
+    if nodes[argument].kind == 13 && nodes[place].kind == 14 {
+        let operand = graph[place].first_child;
+        let from = graph[operand].binding;
+        if nodes[operand].kind != 7 { return -9; }
+        if from == 0 || values[from].state != 1 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(from)) {
+            return 0 - violation(4, start);
+        }
+        if values[from].target == 0 || values[from].origin_call != 0 || values[from].ty >= 60 { return -9; }
+        if graph[argument].mutable != exclusive || loan_element(&values[0..values.len()], copy(from)) != expected {
+            return 0 - violation(1, start);
+        }
+        if exclusive && !values[from].exclusive { return 0 - violation(5, start); }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], from, argument, exclusive);
+        if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+        return 1;
+    }
     if nodes[argument].kind != 13 || nodes[place].kind != 7 { return -9; }
     let binding = graph[place].binding;
     if binding == 0 || values[binding].state != 1 { return 0 - violation(4, start); }
