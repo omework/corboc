@@ -1,3 +1,12 @@
+# Bare type parameter declaration
+
+- [x] Accept the bare form and reject the former star spelling in parse_annotation.
+- [x] Preserve the existing unconstrained-parameter AST role and usage-site constraints.
+- [x] Migrate active fixtures, pin the compatible STD and regenerate runtime resources.
+- [x] Build the compiler once and install it with the matching STD.
+- [x] Complete three parser checks and execute the Reader example.
+- [x] Record the focused validation; broad tests and self-reconstruction were not run.
+
 # Corbo runtime integration (compiler/runtime)
 
 - [x] Add checked, scalar-only `--emit-runtime-c` emission without managed allocation.

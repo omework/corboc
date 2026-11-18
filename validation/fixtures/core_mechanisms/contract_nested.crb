@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#(type: T *)
+#(type: T)
 struct Boxed<T>{value:T}
 impl Boxed<T>{fn new(value:T)->Boxed<T>{Boxed{value:value}}fn get(&self)->T{(*self).value}}
-#(type: V *)
+#(type: V)
 #(type: S<V> with {fn get(&self)->V;})
 struct Reader<S,V>{source:S}
 impl Reader<S,V>{fn new(source:S)->Reader<S,V>{Reader{source:source}}fn get(&self)->V{let source=&(*self).source;source.get()}}

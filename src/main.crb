@@ -1637,12 +1637,13 @@ fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
         if tokens[index].kind != 10 || tokens[index + 1].kind != 1 { return (0, 0); }
         let carrier = index + 1;
         index = index + 2;
-        if tokens[index].kind == 21 {
+        if tokens[index].kind == 3 {
+            // A bare name introduces an unconstrained parameter. The closing
+            // parenthesis is consumed by the common annotation tail below.
             nodes[count] = AstNode { kind: 67, parent: copy(free), start: tokens[carrier].start,
-                end: tokens[index].end, name_start: tokens[carrier].start,
+                end: tokens[carrier].end, name_start: tokens[carrier].start,
                 name_end: tokens[carrier].end, public: false };
             count = count + 1;
-            index = index + 1;
         } else {
             if tokens[index].kind == 23 {
             if tokens[index + 1].kind != 1 { return (0, 0); }

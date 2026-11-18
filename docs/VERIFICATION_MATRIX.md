@@ -26,3 +26,12 @@ only extraction evidence; it is not a new safety audit.
 Pinned reconstruction completed: three byte-identical generated compiler C files,
 normal compiler self-build and external two-module program printing `42`.
 Native compiler execution remains macOS ARM64 evidence.
+
+## Bare type declarations
+
+Bare `#(type: V)` parsed successfully; `#(type: V *)` was rejected. Existing
+usage-site type-list syntax parsed successfully. The spaced Reader package
+compiled and executed with stdout `42` at O1 under fatal UBSan. One successful
+compiler build was performed; no broad suite or full self-reconstruction ran.
+The matching source pin is `0e49415`. Details are recorded in the language
+repository's `docs/cycles/BARE_TYPE_ANNOTATION_CYCLE.md`.

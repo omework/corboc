@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#(type: T *)
+#(type: T)
 struct Boxed<T>{value:T}
 impl Boxed<T>{fn new(value:T)->Boxed<T>{Boxed{value:value}}}
-#(type: T *)
+#(type: T)
 struct Outer<T>{deep:Boxed<Boxed<T>>,plain:Boxed<T>}
 fn main(){let inner=Boxed::new(4);let deep=Boxed::new(inner);let plain=Boxed::new(5);let value:Outer<i64> =Outer{deep:deep,plain:plain};print(value.deep.value.value);print(value.plain.value);}
