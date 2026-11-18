@@ -11,7 +11,7 @@ is still named `bootstrap`; the executable and repository are named `corboc`.
 
 ## Shared sources
 
-The language repository owns the grammar, rules, STD, C runtime, examples and
+The language repository owns the grammar, rules, STD, runtime, examples and
 editor support. [corbo.lock](corbo.lock) pins one exact Git commit for all those
 inputs. There is no floating branch dependency or second maintained runtime.
 
@@ -35,7 +35,8 @@ uncommitted working files. It retains the canonical remote from the lock.
 ## Build and self-rebuild
 
 Prerequisites: Python 3.11+, Git, a C11/pthread toolchain and an existing
-self-hosted Corbo seed supporting the current grammar. The frozen Rust frontend
+self-hosted Corbo seed supporting the current grammar, `--emit-runtime-c` and
+4 MiB source/wide-array capacities. The frozen Rust frontend
 cannot compile the current compiler source. A seed binary is not committed here;
 provide its path explicitly or set `CORBOC_SEED`.
 
@@ -77,11 +78,23 @@ build remains owned by the locked language repository's `scripts/build_c_runtime
 
 Readable native runtime implementations remain in the language repository.
 The compiler tracks one generated resource file so installed compilers do not
-need the source cache when building user packages.
+need the source cache when building user packages. `runtime_implementation="corbo"`
+in `corbo.lock` selects compiled Corbo algorithms. The C reference remains available
+with `--implementation c` for differential/bootstrap work. That explicit option
+changes the generated resource and requires regeneration before a normal locked
+build. Default builds never silently substitute the C implementation.
+
+`corboc --emit-runtime-c FILE` is the allocation-free runtime build mode: it checks
+scalar code without `main` and emits C without injecting this runtime into itself.
+It rejects managed arrays, pools, references and async bodies. Machine/ABI operations
+still require `@unchecked`; this mode changes no ordinary program ownership rule.
+Runtime resource bytes are packed with a bounded 64 KiB history and decoded by Corbo.
+A seed predating this mode cannot regenerate Corbo runtime resources; use a compatible
+seed to build this revision.
 
 ```sh
-python3 scripts/runtime_sources.py
-python3 scripts/runtime_sources.py --check
+python3 scripts/runtime_sources.py --compiler /path/to/compatible/corboc
+python3 scripts/runtime_sources.py --check --compiler build/install/bin/corboc
 ```
 
 To update shared inputs: deliberately update the full commit in `corbo.lock`,
@@ -114,3 +127,5 @@ remain documented in the pinned language repository. This migration does not
 establish native compiler execution on every target. Windows ARM64 remains deferred.
 
 Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
+[Corbo runtime integration evidence](docs/CORBO_RUNTIME_CYCLE.md).

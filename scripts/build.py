@@ -34,7 +34,7 @@ def main():
     seed = Path(seed).resolve()
     source = prepare(args.from_repo)
     data = lock()
-    run(["python3", ROOT / "scripts/runtime_sources.py", "--check"])
+    run(["python3", ROOT / "scripts/runtime_sources.py", "--check", "--compiler", seed])
     prefix = args.prefix.resolve()
     build = ROOT / "build/bootstrap"
     build.mkdir(parents=True, exist_ok=True)

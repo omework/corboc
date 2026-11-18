@@ -31,7 +31,7 @@ fn unsupported_declaration(nodes: &[AstNode], item: u64) -> i32 {
     9
 }
 
-pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool) -> i32 {
+pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) -> i32 {
     if whole_program {
         let status = validate_standalone_declarations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(env_call), package);
         if status != 0 { return status; }
@@ -104,7 +104,7 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
         }
         item = graph[item].next_sibling;
     }
-    if whole_program && !has_main { return report_violation(1, nodes[0].start); }
+    if whole_program && !library && !has_main { return report_violation(1, nodes[0].start); }
     let destructor_status = validate_destructors(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &tokens[0..tokens.len()]);
     if destructor_status != 0 { return destructor_status; }

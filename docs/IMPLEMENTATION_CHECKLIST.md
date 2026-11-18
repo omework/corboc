@@ -1,3 +1,17 @@
+# Corbo runtime integration (compiler/runtime)
+
+- [x] Add checked, scalar-only `--emit-runtime-c` emission without managed allocation.
+- [x] Keep ordinary application checking and the explicit unchecked ABI boundary.
+- [x] Compile the language repository's Corbo runtime into namespaced resources.
+- [x] Pin the implemented source revision and select `runtime_implementation="corbo"`.
+- [x] Add bounded packed resources and execute decoder/history-wrap regressions.
+- [x] Complete the pinned compiler self-rebuild and normal package-build smoke test.
+- [x] Complete integrated regression and real platform reactor checks.
+- [x] Record the [cycle report](CORBO_RUNTIME_CYCLE.md) and verification evidence.
+
+The C reference remains selectable. Windows ARM64 execution is deferred.
+No normative language rule changed.
+
 # Compiler repository extraction
 
 Scope: repository/build organization, not a language-rule or backend-algorithm change.

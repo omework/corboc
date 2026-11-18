@@ -159,7 +159,7 @@ pub fn consume(ty: i64, node: u64, binding: bool) {
 }
 
 pub fn array_code(element: i64, length: u64, placed: bool) -> i64 {
-    if length > 3145728 || element <= 0 || element >= 8000000 { return -1; }
+    if length > 4194304 || element <= 0 || element >= 8000000 { return -1; }
     if !placed && length <= 4096 && element < 60 { return 10000 + signed(length) * 100 + element; }
     6000000000000000000 + (if placed || length > 4096 { 500000000000000000 } else { 0 })
         + signed(length) * 10000000 + element

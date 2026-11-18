@@ -2317,15 +2317,20 @@ fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i
             if nodes[item].kind == 49 { custom = true; }
             item = graph[item].next_sibling;
         }
-        let status = check_tree(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], &tokens[0..tokens.len()], copy(custom), check == 5 || check == 2, copy(env_call), package);
+        let status = check_tree(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], &tokens[0..tokens.len()], copy(custom), check == 5 || check == 2 || check == 6, copy(env_call), package, check==6);
         if status != 0 { return status; }
         if check == 5 || (check == 1 && !custom) { return 0; }
+        if check==6 {
+            if lower_program(&source[0..source.len()],&nodes[0..nodes.len()],&graph[..],false,false,true)
+                && lower_program(&source[0..source.len()],&nodes[0..nodes.len()],&graph[..],true,false,true){return 0;}
+            return 9;
+        }
         if check == 2 {
             if emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false) == 0 {
                 return emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], true);
             }
-            if lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false, env_call != 0)
-                && lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], true, env_call != 0) { return 0; }
+            if lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false, env_call != 0, false)
+                && lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], true, env_call != 0, false) { return 0; }
             return 9;
         }
         return emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false);
@@ -2664,14 +2669,14 @@ fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
 fn parse_pipeline(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
     env_call: u64, package: bool, visibility: &[LayoutVisibility], generic: bool) -> i32 {
     // The offset table includes the end of input.
-    if source.len() >= 3145728 { return 4; }
+    if source.len() >= 4194304 { return 4; }
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
         scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,
         visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 }; 524289];
     build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()],
         &mut graph[..], true);
-    let mut expanded: [u8; 3145728] = [0; 3145728];
-    let mut offsets: [u64; 3145728] = [0; 3145728];
+    let mut expanded: [u8; 4194304] = [0; 4194304];
+    let mut offsets: [u64; 4194304] = [0; 4194304];
     let factory = iterator_factory(&source[0..source.len()], &nodes[0..nodes.len()]);
     let (error, length) = rewrite_pipeline(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..],
         &tokens[0..tokens.len()], copy(generic), copy(factory), &mut expanded[..], &mut offsets[..]);
@@ -2744,11 +2749,13 @@ fn main() -> i32 {
                 let lex_flag: [u8; 5] = [45, 45, 108, 101, 120];
                 let ast_flag: [u8; 5] = [45, 45, 97, 115, 116];
                 let verify_flag: [u8; 8] = [45,45,118,101,114,105,102,121];
+                let runtime_flag:[u8;16]=[45,45,101,109,105,116,45,114,117,110,116,105,109,101,45,99];
                 let mode: i32 = if bytes.content_eq(&check_flag[..]) { 1 }
                     else if bytes.content_eq(&emit_flag[..]) { 2 }
                     else if bytes.content_eq(&lex_flag[..]) { 3 }
                     else if bytes.content_eq(&ast_flag[..]) { 4 }
-                    else if bytes.content_eq(&verify_flag[..]) { 5 } else { 0 };
+                    else if bytes.content_eq(&verify_flag[..]) { 5 }
+                    else if bytes.content_eq(&runtime_flag[..]) { 6 } else { 0 };
                 if mode == 0 { return 6; }
                 let filename = arguments[1];
                 let path = filename.as_bytes();
@@ -2770,7 +2777,7 @@ fn compile_file(filename: &[u8], check: i32) -> i32 {
         path[index] = filename[index];
         index = index + 1;
     }
-    let mut buffer: [u8; 131072] = [0; 131072];
+    let mut buffer: [u8; 524288] = [0; 524288];
     let (status, filled) = read_source(&path[..index + 1], &mut buffer[..]);
     if status != 0 { return status; }
     lex(&buffer[..filled], check)
@@ -2778,13 +2785,13 @@ fn compile_file(filename: &[u8], check: i32) -> i32 {
 
 fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
     // Include the compiler sources and the documented standard library in a single package.
-    let mut source: [u8; 3145728] = [0; 3145728];
+    let mut source: [u8; 4194304] = [0; 4194304];
     let mut names: [u8; 131072] = [0; 131072];
     let mut files = [PackageFile { end: 0, module_start: 0, module_end: 0, entry: false, package: 0, visible: 0 }; 256];
     let package = read_package(root, stdlib, &mut source[..], &mut names[..], &mut files[..]);
     if package.error != 0 { return package.error; }
-    // Allow 768 Ki tokens for the combined compiler and standard library, plus sentinels.
-    let mut tokens: [Token; 786435] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 786435];
+    // Allow 1536 Ki tokens for the combined compiler and standard library, plus sentinels.
+    let mut tokens: [Token; 1572867] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
     let (status, count) = scan_tokens(&source[..package.source_end], &mut tokens[..], 2);
     if status != 0 { return status; }
     let selected = select_target(&source[..package.source_end], &mut tokens[..count + 3]);
@@ -2803,7 +2810,7 @@ fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
         visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0,
     }; 524289];
     build_graph(&source[..package.source_end], &nodes[..used], &tokens[..selected], &mut graph[..], false);
-    let mut linked: [u8; 3145728] = [0; 3145728];
+    let mut linked: [u8; 4194304] = [0; 4194304];
     let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
     let (error, length, env_call) = link_package(&source[..package.source_end], &names[..package.names_end],
         &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..]);

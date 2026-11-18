@@ -49,7 +49,7 @@ fn emit_option(kind: i64) {
     drop_value(payload, 0, false); { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
 }
 
-pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool) -> bool {
+pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool, freestanding: bool) -> bool {
     let mut types: [i64;524289] = [0;524289];
     let mut point: u64 = 1;
     let mut storage = false;
@@ -102,6 +102,10 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
         &graph[0..graph.len()], &region_reclaim_name[..]);
     if fixed_reclaim != 0 { storage = true; }
     if region_reclaim != 0 { regional = true; }
+    if freestanding {
+        if tasks || natives || records || process_args || classic!=0 || region_width!=0 || region_budget!=0 || fixed_reclaim!=0 || region_reclaim!=0 {return false;}
+        storage=false;regional=false;maps=false;foreign_c=false;
+    }
     let mut first = copy(root);
     if nodes[root].kind == 58 {
         if !tasks && !storage && !regional { return false; }
@@ -178,6 +182,19 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                 &ctx, body, result, 0) < 0 { return false; }
             function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
         }
+        if freestanding {
+            let mut item:u64=1;
+            while item<nodes.len() as u64 {
+                if (nodes[item].kind==5 || nodes[item].kind==3 || nodes[item].kind==1) && (types[item]<0 || types[item]>11){return false;}
+                if nodes[item].kind==44 || nodes[item].kind==45 || nodes[item].kind==66 || nodes[item].kind==58 || nodes[item].kind==13 {return false;}
+                if nodes[item].kind==1 {
+                    if word(&source[0..source.len()],&nodes[0..nodes.len()],copy(item),&main_name[..]){return false;}
+                    { let code: [u8;9]=[35,100,101,102,105,110,101,32,102]; byte_text(&code[..]); } number(copy(item)); { let code: [u8;5]=[32,99,114,98,95]; byte_text(&code[..]); } byte_text(&source[nodes[item].name_start..nodes[item].name_end]);character(10);
+                }
+                item=item+1;
+            }
+        }
+        if tasks { { let code:[u8;28]=[35,100,101,102,105,110,101,32,67,79,82,66,79,95,82,84,95,84,72,82,69,65,68,69,68,32,49,10];byte_text(&code[..]);} }
         if storage || tasks || regional { emit_runtime(); }
         if tasks { emit_task_runtime(); emit_task_value_runtime(); emit_native_runtime(); }
         else if regional || storage {
@@ -445,6 +462,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                 emit_frame(&nodes[0..nodes.len()], &types[..], copy(function));
             } else if nodes[function].kind == 1 && !destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(function)) {
                 let entry = nodes[function].parent == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(function), &main_name[..]);
+                if freestanding{{ let code: [u8;7]=[115,116,97,116,105,99,32]; byte_text(&code[..]); }}
                 prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(function), entry);
                 { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
             }
@@ -506,6 +524,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
         let ctx = Lowering { emit: copy(emit), result: copy(result), function: if main { 0 } else { copy(function) },
             loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: 0 };
         if emit {
+            if freestanding{{ let code: [u8;7]=[115,116,97,116,105,99,32]; byte_text(&code[..]); }}
             prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(function), copy(main));
             { let code: [u8;2] = [123,10]; byte_text(&code[..]); }
             if main { { let code: [u8;19] = [105,110,116,32,109,97,105,110,95,115,116,97,116,117,115,61,48,59,10]; byte_text(&code[..]); } }
