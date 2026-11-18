@@ -1,0 +1,103 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::loans::{borrow_mutable, loan_element, loan_conflict, live_roots};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::verify::{verify_expr, violation};
+
+pub fn nested_loan(ty: i64) -> bool { ty > 1900 && ty < 1940 }
+
+pub fn nested_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let outer = nodes[annotation].start;
+    if source[outer] != 38 { return 0; }
+    let inner = graph[annotation].first_child;
+    if inner == 0 { return 0; }
+    let compact = source[outer + 1] == 38;
+    if !compact && source[nodes[inner].start] != 38 { return 0; }
+    let referent = if compact { copy(inner) } else { graph[inner].first_child };
+    if referent == 0 || graph[referent].first_child != 0 { return 0; }
+    let scalar = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
+    if scalar < 1 || scalar > 7 { return 0; }
+    let writable_outer = !compact && borrow_mutable(&source[outer..nodes[inner].start]);
+    let prefix = if compact { outer + 1 } else { nodes[inner].start };
+    let writable_inner = borrow_mutable(&source[prefix..nodes[referent].start]);
+    return 1900 + scalar + (if writable_outer { 20 } else { 0 }) + (if writable_inner { 10 } else { 0 });
+}
+
+pub fn check_nested_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], argument: u64, expected: i64) -> i64 {
+    let place = graph[argument].first_child;
+    let start = nodes[argument].start;
+    if nodes[argument].kind != 13 || nodes[place].kind != 7 { return -9; }
+    let binding = graph[place].binding;
+    if values[binding].state != 1 { return 0 - violation(6, start); }
+    if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) { return 0 - violation(4, start); }
+    if values[binding].target == 0 || values[binding].ty >= 60 { return -9; }
+    let mutable = borrow_mutable(&source[start..nodes[place].start]);
+    if mutable != (expected >= 1920) || values[binding].exclusive != (expected / 10 % 2 == 1)
+        || loan_element(&values[0..values.len()], copy(binding)) != expected % 10 {
+        return 0 - violation(1, start);
+    }
+    if mutable && !values[binding].mutable { return 0 - violation(5, start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], binding, argument, mutable);
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+    return 1;
+}
+
+pub fn nested_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64, place: u64) -> i64 {
+    let deref = graph[place].first_child;
+    let name = graph[deref].first_child;
+    if nodes[deref].kind != 14 || nodes[name].kind != 7 { return 0; }
+    let binding = graph[name].binding;
+    let ty = values[binding].ty;
+    if !nested_loan(copy(ty)) { return 0; }
+    if values[binding].state != 1 { return 0 - violation(6, nodes[name].start); }
+    if ty < 1930 { return 0 - violation(5, nodes[statement].start); }
+    let expected = ty % 10;
+    let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], graph[place].next_sibling, copy(expected), 1);
+    if actual < 0 { return actual; }
+    if actual != expected { return 0 - violation(1, nodes[statement].start); }
+    let access = nested_access(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()],
+        statement, binding, true);
+    if access < 0 { return access; }
+    return 1;
+}
+
+pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) -> i64 {
+    let place = graph[expression].first_child;
+    if nodes[place].kind != 7 { return 0; }
+    let reference = graph[place].binding;
+    let ty = values[reference].ty;
+    let inferred = ty == 0 && nodes[graph[reference].initializer].kind == 13;
+    if (!inferred && ty < 21) || ty >= 60 || values[reference].target == 0 { return 0; }
+    let mutable = borrow_mutable(&source[nodes[expression].start..nodes[place].start]);
+    let shared = !values[reference].exclusive;
+    let scalar = loan_element(&values[0..values.len()], copy(reference));
+    if scalar < 1 || scalar > 7 { return -9; }
+    let nested = 1900 + scalar + (if mutable { 20 } else { 0 }) + (if shared { 0 } else { 10 });
+    if annotation != 0 && nested_loan_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], annotation) != nested { return 0 - violation(1, nodes[statement].start); }
+    let checked = check_nested_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &values[0..values.len()], expression, copy(nested));
+    if checked < 0 { return checked; }
+    values[statement] = CheckedValue { ty: nested, state: 1, mutable: graph[statement].mutable,
+        target: reference, loan_parent: 0, origin_call: 0, exclusive: mutable };
+    1
+}
+
+pub fn nested_access(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    point: u64, loan: u64, write: bool) -> i64 {
+    let start = nodes[point].start;
+    if values[loan].state != 1 { return 0 - violation(6, start); }
+    if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(loan)) {
+        return 0 - violation(4, start);
+    }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], loan, point, write);
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+    0
+}

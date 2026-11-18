@@ -1,0 +1,59 @@
+// realpath resolves symlinks before the checkout boundary is compared.
+#(if: target.os == "macos" && target.arch == "aarch64")
+fn canonical(path: &[u8], output: &mut [u8]) -> bool {
+    let mut resolved: usize = 0;
+    @unchecked {
+        let input = addr(&path[0]);
+        let buffer = addr(&output[0]);
+        @asm {
+            mov x0, ${input}
+            mov x1, ${buffer}
+            bl _realpath
+            mov ${resolved}, x0
+        }
+    }
+    resolved != 0
+}
+#(endif)
+
+#(if: target.os == "macos" && target.arch == "x86_64")
+fn canonical(path: &[u8], output: &mut [u8]) -> bool {
+    let mut resolved: usize = 0;
+    @unchecked {
+        let input = addr(&path[0]);
+        let buffer = addr(&output[0]);
+        @asm {
+            mov rdi, ${input}
+            mov rsi, ${buffer}
+            call _realpath
+            mov ${resolved}, rax
+        }
+    }
+    resolved != 0
+}
+#(endif)
+
+#(if: target.os == "linux" && target.arch == "x86_64")
+fn canonical(path: &[u8], output: &mut [u8]) -> bool {
+    let mut resolved: usize = 0;
+    @unchecked {
+        let input = addr(&path[0]);
+        let buffer = addr(&output[0]);
+        @asm {
+            mov rdi, ${input}
+            mov rsi, ${buffer}
+            call realpath
+            mov ${resolved}, rax
+        }
+    }
+    resolved != 0
+}
+#(endif)
+
+#(if: target.os == "windows" && target.arch == "aarch64")
+fn canonical(path: &[u8], output: &mut [u8]) -> bool {
+    drop(path);
+    drop(output);
+    false
+}
+#(endif)

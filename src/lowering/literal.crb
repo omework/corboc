@@ -1,0 +1,41 @@
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::scalar::{integer_value, verify_literal};
+use bootstrap::lowering_types::{declaration, number};
+use bootstrap::target_c::{byte_text, character};
+
+fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, destination: u64, expected: i64, emit: bool) -> i64 {
+    let negative = nodes[node].kind == 12;
+    let value = if negative { graph[node].first_child } else { copy(node) };
+    let ty = verify_literal(&source[0..source.len()], &nodes[value], expected, copy(negative));
+    if ty < 1 || ty > 9 { return -1; }
+    if emit {
+        declaration(copy(ty), destination);
+        character(61);
+        if ty == 3 {
+            character(if source[nodes[value].start] == 116 { 49 } else { 48 });
+        } else if ty >= 8 {
+            if negative { character(45); }
+            let mut byte = nodes[value].start;
+            while byte < nodes[value].end {
+                character(source[byte] as i32);
+                byte = byte + 1;
+            }
+            if ty == 8 { character(102); }
+        } else {
+            let atom = integer_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+            if !atom.known { return -1; }
+            if atom.negative && atom.magnitude == 9223372036854775808 {
+                { let code: [u8;9] = [73,78,84,54,52,95,77,73,78]; byte_text(&code[..]); }
+            } else if atom.negative {
+                character(45);
+                number(atom.magnitude);
+                { let code: [u8;2] = [76,76]; byte_text(&code[..]); }
+            } else {
+                number(atom.magnitude);
+                { let code: [u8;3] = [85,76,76]; byte_text(&code[..]); }
+            }
+        }
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+    ty
+}

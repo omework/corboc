@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Trusted Windows completion hooks and their scheduler bridge.
+use bootstrap::model::{AstNode,StaticNode};
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::lowering_types::{number,local};
+use bootstrap::target_c::byte_text;
+use bootstrap::runtime_sources::completion_runtime;
+
+/// Returns attach=1 or asynchronous completion=2 only inside the linker-designated STD functions.
+pub fn completion_call(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],node:u64)->i64 {
+    if nodes[node].kind!=15{return 0;}
+    let callee=graph[node].first_child;if nodes[callee].kind!=36{return 0;}
+    let mut owner=nodes[node].parent;
+    while owner!=0 && nodes[owner].kind!=1 && nodes[owner].kind!=35{owner=nodes[owner].parent;}
+    let socket=graph[callee].next_sibling;
+    if nodes[socket].kind!=7 || nodes[graph[socket].binding].parent!=owner{return 0;}
+    { let name:[u8;22]=[114,117,110,116,105,109,101,58,58,97,116,116,97,99,104,95,115,111,99,107,101,116];
+    if graph[owner].fact==45 && nodes[owner].kind==1 && same_bytes(&source[nodes[callee].start..nodes[callee].end],&name[..]) {
+        if graph[socket].next_sibling==0{return 1;}
+    }}
+    { let name:[u8;24]=[114,117,110,116,105,109,101,58,58,99,111,109,112,108,101,116,101,95,115,111,99,107,101,116];
+    if graph[owner].fact==46 && nodes[owner].kind==35 && same_bytes(&source[nodes[callee].start..nodes[callee].end],&name[..]) {
+        let request=graph[socket].next_sibling;if nodes[request].kind==7 && graph[request].next_sibling==0{return 2;}
+    }}
+    0
+}
+
+/// Emits one operation; the asynchronous completion path suspends until its own request is dequeued.
+pub fn emit_completion(nodes:&[AstNode],graph:&[StaticNode],node:u64,kind:i64) {
+    let socket=graph[graph[node].first_child].next_sibling;
+{ let bytes:[u8;9]=[105,110,116,54,52,95,116,32,116];byte_text(&bytes[..]); }
+    number(copy(node));
+    if kind==1 {
+{ let bytes:[u8;21]=[61,99,111,114,98,111,95,115,111,99,107,101,116,95,97,116,116,97,99,104,40];byte_text(&bytes[..]); }
+        local(graph[socket].binding);
+{ let bytes:[u8;3]=[41,59,10];byte_text(&bytes[..]); }
+        return;
+    }
+{ let bytes:[u8;7]=[59,10,99,97,115,101,32];byte_text(&bytes[..]); }
+    number(copy(node));
+{ let bytes:[u8;34]=[58,59,10,105,102,40,33,99,111,114,98,111,95,115,111,99,107,101,116,95,99,111,109,112,108,101,116,101,40,116,97,115,107,44];byte_text(&bytes[..]); }
+    local(graph[socket].binding);
+{ let bytes:[u8;1]=[44];byte_text(&bytes[..]); }
+    local(graph[graph[socket].next_sibling].binding);
+{ let bytes:[u8;3]=[44,38,116];byte_text(&bytes[..]); }
+    number(copy(node));
+{ let bytes:[u8;12]=[41,41,123,116,97,115,107,45,62,112,99,61];byte_text(&bytes[..]); }
+    number(node);
+{ let bytes:[u8;16]=[59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10];byte_text(&bytes[..]); }
+}
+
+/// Binds only the selected platform's four native completion functions.
+pub fn emit_completion_runtime(nodes:&[AstNode],graph:&[StaticNode]) {
+    let mut create:u64=0;let mut attach:u64=0;let mut submit:u64=0;let mut next:u64=0;
+    let mut item=graph[0].first_child;
+    while item!=0 {
+        if graph[item].fact==47{create=copy(item);}if graph[item].fact==48{attach=copy(item);}
+        if graph[item].fact==49{submit=copy(item);}if graph[item].fact==50{next=copy(item);}
+        item=graph[item].next_sibling;
+    }
+    if create==0 || attach==0 || submit==0 || next==0{return;}
+{ let bytes:[u8;33]=[35,100,101,102,105,110,101,32,99,111,114,98,111,95,99,111,109,112,108,101,116,105,111,110,95,99,114,101,97,116,101,32,102];byte_text(&bytes[..]); }
+    number(create);
+{ let bytes:[u8;1]=[10];byte_text(&bytes[..]); }
+{ let bytes:[u8;33]=[35,100,101,102,105,110,101,32,99,111,114,98,111,95,99,111,109,112,108,101,116,105,111,110,95,97,116,116,97,99,104,32,102];byte_text(&bytes[..]); }
+    number(attach);
+{ let bytes:[u8;1]=[10];byte_text(&bytes[..]); }
+{ let bytes:[u8;33]=[35,100,101,102,105,110,101,32,99,111,114,98,111,95,99,111,109,112,108,101,116,105,111,110,95,115,117,98,109,105,116,32,102];byte_text(&bytes[..]); }
+    number(submit);
+{ let bytes:[u8;1]=[10];byte_text(&bytes[..]); }
+{ let bytes:[u8;31]=[35,100,101,102,105,110,101,32,99,111,114,98,111,95,99,111,109,112,108,101,116,105,111,110,95,110,101,120,116,32,102];byte_text(&bytes[..]); }
+    number(next);
+{ let bytes:[u8;1]=[10];byte_text(&bytes[..]); }
+    completion_runtime();
+}

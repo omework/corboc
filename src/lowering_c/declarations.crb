@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Public C names for the existing generated nominal layouts.
+use bootstrap::model::{AstNode,StaticNode};
+use bootstrap::lowering_types::{c_type,number,signed};
+use bootstrap::target_c::{byte_text,character};
+
+
+/// Escapes underscores so generated separators cannot collide with source names.
+pub fn c_identifier(source:&[u8],start:u64,end:u64) {
+    let mut at=start;
+    while at<end {
+        let byte=source[at];character(byte as i32);if byte==95{character(117);}at=at+1;
+    }
+}
+
+pub fn emit_c_declarations(source:&[u8],nodes:&[AstNode],graph:&[StaticNode]) {
+    { let bytes:[u8;84]=[47,42,32,67,111,114,98,111,32,112,114,111,103,114,97,109,32,116,121,112,101,32,100,101,99,108,97,114,97,116,105,111,110,115,46,32,70,105,101,108,100,32,97,108,105,97,115,101,115,32,112,114,101,115,101,114,118,101,32,101,97,99,104,32,109,101,109,98,101,114,39,115,32,108,97,121,111,117,116,46,32,42,47,10];byte_text(&bytes[..]); };
+    let mut item=graph[0].first_child;
+    while item!=0 {
+        if nodes[item].kind==28 || nodes[item].kind==29 {
+            { let bytes:[u8;8]=[116,121,112,101,100,101,102,32];byte_text(&bytes[..]); };c_type(3000000+signed(copy(item)));{ let bytes:[u8;7]=[32,67,111,114,98,111,95];byte_text(&bytes[..]); };
+            byte_text(&source[nodes[item].name_start..nodes[item].name_end]);{ let bytes:[u8;2]=[59,10];byte_text(&bytes[..]); };
+            if nodes[item].kind==29 {
+                let mut variant=graph[item].first_child;
+                while variant!=0 {
+                    { let bytes:[u8;18]=[35,100,101,102,105,110,101,32,99,111,114,98,111,95,116,97,103,95];byte_text(&bytes[..]); };c_identifier(&source[0..source.len()],nodes[item].name_start,nodes[item].name_end);character(95);character(118);character(95);
+                    byte_text(&source[nodes[variant].name_start..nodes[variant].name_end]);character(32);number(copy(variant));{ let bytes:[u8;4]=[85,76,76,10];byte_text(&bytes[..]); };
+                    variant=graph[variant].next_sibling;
+                }
+            }
+        }item=graph[item].next_sibling;
+    }
+}

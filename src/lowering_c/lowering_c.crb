@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Foreign C emission: opaque statements, explicit headers and typed operands.
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::lowering_types::{local, c_type, placed_array, array_name};
+use bootstrap::target_c::{byte_text, character};
+
+/// Emits each requested header once, after target selection has removed excluded code.
+pub fn emit_c_headers(source:&[u8],nodes:&[AstNode]) {
+    let mut node:u64=1;
+    while node<nodes.len() as u64 {
+        if nodes[node].kind==78 {
+            let path=&source[nodes[node].start..nodes[node].end];let mut prior:u64=1;let mut duplicate=false;
+            while prior<node {
+                if nodes[prior].kind==78 && path.content_eq(&source[nodes[prior].start..nodes[prior].end]) {duplicate=true;break;}
+                prior=prior+1;
+            }
+            let runtime_header:[u8;15]=[99,111,114,98,111,95,114,117,110,116,105,109,101,46,104];
+            if path.content_eq(&runtime_header[..]){duplicate=true;}
+            if !duplicate {
+                let prefix:[u8;10]=[35,105,110,99,108,117,100,101,32,34];byte_text(&prefix[..]);
+                byte_text(&path[0..path.len()]);character(34);character(10);
+            }
+        } node=node+1;
+    }
+}
+
+/// Verifies known operand types; the C body itself is the responsibility of @unchecked.
+pub fn check_c(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64)->bool {
+    let mut operand=graph[node].first_child;
+    while operand!=0 {
+        if nodes[operand].kind==52 {
+            let binding=graph[operand].binding;let ty=types[binding];
+            if binding==0 || ty<=0 {return false;}
+        } operand=graph[operand].next_sibling;
+    } true
+}
+
+/// Emits a scoped C block with typed aliases; aggregate operands retain their storage.
+pub fn lower_c(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64,emit:bool)->bool {
+    if !check_c(&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(node)){return false;}
+    if !emit{return true;}
+    character(123);character(10);
+    let mut item=graph[node].first_child;
+    while item!=0 {
+        if nodes[item].kind==52 {
+            let binding=graph[item].binding;let ty=types[binding];
+            { let bytes:[u8;8]=[116,121,112,101,100,101,102,32];byte_text(&bytes[..]); };
+            if placed_array(copy(ty)){array_name(ty);}else{c_type(ty);}
+            { let bytes:[u8;12]=[32,99,111,114,98,111,95,116,121,112,101,95];byte_text(&bytes[..]); };byte_text(&source[nodes[binding].name_start..nodes[binding].name_end]);{ let bytes:[u8;2]=[59,10];byte_text(&bytes[..]); };
+        }item=graph[item].next_sibling;
+    }
+    let mut at=nodes[node].name_start;let end=nodes[node].end-1;let mut operand=graph[node].first_child;
+    while operand!=0 {
+        if nodes[operand].kind==52 {
+            byte_text(&source[at..nodes[operand].start-2]);let binding=graph[operand].binding;
+            let ty=types[binding];
+            if !graph[binding].mutable && ty>11 {
+                { let bytes:[u8;20]=[40,42,40,99,111,110,115,116,32,99,111,114,98,111,95,116,121,112,101,95];byte_text(&bytes[..]); };byte_text(&source[nodes[binding].name_start..nodes[binding].name_end]);{ let bytes:[u8;5]=[32,42,41,38,40];byte_text(&bytes[..]); };
+            }else if !graph[binding].mutable{character(40);c_type(copy(ty));character(41);}
+            if placed_array(copy(ty)){{ let bytes:[u8;2]=[40,42];byte_text(&bytes[..]); };local(copy(binding));character(41);}else{local(copy(binding));}
+            if !graph[binding].mutable && ty>11 {{ let bytes:[u8;2]=[41,41];byte_text(&bytes[..]); };}
+            at=nodes[operand].end+1;
+        } operand=graph[operand].next_sibling;
+    }
+    byte_text(&source[at..end]);character(10);character(125);character(10);true
+}

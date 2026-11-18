@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct P{v:i64} enum E{Bad} struct C{} impl C{fn read(&self)->Result<P,E>{Ok(P{v:7})}} fn main(){let c=C{};match c.read(){Ok(p)=>{print(p.v);},Err(e)=>{drop(e);}}}

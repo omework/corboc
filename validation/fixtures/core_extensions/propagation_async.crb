@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+async fn source(pass:bool)->Result<i64,bool>{yield;if pass{return Ok(4);}Err(true)} async fn outer(pass:bool)->Result<i64,bool>{let value=source(pass).await?;Ok(value+1)} fn main(){let one=runtime::spawn(outer(true));match one.join(){Ok(result)=>{match result{Ok(n)=>{print(n);},Err(e)=>{print(e);}}},Err(e)=>{drop(e);}}let two=runtime::spawn(outer(false));match two.join(){Ok(result)=>{match result{Ok(n)=>{print(n);},Err(e)=>{print(e);}}},Err(e)=>{drop(e);}}}

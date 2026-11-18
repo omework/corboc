@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+enum Inner{Failed}
+enum Outer{Converted}
+impl Outer{fn from(error:Inner)->Outer{drop(error);Outer.Converted}}
+fn source()->Result<i64,Inner>{Err(Inner.Failed)}
+fn outer()->Result<i64,Outer>{let value=source()?;Ok(value)}
+fn main(){match outer(){Ok(value)=>{drop(value);},Err(error)=>{match error{Outer.Converted=>{print(1);}}}}}

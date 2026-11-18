@@ -1,0 +1,123 @@
+use bootstrap::calls::{bootstrap_callee};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::scalar::{verify_primitive, folded_integer};
+use bootstrap::places::literal_length;
+use bootstrap::stored::record_loan_array;
+use bootstrap::value_dependencies::scope_contains;
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::loans::borrow_mutable;
+
+// A finite permutation or selection of shared references, optionally
+// reached through an unchanged recursive array argument.
+pub fn array_relay_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+    if nodes[function].kind != 1 { return 0; }
+    let input = graph[function].first_child;
+    let next = graph[input].next_sibling;
+    let condition = if nodes[next].kind == 3 { copy(next) } else { 0 };
+    let output = if condition == 0 { next } else { graph[condition].next_sibling };
+    let body = graph[output].next_sibling;
+    let before = graph[input].first_child;
+    if nodes[input].kind != 3 || nodes[output].kind != 4
+        || nodes[body].kind != 2 || source[nodes[before].start] != 91
+        || source[nodes[output].start] != 91 { return 0; }
+    let boolean = graph[condition].first_child;
+    if condition != 0 && (verify_primitive(&source[0..source.len()], nodes[boolean].name_start, nodes[boolean].name_end) != 3
+        || graph[boolean].first_child != 0) { return 0; }
+    let reference = graph[before].first_child;
+    let out_ref = graph[output].first_child;
+    let first = graph[reference].first_child;
+    let second = graph[out_ref].first_child;
+    if source[nodes[reference].start] != 38 || source[nodes[out_ref].start] != 38
+        || borrow_mutable(&source[nodes[reference].start..nodes[first].start])
+        || borrow_mutable(&source[nodes[out_ref].start..nodes[second].start]) { return 0; }
+    let scalar = verify_primitive(&source[0..source.len()], nodes[first].name_start, nodes[first].name_end);
+    if scalar < 1 || scalar > 7
+        || scalar != verify_primitive(&source[0..source.len()], nodes[second].name_start, nodes[second].name_end)
+        || graph[first].first_child != 0 || graph[second].first_child != 0 { return 0; }
+    let (known_in, len_in) = literal_length(&source[0..source.len()], &nodes[0..nodes.len()], graph[reference].next_sibling);
+    let (known_out, len_out) = literal_length(&source[0..source.len()], &nodes[0..nodes.len()], graph[out_ref].next_sibling);
+    if !known_in || !known_out || len_in == 0 || len_out != len_in { return 0; }
+    let tail = graph[body].first_child;
+    let branch = graph[tail].first_child;
+    let test = graph[branch].first_child;
+    let yes = graph[test].next_sibling;
+    let no = graph[yes].next_sibling;
+    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return 0; }
+    if condition != 0 && (nodes[branch].kind != 26 || nodes[test].kind != 7 || graph[test].binding != condition
+        || nodes[yes].kind != 2 || nodes[no].kind != 2) { return 0; }
+    let mut arm = if condition == 0 { copy(body) } else { copy(yes) };
+    let mut has_base = false;
+    let mut recursive = false;
+    while arm != 0 {
+        let result = graph[arm].first_child;
+        let value = graph[result].first_child;
+        if nodes[result].kind != 10 || graph[result].next_sibling != 0 { return 0; }
+        if nodes[value].kind == 44 {
+            let mut member = graph[value].first_child;
+            let mut count: u64 = 0;
+            while member != 0 {
+                let base = graph[member].first_child;
+                let index = graph[base].next_sibling;
+                if nodes[member].kind != 18 || nodes[base].kind != 7 || graph[base].binding != input { return 0; }
+                let literal = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], index);
+                if !literal.known || literal.negative || literal.magnitude >= len_in { return 0; }
+                count = count + 1;
+                member = graph[member].next_sibling;
+            }
+            if count != len_out { return 0; }
+            has_base = true;
+        } else if nodes[value].kind == 15 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(value)) == function {
+            let callee = graph[value].first_child;
+            let array = graph[callee].next_sibling;
+            let flag = graph[array].next_sibling;
+            if nodes[array].kind != 7 || graph[array].binding != input || nodes[flag].kind != 9
+                || graph[flag].next_sibling != 0 { return 0; }
+            let literal = &source[nodes[flag].start..nodes[flag].end];
+            let yes_word: [u8; 4] = [116,114,117,101];
+            let no_word: [u8; 5] = [102,97,108,115,101];
+            if (arm == yes && !literal.content_eq(&no_word[..]))
+                || (arm == no && !literal.content_eq(&yes_word[..])) { return 0; }
+            recursive = true;
+        } else { return 0; }
+        arm = if condition == 0 { 0 } else { graph[arm].next_sibling };
+    }
+    if has_base && (condition == 0 || recursive) { return scalar; }
+    0
+}
+
+pub fn apply_array_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    call: u64, function: u64, destination: u64, scalar: i64) -> i64 {
+    let callee = graph[call].first_child;
+    let input = graph[callee].next_sibling;
+    let flag = graph[input].next_sibling;
+    let parameter = graph[function].first_child;
+    let direct = nodes[graph[parameter].next_sibling].kind == 4;
+    if nodes[input].kind != 44 || (flag == 0) != direct || graph[flag].next_sibling != 0 { return -9; }
+    let annotation = graph[parameter].first_child;
+    let checked = record_loan_array(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(input), annotation);
+    if checked < 0 { return checked; }
+    if checked != 460 + scalar { return -9; }
+    let mut member = graph[input].first_child;
+    while member != 0 {
+        if !scope_contains(&graph[0..graph.len()], graph[values[member].target].scope, graph[destination].scope) {
+            return 0 - violation(4, nodes[call].start);
+        }
+        member = graph[member].next_sibling;
+    }
+    if !direct {
+        let boolean = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], flag, 3, 1);
+        if boolean < 0 { return boolean; }
+    }
+    // For a direct relay the result carries the exact projection list.
+    let mut shape: u64 = 0;
+    if direct {
+        let body = graph[graph[parameter].next_sibling].next_sibling;
+        shape = graph[graph[body].first_child].first_child;
+    }
+    values[destination] = CheckedValue { ty: scalar + 490, state: 1, mutable: graph[destination].mutable,
+        target: 0, loan_parent: shape, origin_call: input, exclusive: false };
+    scalar + 490
+}

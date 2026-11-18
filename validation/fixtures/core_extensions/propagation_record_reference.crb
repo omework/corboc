@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct P{x:i64} fn maybe(value:&P)->Option<&P>{Some(value)} fn outer(value:&P)->Option<i64>{let view=maybe(value)?;Some((*view).x)} fn main(){let n=P{x:7};match outer(&n){Some(x)=>{print(x);},None=>{}}}

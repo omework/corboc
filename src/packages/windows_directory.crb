@@ -1,0 +1,201 @@
+// The caller's cache holds WIN32_FIND_DATAW (592 bytes) and the flag for its
+// first pending entry in the last word.
+#(if: target.os == "windows" && target.arch == "x86_64")
+fn widen_path(path: &[u8], output: &mut [u16]) -> i32 {
+    let mut count: i32 = 0;
+    @unchecked {
+        let source = addr(&path[0]);
+        let wide = addr(&mut output[0]);
+        @asm {
+            sub rsp, 48
+            mov ecx, 65001
+            mov edx, 8
+            mov r8, ${source}
+            mov r9d, -1
+            mov rax, ${wide}
+            mov QWORD PTR [rsp + 32], rax
+            mov QWORD PTR [rsp + 40], 4096
+            call MultiByteToWideChar
+            mov ${count}, eax
+            add rsp, 48
+        }
+    }
+    count
+}
+
+fn narrow_path(path: &[u16], output: &mut [u8]) -> bool {
+    let capacity = output.len();
+    let mut count: i32 = 0;
+    @unchecked {
+        let address = addr(&mut output[0]);
+        let wide = addr(&path[0]);
+        @asm {
+            sub rsp, 64
+            mov ecx, 65001
+            mov edx, 128
+            mov r8, ${wide}
+            mov r9d, -1
+            mov rax, ${address}
+            mov QWORD PTR [rsp + 32], rax
+            mov rax, ${capacity}
+            mov QWORD PTR [rsp + 40], rax
+            mov QWORD PTR [rsp + 48], 0
+            mov QWORD PTR [rsp + 56], 0
+            call WideCharToMultiByte
+            mov ${count}, eax
+            add rsp, 64
+        }
+    }
+    count > 0
+}
+
+fn narrow_directory_name(path: &[u32], output: &mut [u8]) -> bool {
+    let capacity = output.len();
+    let mut count: i32 = 0;
+    @unchecked {
+        let address = addr(&mut output[0]);
+        let wide = addr(&path[0]);
+        @asm {
+            sub rsp, 64
+            mov ecx, 65001
+            mov edx, 128
+            mov r8, ${wide}
+            mov r9d, -1
+            mov rax, ${address}
+            mov QWORD PTR [rsp + 32], rax
+            mov rax, ${capacity}
+            mov QWORD PTR [rsp + 40], rax
+            mov QWORD PTR [rsp + 48], 0
+            mov QWORD PTR [rsp + 56], 0
+            call WideCharToMultiByte
+            mov ${count}, eax
+            add rsp, 64
+        }
+    }
+    count > 0
+}
+
+fn canonical(path: &[u8], output: &mut [u8]) -> bool {
+    let mut wide: [u16; 4096] = [0; 4096];
+    if widen_path(path, &mut wide[..]) == 0 { return false; }
+    let mut resolved: [u16; 4096] = [0; 4096];
+    let mut count: u64 = 0;
+    @unchecked {
+        let input = addr(&wide[0]);
+        let destination = addr(&mut resolved[0]);
+        @asm {
+            sub rsp, 80
+            mov rcx, ${input}
+            xor edx, edx
+            mov r8d, 7
+            xor r9d, r9d
+            mov QWORD PTR [rsp + 32], 3
+            mov QWORD PTR [rsp + 40], 0x02000000
+            mov QWORD PTR [rsp + 48], 0
+            call CreateFileW
+            cmp rax, -1
+            je 1f
+            mov QWORD PTR [rsp + 56], rax
+            mov rcx, rax
+            mov rdx, ${destination}
+            mov r8d, 4096
+            xor r9d, r9d
+            call GetFinalPathNameByHandleW
+            mov eax, eax
+            mov ${count}, rax
+            mov rcx, QWORD PTR [rsp + 56]
+            call CloseHandle
+            1:
+            add rsp, 80
+        }
+    }
+    if count <= 4 || count >= 4096 { return false; }
+    // Convert Win32's extended path prefix to the loader's slash-separated spelling.
+    let mut start: usize = 4;
+    let mut prefix: usize = 0;
+    if resolved[4] == 85 && resolved[5] == 78 && resolved[6] == 67 && resolved[7] == 92 {
+        output[0] = 47;
+        output[1] = 47;
+        start = 8;
+        prefix = 2;
+    }
+    let limit = output.len();
+    if !narrow_path(&resolved[start..4096], &mut output[prefix..limit]) { return false; }
+    let mut at = prefix;
+    while at < limit && output[at] != 0 {
+        if output[at] == 92 { output[at] = 47; }
+        at = at + 1;
+    }
+    at < limit
+}
+
+fn open_package_directory(path: &[u8], cache: &mut [u32; 150]) -> usize {
+    let mut wide: [u16; 4096] = [0; 4096];
+    let count = widen_path(path, &mut wide[..]);
+    if count < 2 || count >= 4094 { return 0; }
+    wide[count - 1] = 92;
+    wide[count] = 42;
+    let mut handle: usize = 0;
+    @unchecked {
+        let pattern = addr(&wide[0]);
+        let data = addr(&mut (*cache)[0]);
+        @asm {
+            sub rsp, 32
+            mov rcx, ${pattern}
+            mov rdx, ${data}
+            call FindFirstFileW
+            cmp rax, -1
+            je 1f
+            mov ${handle}, rax
+            1:
+            add rsp, 32
+        }
+    }
+    let first = &mut (*cache)[149];
+    *first = 1;
+    handle
+}
+
+fn read_package_directory(directory: usize, cache: &mut [u32; 150], name: &mut [u8]) -> i32 {
+    if (*cache)[149] == 1 {
+        let first = &mut (*cache)[149];
+        *first = 0;
+    } else {
+        let mut failure: i32 = 0;
+        @unchecked {
+            let data = addr(&mut (*cache)[0]);
+            @asm {
+                sub rsp, 32
+                mov rcx, ${directory}
+                mov rdx, ${data}
+                call FindNextFileW
+                test eax, eax
+                jne 1f
+                call GetLastError
+                mov ${failure}, eax
+                1:
+                add rsp, 32
+            }
+        }
+        if failure == 18 { return 0; }
+        if failure != 0 { return -1; }
+    }
+    // The UTF-16 name starts at byte 44 in WIN32_FIND_DATAW.
+    if !narrow_directory_name(&(*cache)[11..149], name) { return -1; }
+    let attributes = (*cache)[0];
+    if (attributes & 1024) != 0 { return 10; }
+    if (attributes & 16) != 0 { return 4; }
+    8
+}
+
+fn close_package_directory(directory: usize) {
+    @unchecked {
+        @asm {
+            sub rsp, 32
+            mov rcx, ${directory}
+            call FindClose
+            add rsp, 32
+        }
+    }
+}
+#(endif)

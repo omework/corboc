@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn make()->Result<i64,bool>{Ok(3)}
+async fn work()->i64{yield;4}
+fn main(){
+ let mut result=make();let mut option:Option<i64> = Some(5);
+ let future=work();
+ @unchecked{@c(includes={"assert.h"}){
+  corbo_type_result r=${result};assert(r.ok);
+  corbo_type_option o=${option};assert(o.some&&o.value==5);
+  ${option}.value=6;
+  assert(${future}.state!=NULL);
+ }}
+ let execution=runtime::spawn(future);
+ @unchecked{@c{assert(${execution}.state!=NULL);}}
+ match execution.join(){Ok(value)=>{print(value);},Err(error)=>{drop(error);}}
+ match option{Some(value)=>{print(value);},None=>{}}
+ match result{Ok(value)=>{print(value);},Err(error)=>{print(error);}}
+}

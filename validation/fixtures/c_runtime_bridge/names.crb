@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+enum E{Alpha_f_B{C:i64},Alpha{B_f_C:i64}}
+struct E_Alpha_f_B{switch:i64}
+fn main(){
+ let mut value=E.Alpha_f_B{C:1};let other=E_Alpha_f_B{switch:3};
+ @unchecked{@c(includes={"assert.h"}){
+  assert(${value}.tag==corbo_tag_E_v_Alpha_f_B);
+  ${value}.v_Alpha_uf_uB_f_C=2;
+  assert(${other}.f_switch==3);
+ }}
+ match value{E.Alpha_f_B{C:v}=>{print(v);},E.Alpha{B_f_C:v}=>{print(v);}}
+ print(other.switch);
+}

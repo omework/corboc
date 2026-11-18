@@ -1,0 +1,170 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::loans::loan_conflict;
+use bootstrap::map_entries::{dependent_map, dependent_map_type, dependent_map_access};
+use bootstrap::stored::vector_relay_type;
+use bootstrap::scalar::verify_primitive;
+
+// A map with scalar values has a stable key/value type. Its only loan
+// is the reservation carried by the result of get/get_mut.
+pub fn map_value(ty: i64) -> bool {
+    (ty > 800 && ty < 900) || dependent_map(ty)
+}
+
+pub fn map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let name: [u8; 7] = [72,97,115,104,77,97,112];
+    let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+    if !spelling.content_eq(&name[..]) { return 0; }
+    let key = graph[annotation].first_child;
+    let item = graph[key].next_sibling;
+    if key == 0 || item == 0 || graph[item].next_sibling != 0 { return 0 - violation(1, nodes[annotation].start); }
+    let key_type = verify_primitive(&source[0..source.len()], nodes[key].name_start, nodes[key].name_end);
+    if key_type == 8 || key_type == 9 || (key_type != 0 && graph[key].first_child != 0)
+        || (nodes[key].name_end - nodes[key].name_start == 5 && source[nodes[key].name_start] == 117) {
+        return 0 - violation(1, nodes[key].start);
+    }
+    if key_type == 0 { return -9; }
+    let ty = verify_primitive(&source[0..source.len()], nodes[item].name_start, nodes[item].name_end);
+    if graph[item].first_child != 0 {
+        return dependent_map_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], item, key_type);
+    }
+    if ty == 0 {
+        if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 { return 0 - violation(1, nodes[item].start); }
+        return -9;
+    }
+    800 + key_type * 10 + ty
+}
+
+pub fn map_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> i64 {
+    if nodes[expression].kind != 15 { return 0; }
+    let callee = graph[expression].first_child;
+    let method: [u8; 3] = [110,101,119];
+    let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+    if nodes[callee].kind != 36 || !spelling.content_eq(&method[..]) { return 0; }
+    let ty = map_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[callee].first_child);
+    if ty != 0 && graph[callee].next_sibling != 0 { return 0 - violation(1, nodes[expression].start); }
+    ty
+}
+
+pub fn verify_map_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, destination: u64) -> i64 {
+    let receiver = graph[call].first_child;
+    if nodes[call].kind != 16 || nodes[receiver].kind != 7 { return 0; }
+    let binding = graph[receiver].binding;
+    let ty = values[binding].ty;
+    if !map_value(copy(ty)) { return 0; }
+    let spelling = &source[nodes[call].name_start..nodes[call].name_end];
+    let insert: [u8; 6] = [105,110,115,101,114,116];
+    let remove: [u8; 6] = [114,101,109,111,118,101];
+    let get: [u8; 3] = [103,101,116];
+    let get_mut: [u8; 7] = [103,101,116,95,109,117,116];
+    let inserts = spelling.content_eq(&insert[..]);
+    let removes = spelling.content_eq(&remove[..]);
+    let shared = spelling.content_eq(&get[..]);
+    let exclusive = spelling.content_eq(&get_mut[..]);
+    if !inserts && !removes && !shared && !exclusive { return -9; }
+    if values[binding].state != 1 { return 0 - violation(6, nodes[call].start); }
+    if !shared && !values[binding].mutable { return 0 - violation(5, nodes[call].start); }
+    let key = graph[receiver].next_sibling;
+    let item = graph[key].next_sibling;
+    if key == 0 || (inserts && (item == 0 || graph[item].next_sibling != 0))
+        || (!inserts && item != 0) { return 0 - violation(1, nodes[call].start); }
+    let key_type = (copy(ty) % 100) / 10;
+    let element = ty % 10;
+    let reading = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(binding), copy(call), false);
+    if reading > 0 { return 0 - violation(5, nodes[call].start); }
+    if reading < 0 { return -9; }
+    if inserts {
+        let key_actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(key), copy(key_type), 1);
+        if key_actual < 0 { return key_actual; }
+        if key_actual != key_type { return 0 - violation(1, nodes[key].start); }
+        if !dependent_map(copy(ty)) {
+            let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], item, copy(element), 1);
+            if actual < 0 { return actual; }
+            if actual != element { return 0 - violation(1, nodes[call].start); }
+        }
+    } else {
+        if nodes[key].kind == 7 {
+            let reference = graph[key].binding;
+            if values[reference].target == 0 { return 0 - violation(1, nodes[key].start); }
+            return -9;
+        }
+        if nodes[key].kind != 13 { return -9; }
+        let place = graph[key].first_child;
+        if nodes[place].kind != 7 { return -9; }
+        let name = graph[place].binding;
+        if values[name].state != 1 { return 0 - violation(6, nodes[place].start); }
+        if graph[key].mutable || values[name].ty != key_type { return 0 - violation(1, nodes[key].start); }
+        let key_conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+            name, copy(key), false);
+        if key_conflict > 0 { return 0 - violation(5, nodes[key].start); }
+        if key_conflict < 0 { return -9; }
+    }
+    if values[binding].state != 1 { return 0 - violation(6, nodes[call].start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(binding), copy(call), !shared);
+    if conflict > 0 { return 0 - violation(5, nodes[call].start); }
+    if conflict < 0 { return -9; }
+    if dependent_map(ty) {
+        return dependent_map_access(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], call, destination,
+            binding, inserts, removes, shared);
+    }
+    let target: u64 = if shared || exclusive { binding } else { 0 };
+    let base: i64 = if shared { 920 } else { 900 };
+    let mut result = base + element;
+    if exclusive { result = 940 + element; }
+    values[destination] = CheckedValue { ty: copy(result), state: 1, mutable: false, target: target,
+        loan_parent: 0, origin_call: 0, exclusive: exclusive };
+    result
+}
+
+// A scalar or dependent map can cross a transparent by-value relay. The
+// callee changes only the receiver of the entry list.
+pub fn map_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+    if nodes[function].kind != 1 { return 0; }
+    let parameter = graph[function].first_child;
+    let result = graph[parameter].next_sibling;
+    if nodes[parameter].kind != 3 || nodes[result].kind != 4 { return 0; }
+    let body = graph[result].next_sibling;
+    let tail = graph[body].first_child;
+    let value = graph[tail].first_child;
+    if nodes[body].kind != 2 || nodes[tail].kind != 10 || graph[tail].next_sibling != 0
+        || nodes[value].kind != 7 || graph[value].binding != parameter { return 0; }
+    let output = source[nodes[result].start];
+    if output != 72 { return 0; }
+    let ty = map_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        graph[parameter].first_child);
+    if ty <= 0 { return ty; }
+    let expected = map_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
+    if expected == ty { return ty; }
+    return 0;
+}
+
+pub fn relay_collection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    call: u64, function: u64, point: u64) -> i64 {
+    let mut ty = map_relay_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+    if ty == 0 {
+        ty = vector_relay_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function);
+    }
+    if ty <= 0 { return ty; }
+    let argument = graph[graph[call].first_child].next_sibling;
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if nodes[argument].kind != 7 { return -9; }
+    let binding = graph[argument].binding;
+    if values[binding].ty != ty { return 0 - violation(1, nodes[argument].start); }
+    let entries = values[binding].origin_call;
+    let pool = values[binding].target;
+    let status = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], argument, 0, 3);
+    if status < 0 { return status; }
+    values[point] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[point].mutable,
+        target: pool, loan_parent: 0, origin_call: entries, exclusive: false };
+    return ty;
+}

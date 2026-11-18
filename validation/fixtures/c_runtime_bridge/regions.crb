@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn main(){
+ #(stack_region: max_size=64K, count=2)
+ {
+ let mut vectors=pool<Vector<i64>>(1);let mut value=vectors.new();value.push(10);
+ @unchecked{@c(includes={"assert.h"}){
+  CorboVector *vector=corbo_allocation_data(&${value});
+  *(int64_t*)corbo_region_push(vector)=20;
+  assert(vector->len==2 && vector->bytes==65536);
+  CorboRegion temporary;corbo_region_new(&temporary,sizeof(uint64_t),false);
+  *(uint64_t*)corbo_region_push(&temporary)=30;
+  assert(*(uint64_t*)temporary.data==30);
+  corbo_region_drop(&temporary);
+ }}
+ print(value[0]);print(value[1]);
+}
+}

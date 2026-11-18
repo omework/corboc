@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Immutable per-call value graphs, allocated separately from source-node identities.
+
+/// Reserves summary entries above the source-node range; zero reports bounded workspace exhaustion.
+pub fn reserve_summary(values:&mut [CheckedValue],source_count:u64,length:u64)->u64 {
+    let mut cursor=values[0].origin_call;
+    if cursor==0{cursor=values.len() as u64;}
+    if cursor<source_count || length>cursor-source_count{return 0;}
+    let first=cursor-length;
+    values[0]=CheckedValue{ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:copy(first),exclusive:false};first
+}
+
+/// Maps a list cursor to its value; source argument lists need no wrapper.
+pub fn summary_value(values:&[CheckedValue],entry:u64)->u64 {
+    if values[entry].ty==5014{return values[entry].target;}entry
+}
+
+/// Advances either an immutable summary list or a source argument list.
+pub fn summary_next(graph:&[StaticNode],values:&[CheckedValue],entry:u64)->u64 {
+    if values[entry].ty==5014{return values[entry].loan_parent;}graph[entry].next_sibling
+}

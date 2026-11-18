@@ -1,0 +1,82 @@
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::lowering_types::{array_length, array_item, array_value_type, placed_array,
+    slice_code, declaration, local, number, temporary, pool_type, vector_element, vector_type, array_vector_type, c_type};
+use bootstrap::target_c::{byte_text, character};
+
+fn slice_borrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    let place = graph[node].first_child;
+    let base = graph[place].first_child;
+    let projected = nodes[base].kind != 7;
+    let binding = graph[base].binding;
+    let mut shape = types[binding];
+    if projected {
+        if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(base)) { return -1; }
+        shape = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], copy(base), false);
+        if !array_value_type(copy(shape)) { return -1; }
+    }
+    let borrowed = shape >= 2000000 && shape < 3000000;
+    let vector = pool_type(copy(shape));
+    let regional = array_vector_type(copy(vector))
+        || (vector_type(copy(vector)) && vector_element(copy(vector)) > 0 && vector_element(copy(vector)) < 10);
+    if !borrowed && !regional && !array_value_type(copy(shape)) { return -1; }
+    let range = graph[base].next_sibling;
+    let first = graph[range].first_child;
+    let has_start = nodes[range].start != nodes[range].name_start;
+    let last = if has_start { graph[first].next_sibling } else { copy(first) };
+    if borrowed && (!has_start || last == 0) { return -1; }
+    if regional {
+        if first != 0 || has_start { return -1; }
+        let element = vector_element(vector);
+        let ty = slice_code(copy(element));
+        types[node] = copy(ty);
+        if (*ctx).emit {
+            declaration(copy(ty), node);
+            { let code: [u8;3] = [61,123,40]; byte_text(&code[..]); }
+            c_type(element);
+            { let code: [u8;12] = [42,41,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); }
+            local(copy(binding));
+            { let code: [u8;23] = [46,115,108,111,116,41,45,62,100,97,116,97,44,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); }
+            local(binding);
+            { let code: [u8;13] = [46,115,108,111,116,41,45,62,108,101,110,125,59]; byte_text(&code[..]); }
+            character(10);
+        }
+        return ty;
+    }
+    let mut bound = copy(first);
+    while bound != 0 {
+        let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(bound), 0);
+        if ty < 1 || ty > 7 || ty == 3 { return -1; }
+        bound = graph[bound].next_sibling;
+    }
+    let ty = if borrowed { copy(shape) } else { slice_code(array_item(copy(shape))) };
+    if ty < 0 { return -1; }
+    types[node] = copy(ty);
+    if (*ctx).emit {
+        { let code: [u8;11] = [117,105,110,116,54,52,95,116,32,108,111]; byte_text(&code[..]); } number(copy(node)); character(61);
+        if has_start { { let code: [u8;10] = [40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(first); } else { character(48); }
+        { let code: [u8;13] = [59,10,117,105,110,116,54,52,95,116,32,104,105]; byte_text(&code[..]); } number(copy(node)); character(61);
+        if last == 0 { number(array_length(copy(shape))); }
+        else { { let code: [u8;10] = [40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(last); }
+        { let code: [u8;7] = [59,10,105,102,40,108,111]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;3] = [62,104,105]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;4] = [124,124,104,105]; byte_text(&code[..]); }
+        number(copy(node)); character(62);
+        if borrowed { local(copy(binding)); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
+        else { number(array_length(copy(shape))); }
+        { let code: [u8;81] = [41,123,102,112,117,116,115,40,34,99,111,114,98,111,58,32,98,111,114,110,101,32,100,101,32,116,114,97,110,99,104,101,32,104,111,114,115,32,100,117,32,116,97,98,108,101,97,117,92,110,34,44,115,116,100,101,114,114,41,59,101,120,105,116,40,69,88,73,84,95,70,65,73,76,85,82,69,41,59,125,10]; byte_text(&code[..]); }
+        declaration(copy(ty), copy(node)); { let code: [u8;2] = [61,123]; byte_text(&code[..]); }
+        if projected {
+            let emitted = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], base, true);
+            drop(emitted);
+        } else { local(binding); }
+        if borrowed { { let code: [u8;5] = [46,100,97,116,97]; byte_text(&code[..]); } }
+        else if placed_array(shape) { { let code: [u8;7] = [45,62,105,116,101,109,115]; byte_text(&code[..]); } }
+        else { { let code: [u8;6] = [46,105,116,101,109,115]; byte_text(&code[..]); } }
+        { let code: [u8;3] = [44,104,105]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;3] = [45,108,111]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;8] = [125,59,10,105,102,40,108,111]; byte_text(&code[..]); }
+        number(copy(node)); { let code: [u8;1] = [41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;9] = [46,100,97,116,97,43,61,108,111]; byte_text(&code[..]); } number(node); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+    ty
+}

@@ -1,0 +1,502 @@
+use bootstrap::value_summaries::{borrowed_record_type,symbolic_record};
+use bootstrap::native_checks::check_raw_addresses;
+use bootstrap::constants::validate_constants;
+use bootstrap::scalar_options::{scalar_option_annotation, option_borrow, option_allocation, option_handle, reference_annotation};
+use bootstrap::loans::borrow_mutable;
+use bootstrap::calls::{next_declaration, destructor_method, borrowed_receiver, value_receiver};
+use bootstrap::places::{record_parameter, value_record};
+use bootstrap::results::result_annotation;
+use bootstrap::tasks::autonomous_enum;
+use bootstrap::calls::{identity_aggregate};
+use bootstrap::regional_calls::{region_signature, conditional_pool_result, nominal_allocation_relay};
+use bootstrap::declarations::{nominal_declaration, validate_standalone_declarations, validate_layout, validate_type_names, validate_destructors, validate_region_capacities, has_void_result};
+use bootstrap::map_entries::entry_effect_scalar;
+use bootstrap::tuples::{tuple_annotation, symbolic_tuple};
+use bootstrap::array_relays::array_relay_contract;
+use bootstrap::task_relay::{envelope_relay, envelope_wait, conditional_wait, nominal_relay_declaration, awaited_projection};
+use bootstrap::verify::{check_type, check_block, report_violation, violation, unsupported_value_receiver};
+use bootstrap::stored::{vector_relay_type, vector_reference_type, vector_reference_owner, returned_field, returned_array_loan, field_reborrow};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
+use bootstrap::vector_storage::vector_scalar_owner;
+use bootstrap::tasks::{scalar_handle_type, task_value, growing_value_result, growing_allocation_return, plain_vector_return, envelope_worker, pooled_identity, suspended_identity, exported_blocking_envelope};
+use bootstrap::places::{inline_array_type, is_scalar_array, scalar_array_type, array_ref_type, slice_parameter};
+use bootstrap::collections::{map_type, map_value, map_relay_type};
+use bootstrap::loan_contracts::infer_loan_contracts;
+use bootstrap::check_flow::LoopEdge;
+
+fn unsupported_declaration(nodes: &[AstNode], item: u64) -> i32 {
+    print(9);
+    print(nodes[item].start);
+    9
+}
+
+pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool) -> i32 {
+    if whole_program {
+        let status = validate_standalone_declarations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(env_call), package);
+        if status != 0 { return status; }
+    }
+    let raw_addresses = check_raw_addresses(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
+    if raw_addresses != 0 { return raw_addresses; }
+    let constants = validate_constants(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
+    if constants != 0 { return constants; }
+    let mut layouts: [u8; 524289] = [0; 524289];
+    let mut item = graph[0].first_child;
+    let mut has_main = false;
+    let main: [u8; 4] = [109,97,105,110];
+    while item != 0 {
+        if nodes[item].kind == 49 {
+            let owner = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            let mut method = graph[item].first_child;
+            while method != 0 {
+                if value_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(method)) {
+                    let annotation = graph[graph[method].first_child].first_child;
+                    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if owner == 0 || record != owner || graph[annotation].first_child != 0
+                        || source[nodes[annotation].start] == 38 {
+                        return report_violation(1, nodes[annotation].start);
+                    }
+                    if !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, 0, true) {
+                        unsupported_value_receiver();
+                        return unsupported_declaration(&nodes[0..nodes.len()], item);
+                    }
+                }
+                method = graph[method].next_sibling;
+            }
+        }
+        if nodes[item].kind == 28 || nodes[item].kind == 29 {
+            let status = validate_layout(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut layouts[..], copy(item), 0);
+            if status != 0 { return status; }
+        }
+        if whole_program && (nodes[item].kind == 1 || nodes[item].kind == 35)
+            && nodes[graph[item].first_child].kind != 58 {
+            let mut signature = graph[item].first_child;
+            while nodes[signature].kind == 3 {
+                let status = validate_type_names(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], graph[signature].first_child, 0);
+                if status != 0 { return status; }
+                signature = graph[signature].next_sibling;
+            }
+            if nodes[signature].kind == 4 {
+                let status = validate_type_names(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], signature, 0);
+                if status != 0 { return status; }
+            }
+        }
+        if nodes[item].kind == 1 || nodes[item].kind == 35 {
+            let name = &source[nodes[item].name_start..nodes[item].name_end];
+            if name.content_eq(&main[..]) {
+                let arg = graph[item].first_child;
+                if nodes[item].kind == 35 || nodes[arg].kind == 3 {
+                    return report_violation(1, nodes[item].start);
+                }
+                if nodes[arg].kind == 4
+                    && !has_void_result(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(arg))
+                    && verify_primitive(&source[0..source.len()], nodes[arg].name_start, nodes[arg].name_end) != 1 {
+                    return report_violation(1, nodes[item].start);
+                }
+                has_main = true;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    if whole_program && !has_main { return report_violation(1, nodes[0].start); }
+    let destructor_status = validate_destructors(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()]);
+    if destructor_status != 0 { return destructor_status; }
+    let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0, loan_parent: 0, origin_call: 0, exclusive: false }; 524289];
+    if env_call != 0 {
+        let mut node: u64 = 1;
+        while node < nodes.len() as u64 {
+            if nodes[node].kind == 15 && nodes[node].start == env_call {
+                values[node] = CheckedValue { ty: 2000139, state: 1, mutable: false,
+                    target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                break;
+            }
+            node = node + 1;
+        }
+    }
+    infer_loan_contracts(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[..]);
+    let mut edges = [LoopEdge { breaks: 0, continues: 0 }; 1];
+    let mut item = graph[0].first_child;
+    if nodes[item].kind == 58 {
+        let word: [u8; 9] = [100,97,116,97,115,116,97,99,107];
+        let spelling = &source[nodes[item].name_start..nodes[item].name_end];
+        if !spelling.content_eq(&word[..]) { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+        let status = validate_region_capacities(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item));
+        if status != 0 { return status; }
+        item = graph[item].next_sibling;
+    }
+    while item != 0 {
+        if nodes[item].kind == 49 && custom_destructors && graph[item].first_child != 0 {
+            item = graph[item].first_child;
+            continue;
+        }
+        if custom_destructors && destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) {
+            let implementation = nodes[item].parent;
+            let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], implementation);
+            let method = copy(item);
+            let receiver = graph[method].first_child;
+            let mut body = graph[receiver].next_sibling;
+            if nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            if nominal == 0 || nodes[receiver].kind != 3 || nodes[body].kind != 2 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+            values[receiver] = CheckedValue { ty: 90, state: 1, mutable: false, target: copy(receiver),
+                loan_parent: 0, origin_call: nominal, exclusive: true };
+            let (status, stopped) = check_block(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[..], &mut edges[..],
+                body, 0, true);
+            drop(stopped);
+            if status == 8 { return 8; }
+            if status != 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if nodes[item].kind == 28 || nodes[item].kind == 29 || nodes[item].kind == 76 || (custom_destructors && nodes[item].kind == 49) {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if nodes[item].kind != 1 && nodes[item].kind != 35 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+        let current_name = &source[nodes[item].name_start..nodes[item].name_end];
+        let mut previous = graph[0].first_child;
+        while nodes[item].parent == 0 && previous != item {
+            let name = &source[nodes[previous].name_start..nodes[previous].name_end];
+            if (nodes[previous].kind == 1 || nodes[previous].kind == 35)
+                && current_name.content_eq(&name[0..name.len()]) {
+                let diagnostic = violation(1, nodes[item].name_start);
+                drop(diagnostic);
+                return 8;
+            }
+            previous = graph[previous].next_sibling;
+        }
+        if whole_program && (conditional_wait(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) != 0 || envelope_relay(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 || envelope_wait(&source[0..source.len()],
+                &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) != 0) {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program && nodes[item].kind == 35 {
+            let (payload, result) = awaited_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            drop(result);
+            if payload != 0 {
+                item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+                continue;
+            }
+        }
+        if whole_program && array_relay_contract(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program && nominal_relay_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        let after_entry = graph[graph[graph[item].first_child].next_sibling].next_sibling;
+        if whole_program && nodes[after_entry].kind == 3
+            && entry_effect_scalar(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item), 64) != 0 {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program && exported_blocking_envelope(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program && pooled_identity(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program && suspended_identity(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) != 0 {
+            item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+            continue;
+        }
+        if whole_program {
+            let (nominal, reference) = field_reborrow(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            drop(reference);
+            if nominal != 0 { item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item); continue; }
+            let (field, scalar) = returned_field(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            drop(scalar);
+            if field != 0 {
+                item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+                continue;
+            }
+            let (index, element) = returned_array_loan(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            drop(element);
+            if index != 0 {
+                item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+                continue;
+            }
+            let relay = map_relay_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            if relay == -8 { return 8; }
+            let vector = vector_relay_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            if relay > 0 || vector > 0 {
+                item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+                continue;
+            }
+        }
+        if whole_program && nominal_allocation_relay(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(item)) != 0 { item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item); continue; }
+        if whole_program {
+            let pools = conditional_pool_result(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            if pools == -8 { return 8; }
+            if pools > 0 { item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item); continue; }
+        }
+        let mut child = graph[item].first_child;
+        if borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) {
+            let shape = nodes[item].parent;
+            let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(shape));
+            if nodes[record].kind != 28 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+            let exclusive = borrow_mutable(&source[nodes[child].start..nodes[child].name_start]);
+            values[child] = CheckedValue { ty: 734, state: 1, mutable: false, target: copy(child),
+                loan_parent: 0, origin_call: shape, exclusive: exclusive };
+            child = graph[child].next_sibling;
+        }
+        let mut result: i64 = 0;
+        while child != 0 && nodes[child].kind != 2 {
+            if nodes[child].kind == 3 {
+                let annotation = graph[child].first_child;
+                if annotation == 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                let mut ty = check_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &tokens[0..tokens.len()], copy(annotation));
+                if ty == 0 && graph[annotation].first_child == 0 {
+                    let owned = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if borrowed_record_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(owned),0) {
+                        if !symbolic_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[..],copy(child),copy(child),copy(owned),0){return unsupported_declaration(&nodes[0..nodes.len()],item);}
+                        child=graph[child].next_sibling;continue;
+                    }
+                    if value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owned, 0, true) {
+                        values[child] = CheckedValue { ty: 300, state: 1, mutable: graph[child].mutable,
+                            target: 0, loan_parent: 0, origin_call: annotation, exclusive: false };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 {
+                    let option = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if option != 0 {
+                        if option_borrow(copy(option)) != 0 || option_allocation(copy(option)) != 0 || option_handle(copy(option)) != 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                        values[child] = CheckedValue { ty: option, state: 1, mutable: graph[child].mutable,
+                            target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 {
+                    let wrapped = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if wrapped != 0 {
+                        values[child] = CheckedValue { ty: wrapped, state: 1, mutable: graph[child].mutable,
+                            target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 {
+                    let record = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation), false);
+                    if record != 0 {
+                        values[child] = CheckedValue { ty: 734, state: 1, mutable: graph[child].mutable,
+                            target: copy(child), loan_parent: 0, origin_call: copy(record),
+                            exclusive: borrow_mutable(&source[nodes[annotation].start..nodes[record].start]) };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 {
+                    let (slice, element, exclusive) = slice_parameter(&source[0..source.len()],
+                        &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+                    if slice != 0 {
+                        // The descriptor binding may move; its caller-owned storage does not.
+                        values[annotation]=CheckedValue{ty:copy(slice),state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:copy(element),exclusive:copy(exclusive)};
+                        values[child] = CheckedValue { ty: slice, state: 1, mutable: graph[child].mutable,
+                            target: annotation, loan_parent: 0, origin_call: element, exclusive: exclusive };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 {
+                    ty = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation), true);
+                    if ty == 0 && whole_program {
+                        ty = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+                    }
+                    if ty == 0 && whole_program {
+                        let value = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(annotation), false);
+                        if (value >= 201 && value <= 207) || (value >= 297 && value <= 299) { ty = value; }
+                    }
+                }
+                if !whole_program && ty >= 101 && ty <= 107 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                let mut shape: u64 = 0;
+                if ty == 0 && whole_program {
+                    let (view, length) = array_ref_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if view < 0 { return 8; }
+                    ty = view;
+                    shape = length;
+                }
+                if ty == 0 && whole_program {
+                    let (array, length) = scalar_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if array < 0 { return 8; }
+                    ty = array;
+                    shape = length;
+                }
+                if ty == 0 && whole_program {
+                    ty = map_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+                    if ty == -8 { return 8; }
+                    if ty < 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                }
+                if ty == 0 && whole_program && nodes[item].kind == 35 {
+                    ty = vector_reference_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                }
+                if ty == 0 && nodes[item].kind == 35 {
+                    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if nodes[nominal].kind == 28 { ty = 300; }
+                }
+                if ty == 0 && whole_program {
+                    let allocation = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation), false);
+                    if allocation >= 201 && allocation <= 207 {
+                        values[annotation] = CheckedValue { ty: copy(allocation) - 100, state: 1, mutable: true,
+                            target: copy(child), loan_parent: 0, origin_call: 0, exclusive: false };
+                        values[child] = CheckedValue { ty: allocation, state: 1, mutable: graph[child].mutable,
+                            target: annotation, loan_parent: 0, origin_call: 0, exclusive: false };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
+                }
+                if ty == 0 && whole_program && graph[annotation].first_child != 0
+                    && nodes[annotation].name_end == nodes[annotation].name_start + 1
+                    && source[nodes[annotation].name_start] == 65 {
+                    let vector = vector_scalar_owner(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], graph[annotation].first_child);
+                    if vector != 0 { ty = vector + 100; }
+                }
+                if ty == 0 && whole_program && autonomous_enum(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(annotation)) != 0 {
+                    ty = 310;
+                    shape = copy(annotation);
+                }
+                if ty == 0 && whole_program && tuple_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(annotation)) {
+                    let checked = symbolic_tuple(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &mut values[..], copy(child), annotation);
+                    if checked < 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                    child = graph[child].next_sibling;
+                    continue;
+                }
+                if ty == 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                let target: u64 = if ty >= 20 && ty != 310 && !task_value(copy(ty)) && !is_scalar_array(copy(ty)) && !map_value(copy(ty)) { copy(child) } else { 0 };
+                let exclusive = ty >= 40 && !(ty >= 710 && ty < 720);
+                values[child] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[child].mutable || (ty >= 96 && ty <= 99) || (ty >= 101 && ty <= 107),
+                    target: target, loan_parent: 0, origin_call: shape, exclusive: exclusive };
+            } else if nodes[child].kind == 4 {
+                if has_void_result(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) {
+                    child = graph[child].next_sibling;
+                    continue;
+                }
+                result = check_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &tokens[0..tokens.len()], copy(child));
+                if result == 0 {
+                    result = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child));
+                }
+                if result == 0 {
+                    result = inline_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child));
+                    if result < 0 { return 8; }
+                }
+                if result == 0 {
+                    result = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child));
+                }
+                if result == 0 {
+                    result = reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child));
+                }
+                if result == 0 {
+                    result = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child), false);
+                    if result == 0 && whole_program {
+                        result = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child));
+                    }
+                    if result == 0 && whole_program && nodes[item].kind == 35 {
+                        result = growing_value_result(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(child));
+                        if result == -8 { return 8; }
+                        if result < 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                    }
+                    if ((result >= 297 && result <= 299) || vector_reference_owner(copy(result))) && nodes[item].kind == 35
+                        && growing_allocation_return(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) == 0 {
+                        return unsupported_declaration(&nodes[0..nodes.len()], item);
+                    }
+                    if result == 0 && whole_program {
+                        let (worker, constructor) = envelope_worker(&source[0..source.len()],
+                            &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item));
+                        drop(constructor);
+                        if worker != 0 { result = 310; }
+                        let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(child));
+                        if nodes[nominal].kind == 28 && graph[child].first_child == 0 { result = 300; }
+                        if result == 0 && autonomous_enum(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(child)) != 0 { result = 310; }
+                    }
+                    if result == 0 && whole_program {
+                        result = map_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(child));
+                        if result == -8 { return 8; }
+                        if result < 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                    }
+                    if result == 0 && whole_program && tuple_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(child)) { result = 475; }
+                    if result == 0 || (!whole_program && result >= 201 && result <= 207) { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                }
+            } else {
+                return unsupported_declaration(&nodes[0..nodes.len()], item);
+            }
+            child = graph[child].next_sibling;
+        }
+        if child == 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+        if vector_reference_owner(copy(result)) && !plain_vector_return(&nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(child)) { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+        let (status, stopped) = check_block(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[..],
+            &mut edges[..], child, copy(result), true);
+        if status == 8 { return 8; }
+        if status != 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+        if result != 0 && stopped == 0 {
+            let diagnostic = violation(1, nodes[item].end);
+            drop(diagnostic);
+            return 8;
+        }
+        item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+    }
+    0
+}

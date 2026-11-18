@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use bootstrap::calls::{bootstrap_callee,associated_callee,lookup_record_method};
+use bootstrap::places::resolve_record_receiver;
+//! Instantiate callable result graphs in the caller, independently of concrete record names.
+use bootstrap::model::{AstNode,StaticNode,CheckedValue,reserve_summary,constructor_field_value,constructor_arguments};
+use bootstrap::scalar_options::scalar_reference_annotation;
+use bootstrap::places::{slice_parameter,record_parameter};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::declarations::{nominal_declaration,verification_field};
+
+fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,formal:u64)->u64 {
+    if values[call].ty==5015 {
+        let mut entry=values[call].origin_call;
+        while entry!=0{if values[entry].origin_call==formal{return values[entry].target;}entry=values[entry].loan_parent;}
+        return 0;
+    }
+    let mut parameter=graph[function].first_child;
+    let callee=graph[call].first_child;
+    let mut argument=if nodes[call].kind==16{copy(callee)}else{graph[callee].next_sibling};
+    while nodes[parameter].kind==3 && argument!=0 {
+        if parameter==formal{return argument;}
+        parameter=graph[parameter].next_sibling;argument=graph[argument].next_sibling;
+    }0
+}
+
+// Resolve the external root of a place through local aliases and projections.
+fn external_place(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,place:u64,depth:u64)->u64 {
+    if place==0 || depth>=128{return 0;}
+    let kind=nodes[place].kind;
+    if kind==7 {
+        let binding=graph[place].binding;
+        if nodes[binding].kind==3 && nodes[binding].parent==function {
+            return actual_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),copy(binding));
+        }
+        return external_place(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),graph[binding].initializer,depth+1);
+    }
+    if kind==17 {
+        let owner=external_place(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),graph[place].first_child,depth+1);
+        let record=if values[owner].ty==734{values[owner].target}else{copy(owner)};
+        if values[record].ty==300 {
+            let marker=values[record].loan_parent;
+            let mut field=graph[values[record].origin_call].first_child;
+            while field!=0 {
+                if graph[field].field_name==graph[place].field_name {
+                    let value=if constructor_arguments(values[marker].ty){constructor_field_value(&graph[0..graph.len()],&values[0..values.len()],copy(marker),copy(field))}else{field};
+                    // A borrowed descriptor forwards its external target; an inline field
+                    // keeps the containing storage as its address root.
+                    if values[value].target!=0{return value;}return owner;
+                }field=graph[field].next_sibling;
+            }
+        }return owner;
+    }
+    if kind==13 || kind==14 || kind==19 || kind==18 {
+        return external_place(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),graph[place].first_child,depth+1);
+    }0
+}
+
+pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64)->i64 {
+    let reference=scalar_reference_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+    if reference!=0{return reference;}
+    let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(shape);drop(exclusive);
+    if slice!=0{return slice;}
+    if record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),false)!=0{return 734;}
+    let scalar=verify_primitive(&source[0..source.len()],nodes[annotation].name_start,nodes[annotation].name_end);
+    if scalar!=0{return scalar;}
+    let nominal=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+    if nodes[nominal].kind==28{return 300;}if nodes[nominal].kind==29{return 310;}0
+}
+
+fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
+    function:u64,call:u64,expression:u64,annotation:u64,depth:u64)->u64 {
+    if expression==0 || depth>=128{return 0;}
+    let kind=nodes[expression].kind;
+    if kind==19{return instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),graph[expression].first_child,copy(annotation),depth+1);}
+    if kind==7 {
+        let binding=graph[expression].binding;
+        if nodes[binding].kind!=3 || nodes[binding].parent!=function {
+            return instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),graph[binding].initializer,copy(annotation),depth+1);
+        }
+        let actual=actual_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),copy(binding));
+        if actual==0{return 0;}
+        let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return 0;}
+        let ty=values[actual].ty;let target=values[actual].target;let parent=values[actual].loan_parent;let origin=values[actual].origin_call;let exclusive=values[actual].exclusive;
+        values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,exclusive:exclusive};return slot;
+    }
+    if kind==37 {
+        let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,2);if slot==0{return 0;}
+        let marker=slot+1;let mut first:u64=0;let mut last:u64=0;
+        let nominal=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
+        let mut field=graph[expression].first_child;
+        while field!=0 {
+            let declared=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),copy(field));if declared==0{return 0;}
+            let member=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),graph[field].first_child,graph[declared].first_child,depth+1);if member==0{return 0;}
+            let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return 0;}
+            values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(member),loan_parent:0,origin_call:copy(field),exclusive:false};
+            if first==0{first=copy(entry);}else{let value=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:copy(entry),origin_call:template,exclusive:false};}
+            last=entry;field=graph[field].next_sibling;
+        }
+        values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,exclusive:false};
+        values[slot]=CheckedValue{ty:300,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(expression),exclusive:false};return slot;
+    }
+    let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+    let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return 0;}
+    if kind==13 || (ty>20 && ty<60) || ty==734 || (ty>=741 && ty<=749) {
+        let actual=external_place(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),copy(expression),0);if actual==0{return 0;}
+        let target=if values[actual].target==0{copy(actual)}else{values[actual].target};let parent=if values[actual].ty==734{values[actual].loan_parent}else{0};
+        let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
+        let origin=if ty==734{record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),false)}else if ty>=741 && ty<=749{shape}else{copy(expression)};
+        values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,exclusive:if kind==13{graph[expression].mutable}else{exclusive}};return slot;
+    }
+    if ty>=1 && ty<=9 {values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};return slot;}
+    0
+}
+
+/// Maps each returned tuple position to an independent immutable caller-side value graph.
+fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
+    function:u64,call:u64,annotation:u64,depth:u64)->i64 {
+    if depth>=128{return -9;}
+    let body=graph[annotation].next_sibling;let mut tail=graph[body].first_child;
+    while tail!=0 && graph[tail].next_sibling!=0{tail=graph[tail].next_sibling;}
+    if nodes[tail].kind!=6 && nodes[tail].kind!=10{return -9;}
+    let mut tuple=graph[tail].first_child;
+    let mut steps:u64=0;
+    while (nodes[tuple].kind==7 || nodes[tuple].kind==19) && steps<128 {
+        tuple=if nodes[tuple].kind==19{graph[tuple].first_child}else{graph[graph[tuple].binding].initializer};steps=steps+1;
+    }
+    if nodes[tuple].kind==15 || nodes[tuple].kind==16 {
+        let callee=summary_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(tuple));
+        if callee==0{return -9;}
+        let environment=instantiate_environment(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(tuple),copy(callee),depth+1);
+        if environment==0{return -9;}
+        let mut output=graph[callee].first_child;while nodes[output].kind==3{output=graph[output].next_sibling;}
+        let status=instantiate_tuple_inner(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(callee),copy(environment),output,depth+1);
+        if status<0{return status;}
+        let shape=values[environment].origin_call;let fields=values[environment].loan_parent;
+        values[call]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:fields,origin_call:shape,exclusive:false};return 475;
+    }
+    if nodes[tuple].kind!=20{return -9;}
+    let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return -9;}
+    let mut first:u64=0;let mut last:u64=0;let mut field=graph[annotation].first_child;let mut component=graph[tuple].first_child;
+    while field!=0 && component!=0 {
+        let value=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(component),copy(field),0);if value==0{return -9;}
+        let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return -9;}
+        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),exclusive:false};
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,exclusive:false};}
+        last=entry;field=graph[field].next_sibling;component=graph[component].next_sibling;
+    }
+    if field!=0 || component!=0{return -9;}
+    values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,exclusive:false};
+    values[call]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(annotation),exclusive:false};475
+}
+
+fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)->u64 {
+    let direct=bootstrap_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if direct!=0{return direct;}
+    let associated=associated_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if associated!=0{return associated;}
+    if nodes[call].kind!=16{return 0;}
+    let method=resolve_record_receiver(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(call));if method!=0{return method;}
+    let receiver=graph[call].first_child;let binding=graph[receiver].binding;
+    let annotation=graph[binding].type_node;
+    let record=record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),false);
+    let owner=if record!=0{nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],record)}else{nodes[nodes[binding].parent].parent};
+    lookup_record_method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&source[nodes[owner].name_start..nodes[owner].name_end],&source[nodes[call].name_start..nodes[call].name_end],true)
+}
+
+fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,outer:u64,call:u64,callee:u64,depth:u64)->u64 {
+    let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return 0;}
+    let mut formal=graph[callee].first_child;let name=graph[call].first_child;
+    let mut argument=if nodes[call].kind==16{copy(name)}else{graph[name].next_sibling};
+    let mut first:u64=0;let mut last:u64=0;
+    while nodes[formal].kind==3 && argument!=0 {
+        let value=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(outer),copy(argument),graph[formal].first_child,depth+1);if value==0{return 0;}
+        let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return 0;}
+        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(formal),exclusive:false};
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,exclusive:false};}
+        last=entry;formal=graph[formal].next_sibling;argument=graph[argument].next_sibling;
+    }
+    if argument!=0 || nodes[formal].kind==3{return 0;}
+    values[marker]=CheckedValue{ty:5015,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,exclusive:false};marker
+}
+
+/// Instantiates return dependencies with one independent caller environment per activation.
+pub fn instantiate_tuple(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,call:u64,annotation:u64)->i64 {
+    let mut field=graph[annotation].first_child;let mut dependent=false;
+    while field!=0 {
+        let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field));
+        if ty<1 || ty>9{dependent=true;}field=graph[field].next_sibling;
+    }
+    if !dependent{return -9;}
+    instantiate_tuple_inner(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(annotation),0)
+}
+
+/// Accepts finite record graphs with ordinary scalar, record and reference fields.
+pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],nominal:u64,depth:u64)->bool {
+    if nodes[nominal].kind!=28 || depth>=128{return false;}
+    let mut field=graph[nominal].first_child;
+    while field!=0 {
+        let annotation=graph[field].first_child;
+        let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+        if ty==300 {
+            let nested=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
+            if !borrowed_record_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nested,depth+1){return false;}
+        }else if !((ty>=1 && ty<=9)||(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)){return false;}
+        field=graph[field].next_sibling;
+    }true
+}
+
+/// Gives an owned record parameter independent symbolic external roots for its borrowed fields.
+pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],point:u64,formal:u64,nominal:u64,depth:u64)->bool {
+    if depth>=128{return false;}
+    let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return false;}
+    let mut first:u64=0;let mut last:u64=0;let mut field=graph[nominal].first_child;
+    while field!=0 {
+        let annotation=graph[field].first_child;
+        let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+        let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,3);if entry==0{return false;}
+        let value=entry+1;let root=entry+2;
+        if ty==300 {
+            let nested=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+            if !symbolic_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(value),copy(formal),nested,depth+1){return false;}
+        }else {
+            let borrowed=(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749);
+            let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
+            let origin=if ty==734{graph[annotation].first_child}else{shape};
+            let exclusive=exclusive || (ty>40 && ty<60) || (ty==734 && source[nodes[annotation].start+1]==109);
+            values[root]=CheckedValue{ty:5018,state:1,mutable:copy(exclusive),target:copy(formal),loan_parent:0,origin_call:annotation,exclusive:false};
+            values[value]=CheckedValue{ty:ty,state:1,mutable:false,target:if borrowed{root}else{0},loan_parent:0,origin_call:origin,exclusive:exclusive};
+        }
+        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),exclusive:false};
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,exclusive:false};}
+        last=entry;field=graph[field].next_sibling;
+    }
+    values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,exclusive:false};
+    values[point]=CheckedValue{ty:300,state:1,mutable:graph[formal].mutable,target:0,loan_parent:copy(marker),origin_call:copy(nominal),exclusive:false};true
+}

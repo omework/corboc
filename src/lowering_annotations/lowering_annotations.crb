@@ -1,0 +1,193 @@
+use bootstrap::results::result_annotation;
+use bootstrap::process_arguments::{argument_text_type, shared_text_annotation};
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::scalar::{verify_primitive, integer_value};
+use bootstrap::tasks::scalar_handle_type;
+use bootstrap::codegen::datastack_property;
+use bootstrap::places::inline_array_type;
+use bootstrap::lowering_types::{slice_code, array_vector_code};
+use bootstrap::lowering_types::{signed, scalar_reference, array_code, tuple_code, wrap_pool, task_code, map_code, option_code};
+
+pub fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    let mut i: usize = 0;
+    while i < a.len() {
+        if a[i] != b[i] { return false; }
+        i = i + 1;
+    }
+    true
+}
+
+pub fn word(source: &[u8], nodes: &[AstNode], node: u64, spelling: &[u8]) -> bool {
+    let name = &source[nodes[node].name_start..nodes[node].name_end];
+    same_bytes(&name[0..name.len()], &spelling[0..spelling.len()])
+}
+
+pub fn nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], name: u64) -> u64 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 28 || nodes[item].kind == 29 {
+            let spelling = &source[nodes[item].name_start..nodes[item].name_end];
+            if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(name), &spelling[0..spelling.len()]) {
+                return item;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+pub fn annotation_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    if annotation == 0 { return 0; }
+    if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) {
+        return argument_text_type();
+    }
+    let general_result = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if general_result != 0 { return general_result; }
+    let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+    if handle >= 620 && handle <= 629 { return 7200000 + handle - 620; }
+    if handle >= 640 && handle <= 649 { return 7400000 + handle - 640; }
+    let inner = graph[annotation].first_child;
+    if inner != 0 {
+        let map: [u8;7] = [72,97,115,104,77,97,112];
+        let option: [u8;6] = [79,112,116,105,111,110];
+        let next = graph[inner].next_sibling;
+        if next != 0 && graph[next].next_sibling == 0
+            && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(annotation), &map[..]) {
+            let key = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+            let value = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], next);
+            return map_code(key, value);
+        }
+        if next == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(annotation), &option[..]) {
+            let value = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+            return option_code(value);
+        }
+    }
+
+    if inner != 0 && source[nodes[annotation].start] != 40 && source[nodes[annotation].start] != 38 {
+        let runtime_handle: [u8;15] = [114,117,110,116,105,109,101,58,58,72,97,110,100,108,101];
+        let async_handle: [u8;20] = [114,117,110,116,105,109,101,58,58,65,115,121,110,99,72,97,110,100,108,101];
+        let result: [u8;6] = [82,101,115,117,108,116];
+        let mut prefix_end = nodes[annotation].start;
+        while prefix_end < nodes[inner].start && source[prefix_end] != 60 { prefix_end = prefix_end + 1; }
+        let prefix = &source[nodes[annotation].start..prefix_end];
+        let next = graph[inner].next_sibling;
+        let kind = if next == 0 && prefix.content_eq(&runtime_handle[..]) { 2 }
+            else if next == 0 && prefix.content_eq(&async_handle[..]) { 4 }
+            else if next != 0 && graph[next].next_sibling == 0 && prefix.content_eq(&result[..]) {
+                let error: [u8;14] = [114,117,110,116,105,109,101,58,58,69,114,114,111,114];
+                let error_text = &source[nodes[next].start..nodes[next].end];
+                if error_text.content_eq(&error[..]) { 3 } else { 0 }
+            } else { 0 };
+        if kind != 0 {
+            let payload = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(inner));
+            return task_code(kind, payload);
+        }
+    }
+
+    if source[nodes[annotation].start] == 40 {
+        if inner == 0 { return 0; }
+        let mut ty: i64 = 0;
+        let mut part = copy(inner);
+        let mut arity: u64 = 0;
+        while part != 0 {
+            let field = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(part));
+            if field <= 0 { return -1; }
+            ty = tuple_code(ty, field);
+            if ty < 0 { return -1; }
+            part = graph[part].next_sibling;
+            arity = arity + 1;
+        }
+        if arity < 2 || arity > 3 { return -1; }
+        return ty;
+    }
+    let allocation: [u8;1] = [65];
+    if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(annotation), &allocation[..])
+        && inner != 0 && graph[inner].next_sibling == 0 {
+        let payload = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+        return wrap_pool(payload, true);
+    }
+    let vector: [u8;6] = [86,101,99,116,111,114];
+    if inner != 0 && graph[inner].next_sibling == 0
+        && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(annotation), &vector[..]) {
+        let element = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+        let array = inline_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(inner));
+        if array >= 10101 { return array_vector_code(array); }
+        if element > 0 && element < 140 { return 7600000 + element; }
+        if element > 6000000 && element <= 6000009 { return 1600200 + element; }
+        if element > 6000100 && element < 6200100 { return 1999900 + element; }
+        if element >= 7200000 && element <= 7200009 { return 400300 + element; }
+        if element >= 7400000 && element <= 7400009 { return 200310 + element; }
+        if element > 3000000 && element < 3200000 { return 4800000 + element; }
+        return -1;
+    }
+    if source[nodes[annotation].start] == 91 {
+        let element = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(inner));
+        let length = integer_value(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], graph[inner].next_sibling);
+        if !length.known || length.negative { return -1; }
+        return fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], element, length.magnitude);
+    }
+    if source[nodes[annotation].start] == 38 {
+        if inner == 0 { return -1; }
+        let pool: [u8;4] = [80,111,111,108];
+        if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(inner), &pool[..]) {
+            let payload = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], graph[inner].first_child);
+            return wrap_pool(payload, false);
+        }
+        if source[nodes[inner].start] == 91 {
+            if graph[graph[inner].first_child].next_sibling == 0 {
+                let element = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    graph[inner].first_child);
+                return slice_code(element);
+            }
+            let shape = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+            if shape < 10000 { return -1; }
+            return shape + 1000000;
+        }
+        let mut byte = nodes[annotation].start + 1;
+        // The lexer can represent the adjacent ampersands as one token.
+        let adjacent = source[byte] == 38 && byte < nodes[inner].start;
+        if adjacent { byte = byte + 1; }
+        while source[byte] == 32 || source[byte] == 9 || source[byte] == 10 || source[byte] == 13 {
+            byte = byte + 1;
+        }
+        let mutable = source[byte] == 109 && byte < nodes[inner].start;
+        if source[nodes[inner].start] == 38 {
+            let referent = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
+            return scalar_reference(referent, mutable);
+        }
+        if graph[inner].first_child != 0 { return -1; }
+        let scalar = verify_primitive(&source[0..source.len()], nodes[inner].name_start, nodes[inner].name_end);
+        if scalar == 0 {
+            let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], inner);
+            if record == 0 { return -1; }
+            return 4000000 + signed(record);
+        }
+        let loan = scalar_reference(scalar, mutable);
+        if adjacent { return scalar_reference(loan, false); }
+        return loan;
+    }
+    if inner != 0 { return -1; }
+    let scalar = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+    if scalar != 0 { return scalar; }
+    let string: [u8;6] = [83,116,114,105,110,103];
+    if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(annotation), &string[..]) { return 7600140; }
+    let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+    if record != 0 { return 3000000 + signed(record); }
+    let unit: [u8;4] = [86,111,105,100];
+    if word(&source[0..source.len()], &nodes[0..nodes.len()], annotation, &unit[..]) { return 0; }
+    return -1;
+}
+
+
+pub fn fixed_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], element: i64, length: u64) -> i64 {
+    let size: [u8;4] = [115,105,122,101];
+    let sized = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &size[..]) != 0;
+    array_code(element, length, sized)
+}

@@ -1,0 +1,2937 @@
+use bootstrap::lowering_types::unsigned as raw_offset;
+use bootstrap::lowering_types::signed as source_offset;
+use bootstrap::pipelines::{iterator_factory, specialize_factory,has_pipeline, specialize_pipelines};
+use bootstrap::generics::{specialize_structs, deferred_iterator};
+// Keep the compiler's workspace large enough on hosts with a smaller per-core default.
+#(if: target.os == "linux" || target.os == "windows")
+    #(datastack: size=1G)
+#(endif)
+
+use bootstrap::lowering_program::lower_program;
+use bootstrap::codegen::emit_pool_c;
+use bootstrap::model::{Token, AstNode, StaticNode, LayoutVisibility, hex_digit, token_at};
+use bootstrap::verify_tree::check_tree;
+use bootstrap::package_io::read_source;
+use bootstrap::packages::{PackageFile, read_package};
+use bootstrap::package_link::{link_package, prepare_native_exports};
+use std::env::args;
+#(if: target.os == "macos" && target.arch == "aarch64")
+    use bootstrap::build_driver::{stdlib_path, workspace_path, redirect_stdout, restore_stdout,
+        toolchain, publish, clean, diagnostic};
+    use bootstrap::packages::append;
+#(endif)
+
+fn name_start(byte: u8) -> bool {
+    (byte >= 97 && byte <= 122) || (byte >= 65 && byte <= 90) || byte == 95
+}
+
+fn digit(byte: u8) -> bool {
+    byte >= 48 && byte <= 57
+}
+
+// Decode one UTF-8 scalar. A zero width signals invalid input.
+fn utf8_scalar(source: &[u8], start: usize) -> (usize, u32) {
+    let lead = source[start];
+    if lead >> 7 == 0 { return (1, lead as u32); }
+
+    let mut width: usize = 0;
+    if lead >= 194 && lead <= 223 { width = 2; }
+    if lead >= 224 && lead <= 239 { width = 3; }
+    if lead >= 240 && lead <= 244 { width = 4; }
+    if width == 0 || width > source.len() - start { return (0, 0); }
+
+    let second = source[start + 1];
+    if lead == 224 && second < 160 { return (0, 0); }
+    if lead == 237 && second >= 160 { return (0, 0); }
+    if lead == 240 && second < 144 { return (0, 0); }
+    if lead == 244 && second >= 144 { return (0, 0); }
+    let mut scalar = (lead & (127 / (1 << width))) as u32;
+    let mut offset: usize = 1;
+    while offset < width {
+        let byte = source[start + offset];
+        if byte >> 6 != 2 { return (0, 0); }
+        scalar = (scalar << 6) | ((byte & 63) as u32);
+        offset = offset + 1;
+    }
+    (width, scalar)
+}
+
+// Read four hexadecimal digits. 65536 signals an invalid UTF-16 unit.
+fn hex_unit(source: &[u8], start: usize) -> u32 {
+    if source.len() - start < 4 { return 65536; }
+    let mut unit: u32 = 0;
+    let mut offset: usize = 0;
+    while offset < 4 {
+        let value = hex_digit(source[start + offset]);
+        if value == 16 { return 65536; }
+        unit = (unit << 4) | value;
+        offset = offset + 1;
+    }
+    unit
+}
+
+// Return the next escape position, or its diagnostic code and byte.
+fn scan_escape(source: &[u8], start: usize) -> (usize, i64, usize) {
+    let marker = start + 1;
+    if marker == source.len() { return (0, 4, marker); }
+    let byte = source[marker];
+    if byte == 34 || byte == 92 || byte == 47 || byte == 98 || byte == 102
+        || byte == 110 || byte == 114 || byte == 116 { return (start + 2, 0, 0); }
+    if byte != 117 { return (0, 4, marker); }
+
+    let unit = hex_unit(&source[0..source.len()], marker + 1);
+    if unit == 65536 { return (0, 5, marker); }
+    if unit >= 56320 && unit <= 57343 { return (0, 6, marker + 4); }
+    if unit < 55296 || unit > 56319 { return (start + 6, 0, 0); }
+    if source.len() - start < 8 || source[start + 6] != 92 || source[start + 7] != 117 {
+        return (0, 7, marker + 4);
+    }
+    let low = hex_unit(&source[0..source.len()], start + 8);
+    if low == 65536 { return (0, 5, marker + 6); }
+    if low < 56320 || low > 57343 { return (0, 8, marker + 6); }
+    return (start + 12, 0, 0);
+}
+
+fn name_kind(spelling: &[u8]) -> i64 {
+    let fn_word: [u8; 2] = [102, 110];
+    let let_word: [u8; 3] = [108, 101, 116];
+    let mut_word: [u8; 3] = [109, 117, 116];
+    let return_word: [u8; 6] = [114, 101, 116, 117, 114, 110];
+    let true_word: [u8; 4] = [116, 114, 117, 101];
+    let false_word: [u8; 5] = [102, 97, 108, 115, 101];
+    if spelling.content_eq(&fn_word[..]) { return 7; }
+    if spelling.content_eq(&let_word[..]) { return 15; }
+    if spelling.content_eq(&mut_word[..]) { return 16; }
+    if spelling.content_eq(&return_word[..]) { return 17; }
+    if spelling.content_eq(&true_word[..]) || spelling.content_eq(&false_word[..]) { return 18; }
+    let as_word: [u8; 2] = [97, 115];
+    if spelling.content_eq(&as_word[..]) { return 41; }
+    let word_44: [u8; 2] = [105, 102];
+    if spelling.content_eq(&word_44[..]) { return 44; }
+    let word_45: [u8; 4] = [101, 108, 115, 101];
+    if spelling.content_eq(&word_45[..]) { return 45; }
+    let word_46: [u8; 5] = [119, 104, 105, 108, 101];
+    if spelling.content_eq(&word_46[..]) { return 46; }
+    let word_47: [u8; 5] = [98, 114, 101, 97, 107];
+    if spelling.content_eq(&word_47[..]) { return 47; }
+    let word_48: [u8; 8] = [99, 111, 110, 116, 105, 110, 117, 101];
+    if spelling.content_eq(&word_48[..]) { return 48; }
+    let word_49: [u8; 4] = [108, 111, 111, 112];
+    if spelling.content_eq(&word_49[..]) { return 49; }
+    let word_50: [u8; 5] = [121, 105, 101, 108, 100];
+    if spelling.content_eq(&word_50[..]) { return 50; }
+    let await_word: [u8; 5] = [97, 119, 97, 105, 116];
+    if spelling.content_eq(&await_word[..]) { return 61; }
+    let async_word: [u8; 5] = [97, 115, 121, 110, 99];
+    if spelling.content_eq(&async_word[..]) { return 60; }
+    let enum_word: [u8; 4] = [101, 110, 117, 109];
+    if spelling.content_eq(&enum_word[..]) { return 59; }
+    let struct_word: [u8; 6] = [115, 116, 114, 117, 99, 116];
+    if spelling.content_eq(&struct_word[..]) { return 58; }
+    let pub_word: [u8; 3] = [112, 117, 98];
+    if spelling.content_eq(&pub_word[..]) { return 57; }
+    let use_word: [u8; 3] = [117, 115, 101];
+    if spelling.content_eq(&use_word[..]) { return 56; }
+    let match_word: [u8; 5] = [109, 97, 116, 99, 104];
+    if spelling.content_eq(&match_word[..]) { return 62; }
+    let const_word: [u8; 5] = [99, 111, 110, 115, 116];
+    if spelling.content_eq(&const_word[..]) { return 81; }
+    let impl_word: [u8; 4] = [105, 109, 112, 108];
+    if spelling.content_eq(&impl_word[..]) { return 65; }
+    let self_word: [u8; 4] = [115, 101, 108, 102];
+    if spelling.content_eq(&self_word[..]) { return 66; }
+    let unchecked_word: [u8; 9] = [117, 110, 99, 104, 101, 99, 107, 101, 100];
+    if spelling.content_eq(&unchecked_word[..]) { return 70; }
+    let move_word: [u8; 4] = [109, 111, 118, 101];
+    if spelling.content_eq(&move_word[..]) { return 72; }
+    let extern_word: [u8; 6] = [101, 120, 116, 101, 114, 110];
+    if spelling.content_eq(&extern_word[..]) { return 73; }
+    let unsafe_word: [u8; 6] = [117, 110, 115, 97, 102, 101];
+    if spelling.content_eq(&unsafe_word[..]) { return 76; }
+    1
+}
+
+// The expression parser uses these same token numbers to determine precedence.
+// Keep right angle brackets separate so nested generic types can end next to '='.
+fn assignment_width(tokens: &[Token], index: u64) -> u64 {
+    let kind = tokens[index].kind;
+    if kind == 13 || (kind >= 51 && kind <= 55) || (kind >= 77 && kind <= 80) { return 1; }
+    if kind == 24 && tokens[index + 1].kind == 24 && tokens[index + 2].kind == 13
+        && tokens[index].end == tokens[index + 1].start
+        && tokens[index + 1].end == tokens[index + 2].start { return 3; }
+    0
+}
+
+fn punctuation(byte: u8, next: u8) -> (i64, usize) {
+    if byte == 46 && next == 46 { return (42, 2); }
+    if byte == 58 && next == 58 { return (43, 2); }
+    if next == 61 {
+        if byte == 43 { return (51, 2); }
+        if byte == 45 { return (52, 2); }
+        if byte == 42 { return (53, 2); }
+        if byte == 47 { return (54, 2); }
+        if byte == 37 { return (55, 2); }
+        if byte == 38 { return (77, 2); }
+        if byte == 124 { return (78, 2); }
+        if byte == 94 { return (79, 2); }
+    }
+    if byte == 61 && next == 62 { return (63, 2); }
+    if byte == 45 && next == 62 { return (12, 2); }
+    if byte == 124 && next == 124 { return (30, 2); }
+    if byte == 38 && next == 38 { return (31, 2); }
+    if byte == 61 && next == 61 { return (32, 2); }
+    if byte == 33 && next == 61 { return (33, 2); }
+    if byte == 60 && next == 61 { return (34, 2); }
+    if byte == 60 && next == 60 { return (36, 2); }
+    if byte == 40 { return (2, 1); }
+    if byte == 41 { return (3, 1); }
+    if byte == 123 { return (4, 1); }
+    if byte == 125 { return (5, 1); }
+    if byte == 47 { return (6, 1); }
+    if byte == 58 { return (10, 1); }
+    if byte == 44 { return (11, 1); }
+    if byte == 61 { return (13, 1); }
+    if byte == 59 { return (14, 1); }
+    if byte == 43 { return (19, 1); }
+    if byte == 45 { return (20, 1); }
+    if byte == 42 { return (21, 1); }
+    if byte == 37 { return (22, 1); }
+    if byte == 60 { return (23, 1); }
+    if byte == 62 { return (24, 1); }
+    if byte == 38 { return (25, 1); }
+    if byte == 94 { return (26, 1); }
+    if byte == 124 { return (27, 1); }
+    if byte == 33 { return (28, 1); }
+    if byte == 126 { return (29, 1); }
+    if byte == 46 { return (38, 1); }
+    if byte == 91 { return (39, 1); }
+    if byte == 93 { return (40, 1); }
+    if byte == 64 { return (67, 1); }
+    if byte == 35 { return (71, 1); }
+    if byte == 63 { return (84, 1); }
+    return (0, 1);
+}
+
+
+fn annotation_word(word: &[u8]) -> i64 {
+    let key_1: [u8; 9] = [100, 97, 116, 97, 115, 116, 97, 99, 107];
+    if word.content_eq(&key_1[..]) { return 1; }
+    let key_2: [u8; 12] = [115, 116, 97, 99, 107, 95, 114, 101, 103, 105, 111, 110];
+    if word.content_eq(&key_2[..]) { return 2; }
+    let key_3: [u8; 10] = [102, 114, 101, 101, 95, 112, 97, 103, 101, 115];
+    if word.content_eq(&key_3[..]) { return 3; }
+    let key_4: [u8; 4] = [108, 111, 99, 107];
+    if word.content_eq(&key_4[..]) { return 4; }
+    let key_5: [u8; 6] = [98, 114, 97, 110, 99, 104];
+    if word.content_eq(&key_5[..]) { return 5; }
+    let key_6: [u8; 2] = [111, 110];
+    if word.content_eq(&key_6[..]) { return 6; }
+    let key_7: [u8; 14] = [116, 104, 114, 111, 117, 103, 104, 95, 114, 101, 115, 117, 108, 116];
+    if word.content_eq(&key_7[..]) { return 7; }
+    let key_8: [u8; 4] = [106, 111, 105, 110];
+    if word.content_eq(&key_8[..]) { return 8; }
+    let key_9: [u8; 6] = [114, 101, 115, 117, 108, 116];
+    if word.content_eq(&key_9[..]) { return 9; }
+    let key_10: [u8; 4] = [115, 105, 122, 101];
+    if word.content_eq(&key_10[..]) { return 10; }
+    let key_11: [u8; 17] = [114, 101, 103, 105, 111, 110, 95, 115, 116, 97, 99, 107, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_11[..]) { return 11; }
+    let key_12: [u8; 11] = [114, 101, 103, 105, 111, 110, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_12[..]) { return 12; }
+    let key_13: [u8; 17] = [114, 101, 99, 108, 97, 105, 109, 95, 116, 104, 114, 101, 115, 104, 111, 108, 100];
+    if word.content_eq(&key_13[..]) { return 13; }
+    let key_14: [u8; 24] = [114, 101, 103, 105, 111, 110, 95, 114, 101, 99, 108, 97, 105, 109, 95, 116, 104, 114, 101, 115, 104, 111, 108, 100];
+    if word.content_eq(&key_14[..]) { return 14; }
+    let key_15: [u8; 8] = [109, 97, 120, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_15[..]) { return 15; }
+    let key_16: [u8; 5] = [99, 111, 117, 110, 116];
+    if word.content_eq(&key_16[..]) { return 16; }
+    let key_17: [u8; 1] = [75];
+    if word.content_eq(&key_17[..]) { return 17; }
+    let key_18: [u8; 1] = [77];
+    if word.content_eq(&key_18[..]) { return 18; }
+    let key_19: [u8; 1] = [71];
+    if word.content_eq(&key_19[..]) { return 19; }
+    let pool_key: [u8; 4] = [112, 111, 111, 108];
+    if word.content_eq(&pool_key[..]) { return 20; }
+    let new_key: [u8; 3] = [110, 101, 119];
+    if word.content_eq(&new_key[..]) { return 21; }
+    let annotation_27: [u8; 4] = [116, 114, 117, 101];
+    if word.content_eq(&annotation_27[..]) { return 27; }
+    let annotation_26: [u8; 1] = [67];
+    if word.content_eq(&annotation_26[..]) { return 26; }
+    let annotation_25: [u8; 16] = [97, 115, 121, 110, 99, 95, 112, 111, 111, 108, 95, 115, 105, 122, 101, 115];
+    if word.content_eq(&annotation_25[..]) { return 25; }
+    let annotation_24: [u8; 9] = [100, 105, 114, 101, 99, 116, 105, 118, 101];
+    if word.content_eq(&annotation_24[..]) { return 24; }
+    let annotation_23: [u8; 4] = [119, 105, 116, 104];
+    if word.content_eq(&annotation_23[..]) { return 23; }
+    let annotation_22: [u8; 4] = [116, 121, 112, 101];
+    if word.content_eq(&annotation_22[..]) { return 22; }
+    let try_slice_key: [u8; 9] = [116, 114, 121, 95, 115, 108, 105, 99, 101];
+    if word.content_eq(&try_slice_key[..]) { return 28; }
+    let historical_region: [u8; 21] = [115,116,97,99,107,95,114,101,103,105,111,110,95,109,97,120,95,115,105,122,101];
+    if word.content_eq(&historical_region[..]) { return 30; }
+    0
+}
+
+fn builtin_or_placeholder(word: &[u8]) -> bool {
+    let word_0: [u8; 1] = [95];
+    if word.content_eq(&word_0[..]) { return true; }
+    let word_1: [u8; 7] = [114,117,110,116,105,109,101];
+    if word.content_eq(&word_1[..]) { return true; }
+    let word_2: [u8; 4] = [98,111,111,108];
+    if word.content_eq(&word_2[..]) { return true; }
+    let word_3: [u8; 4] = [86,111,105,100];
+    if word.content_eq(&word_3[..]) { return true; }
+    let word_4: [u8; 3] = [105,51,50];
+    if word.content_eq(&word_4[..]) { return true; }
+    let word_5: [u8; 3] = [105,54,52];
+    if word.content_eq(&word_5[..]) { return true; }
+    let word_6: [u8; 2] = [117,56];
+    if word.content_eq(&word_6[..]) { return true; }
+    let word_7: [u8; 3] = [117,49,54];
+    if word.content_eq(&word_7[..]) { return true; }
+    let word_8: [u8; 3] = [117,51,50];
+    if word.content_eq(&word_8[..]) { return true; }
+    let word_9: [u8; 3] = [117,54,52];
+    if word.content_eq(&word_9[..]) { return true; }
+    let word_10: [u8; 5] = [117,115,105,122,101];
+    if word.content_eq(&word_10[..]) { return true; }
+    let word_11: [u8; 4] = [97,100,100,114];
+    if word.content_eq(&word_11[..]) { return true; }
+    let word_12: [u8; 3] = [102,51,50];
+    if word.content_eq(&word_12[..]) { return true; }
+    let word_13: [u8; 3] = [102,54,52];
+    if word.content_eq(&word_13[..]) { return true; }
+    let word_14: [u8; 3] = [115,116,114];
+    if word.content_eq(&word_14[..]) { return true; }
+    let word_15: [u8; 4] = [99,104,97,114];
+    if word.content_eq(&word_15[..]) { return true; }
+    let word_16: [u8; 6] = [83,116,114,105,110,103];
+    if word.content_eq(&word_16[..]) { return true; }
+    let word_17: [u8; 22] = [78,117,109,101,114,105,99,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114];
+    if word.content_eq(&word_17[..]) { return true; }
+    let word_18: [u8; 1] = [65];
+    if word.content_eq(&word_18[..]) { return true; }
+    let word_19: [u8; 4] = [80,111,111,108];
+    if word.content_eq(&word_19[..]) { return true; }
+    let word_20: [u8; 6] = [86,101,99,116,111,114];
+    if word.content_eq(&word_20[..]) { return true; }
+    let word_21: [u8; 6] = [79,112,116,105,111,110];
+    if word.content_eq(&word_21[..]) { return true; }
+    let word_22: [u8; 6] = [82,101,115,117,108,116];
+    if word.content_eq(&word_22[..]) { return true; }
+    let word_23: [u8; 5] = [77,117,116,101,120];
+    if word.content_eq(&word_23[..]) { return true; }
+    let word_24: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
+    if word.content_eq(&word_24[..]) { return true; }
+    let word_25: [u8; 7] = [72,97,115,104,77,97,112];
+    if word.content_eq(&word_25[..]) { return true; }
+    let adapter: [u8; 3] = [73,116,101];
+    word.content_eq(&adapter[..])
+}
+
+fn lexical_name(kind: i64) -> bool {
+    kind == 1 || kind == 7 || (kind >= 15 && kind <= 18) || kind == 41
+        || (kind >= 44 && kind <= 50) || (kind >= 56 && kind <= 62)
+        || kind == 65 || kind == 66 || kind == 70 || kind == 72 || kind == 73 || kind == 76
+}
+
+fn declaration_name(token: &Token) -> bool {
+    let kind = (*token).kind;
+    (*token).annotation >= 0 && (kind == 1 || kind == 50 || kind == 56 || kind == 57
+        || kind == 60 || kind == 61 || kind == 70 || kind == 72 || kind == 73 || kind == 76)
+}
+
+fn whitespace(byte: u8) -> bool {
+    byte == 32 || byte == 10 || byte == 9 || byte == 13 || byte == 12
+}
+
+// The reference lexer permits Unicode whitespace between @asm and its brace.
+fn asm_open(source: &[u8], after_name: usize) -> usize {
+    let mut cursor = after_name;
+    while cursor < source.len() {
+        if source[cursor] == 123 { return cursor; }
+        let (width, scalar) = utf8_scalar(&source[0..source.len()], copy(cursor));
+        if !((scalar >= 9 && scalar <= 13) || scalar == 32 || scalar == 133
+            || scalar == 160 || scalar == 5760 || (scalar >= 8192 && scalar <= 8202)
+            || scalar == 8232 || scalar == 8233 || scalar == 8239 || scalar == 8287 || scalar == 12288) {
+            break;
+        }
+        cursor = cursor + width;
+    }
+    0
+}
+
+// Each operand receives its own parser token after the opaque assembly token.
+struct AssemblyLex {
+    end: u64,
+    used: u64,
+    error: i64,
+    offset: u64,
+}
+
+fn lex_assembly(source: &[u8], tokens: &mut [Token], open: usize, position: usize) -> AssemblyLex {
+    let mut cursor = open + 1;
+    let mut count = position + 1;
+    while cursor < source.len() {
+        let byte = source[cursor];
+        if byte == 125 { return AssemblyLex { end: (cursor + 1) as u64, used: count as u64, error: 0, offset: 0 }; }
+        if byte == 47 && cursor + 1 < source.len() && source[cursor + 1] == 47 {
+            while cursor < source.len() && source[cursor] != 10 { cursor = cursor + 1; }
+            continue;
+        }
+        if byte == 36 && cursor + 1 < source.len() && source[cursor + 1] == 123 {
+            let dollar = copy(cursor);
+            cursor = cursor + 2;
+            let start = copy(cursor);
+            let mut valid = cursor < source.len() && name_start(source[cursor]);
+            while cursor < source.len() && source[cursor] != 125 {
+                if !(name_start(source[cursor]) || digit(source[cursor])) { valid = false; }
+                cursor = cursor + 1;
+            }
+            if cursor == source.len() { return AssemblyLex { end: 0, used: 0, error: 9, offset: dollar as u64 }; }
+            if !valid { return AssemblyLex { end: 0, used: 0, error: 10, offset: start as u64 }; }
+            if count >= tokens.len() - 3 { return AssemblyLex { end: 0, used: 0, error: 13, offset: start as u64 }; }
+            tokens[count] = Token { nominal: false, annotation: 0, kind: 69, start: start as u64, end: cursor as u64 };
+            count = count + 1;
+        }
+        cursor = cursor + 1;
+    }
+    AssemblyLex { end: 0, used: 0, error: 11, offset: cursor as u64 }
+}
+
+// Foreign C remains opaque to the Corbo grammar. Only header paths and ${bindings} cross the boundary.
+fn c_space(source:&[u8], after:usize)->usize {
+    let mut at=after; while at<source.len() && whitespace(source[at]) { at=at+1; } at
+}
+
+fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)->AssemblyLex {
+    let mut at=c_space(&source[0..source.len()],after_name); let mut count=position+1;
+    if at<source.len() && source[at]==40 {
+        at=c_space(&source[0..source.len()],at+1);
+        let keyword:[u8;8]=[105,110,99,108,117,100,101,115];
+        if source.len()-at<8 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        let key=&source[at..at+8]; if !key.content_eq(&keyword[..]) { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+8);
+        if at==source.len() || source[at]!=61 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        if at==source.len() || source[at]!=123 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        while at<source.len() && source[at]!=125 {
+            if source[at]!=34 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            let start=at+1;at=copy(start);
+            while at<source.len() && source[at]!=34 {
+                let b=source[at];
+                if !(name_start(copy(b)) || digit(copy(b)) || b==46 || b==47 || b==45 || b==58) {
+                    return AssemblyLex{end:0,used:0,error:14,offset:at as u64};
+                } at=at+1;
+            }
+            if at==source.len() || at==start || count>=tokens.len()-3 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            tokens[count]=Token{nominal:false,annotation:0,kind:83,start:start as u64,end:at as u64};count=count+1;
+            at=c_space(&source[0..source.len()],at+1);
+            if at<source.len() && source[at]==125 { break; }
+            if at==source.len() || source[at]!=44 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            at=c_space(&source[0..source.len()],at+1);
+        }
+        if at==source.len() { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        if at==source.len() || source[at]!=41 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+    }
+    if at==source.len() || source[at]!=123 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+    let open=copy(at);at=at+1;let mut depth:u64=1;
+    while at<source.len() {
+        let b=source[at];
+        if b==34 || b==39 {
+            let quote=copy(b);at=at+1;
+            while at<source.len() && source[at]!=quote {
+                if source[at]==92 { at=at+1; } if at<source.len(){at=at+1;}
+            }
+            if at==source.len(){break;}at=at+1;continue;
+        }
+        if b==47 && at+1<source.len() && source[at+1]==47 {
+            while at<source.len() && source[at]!=10 {at=at+1;}continue;
+        }
+        if b==47 && at+1<source.len() && source[at+1]==42 {
+            at=at+2;while at+1<source.len() && !(source[at]==42 && source[at+1]==47){at=at+1;}
+            if at+1>=source.len(){break;}at=at+2;continue;
+        }
+        if b==36 && at+1<source.len() && source[at+1]==123 {
+            let start=at+2;at=copy(start);
+            if at==source.len() || !name_start(source[at]) { return AssemblyLex{end:0,used:0,error:10,offset:at as u64}; }
+            while at<source.len() && (name_start(source[at]) || digit(source[at])) {at=at+1;}
+            if at==source.len() || source[at]!=125 || count>=tokens.len()-3 { return AssemblyLex{end:0,used:0,error:10,offset:at as u64}; }
+            tokens[count]=Token{nominal:false,annotation:0,kind:69,start:start as u64,end:at as u64};count=count+1;at=at+1;continue;
+        }
+        if b==123{depth=depth+1;}if b==125{depth=depth-1;}
+        at=at+1;
+        if depth==0 {tokens[position]=Token{nominal:false,annotation:source_offset((open+1) as u64),kind:82,start:0,end:at as u64};return AssemblyLex{end:at as u64,used:count as u64,error:0,offset:0};}
+    }
+    AssemblyLex{end:0,used:0,error:11,offset:at as u64}
+}
+
+// The compiler selects these functions using the target of the bootstrap binary.
+#(if: target.family == "unix")
+    fn target_family() -> i64 { 1 }
+#(endif)
+#(if: target.family == "windows")
+    fn target_family() -> i64 { 2 }
+#(endif)
+#(if: target.os == "macos")
+    fn target_os() -> i64 { 3 }
+#(endif)
+#(if: target.os == "linux")
+    fn target_os() -> i64 { 4 }
+#(endif)
+#(if: target.os == "windows")
+    fn target_os() -> i64 { 2 }
+#(endif)
+#(if: target.arch == "aarch64")
+    fn target_arch() -> i64 { 5 }
+#(endif)
+#(if: target.arch == "x86_64")
+    fn target_arch() -> i64 { 6 }
+#(endif)
+#(if: target.pointer_width == "32")
+    fn target_pointer_width() -> i64 { 7 }
+#(endif)
+#(if: target.pointer_width == "64")
+    fn target_pointer_width() -> i64 { 8 }
+#(endif)
+
+
+fn target_key(key: &[u8]) -> i64 {
+    let os: [u8; 2] = [111, 115];
+    if key.content_eq(&os[..]) { return target_os(); }
+    let family: [u8; 6] = [102, 97, 109, 105, 108, 121];
+    if key.content_eq(&family[..]) { return target_family(); }
+    let arch: [u8; 4] = [97, 114, 99, 104];
+    if key.content_eq(&arch[..]) { return target_arch(); }
+    let pointer_width: [u8; 13] = [112, 111, 105, 110, 116, 101, 114, 95, 119, 105, 100, 116, 104];
+    if key.content_eq(&pointer_width[..]) { return target_pointer_width(); }
+    return 0;
+}
+
+fn target_text_eq(text: &[u8], expected: &[u8]) -> bool {
+    let mut index: usize = 1;
+    let mut position: usize = 0;
+    while index < text.len() - 1 {
+        if position == expected.len() { return false; }
+        let byte = text[index];
+        if byte == 92 {
+            // Target names contain only ASCII letters, digits and underscores.
+            if text[index + 1] != 117 || hex_unit(&text[0..text.len()], index + 2)
+                != expected[position] as u32 { return false; }
+            index = index + 6;
+        } else {
+            if byte != expected[position] { return false; }
+            index = index + 1;
+        }
+        position = position + 1;
+    }
+    position == expected.len()
+}
+
+fn target_value_matches(text: &[u8], key: i64) -> bool {
+    if key == 1 {
+        let value: [u8; 4] = [117, 110, 105, 120];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 2 {
+        let value: [u8; 7] = [119, 105, 110, 100, 111, 119, 115];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 3 {
+        let value: [u8; 5] = [109, 97, 99, 111, 115];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 4 {
+        let value: [u8; 5] = [108, 105, 110, 117, 120];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 5 {
+        let value: [u8; 7] = [97, 97, 114, 99, 104, 54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 6 {
+        let value: [u8; 6] = [120, 56, 54, 95, 54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 7 {
+        let value: [u8; 2] = [51, 50];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 8 {
+        let value: [u8; 2] = [54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    false
+}
+
+// Compact the selected token stream in place. Keeping source spans intact
+// preserves the byte locations of declarations and assembly operands.
+fn select_target(source: &[u8], tokens: &mut [Token]) -> usize {
+    let mut index: u64 = 0;
+    let mut count: usize = 0;
+    let mut active: [bool;128] = [false;128];
+    let mut depth: u64 = 0;
+    while tokens[index].kind != 0 {
+        let enabled = if depth == 0 { true } else { active[depth - 1] };
+        if tokens[index].kind == 71 && tokens[index + 1].kind == 2 {
+            let end_word: [u8;5] = [101,110,100,105,102];
+            let word = &source[tokens[index + 2].start..tokens[index + 2].end];
+            if word.content_eq(&end_word[..]) {
+                if depth == 0 || tokens[index + 3].kind != 3 { return 0; }
+                depth = depth - 1; index = index + 4; continue;
+            }
+            if tokens[index + 2].kind == 44 {
+                if tokens[index + 3].kind != 10 || depth == 128 { return 0; }
+                index = index + 4;
+                let mut include = false; let mut conjunction = true;
+                loop {
+                    if tokens[index].kind != 1 || tokens[index + 1].kind != 38 || tokens[index + 2].kind != 1 { return 0; }
+                    if tokens[index + 3].kind != 32 || tokens[index + 4].kind != 9 { return 0; }
+                    let target_word: [u8;6] = [116,97,114,103,101,116];
+                    let marker = &source[tokens[index].start..tokens[index].end];
+                    if !marker.content_eq(&target_word[..]) { return 0; }
+                    let key = target_key(&source[tokens[index + 2].start..tokens[index + 2].end]);
+                    if key == 0 { return 0; }
+                    let value = target_value_matches(&source[tokens[index + 4].start..tokens[index + 4].end], key);
+                    conjunction = conjunction && value; index = index + 5;
+                    if tokens[index].kind == 30 { include = include || conjunction; conjunction = true; }
+                    else if tokens[index].kind != 31 { break; }
+                    index = index + 1;
+                }
+                let selected = enabled && (include || conjunction);
+                if tokens[index].kind != 3 {return 0;}
+                active[depth]=selected;depth=depth+1;index=index+1;continue;
+            }
+        }
+        if enabled {
+            tokens[count] = Token { nominal:tokens[index].nominal,annotation:tokens[index].annotation,
+                kind:tokens[index].kind,start:tokens[index].start,end:tokens[index].end }; count = count + 1;
+        }
+        index = index + 1;
+    }
+    if depth != 0 { return 0; }
+    let end = tokens[index].end;
+    tokens[count] = Token { nominal:false,annotation:0,kind:0,start:copy(end),end:end };
+    tokens[count + 1] = Token { nominal:false,annotation:0,kind:0,start:0,end:0 };
+    tokens[count + 2] = Token { nominal:false,annotation:0,kind:0,start:0,end:0 };
+    count + 3
+}
+
+fn mark_nominal_names(source: &[u8], tokens: &mut [Token]) {
+    let mut declaration: u64 = 0;
+    while tokens[declaration].kind != 0 {
+        let kind = tokens[declaration].kind;
+        if (kind == 58 || kind == 59) && lexical_name(tokens[declaration + 1].kind)
+            && !tokens[declaration + 1].nominal {
+            let name = &source[tokens[declaration + 1].start..tokens[declaration + 1].end];
+            let mut index: u64 = 0;
+            while tokens[index].kind != 0 {
+                let candidate = &source[tokens[index].start..tokens[index].end];
+                if lexical_name(tokens[index].kind) && candidate.content_eq(&name[0..name.len()]) {
+                    let token = Token { nominal: true, annotation: tokens[index].annotation,
+                        kind: tokens[index].kind, start: tokens[index].start, end: tokens[index].end };
+                    tokens[index] = token;
+                }
+                index = index + 1;
+            }
+        }
+        declaration = declaration + 1;
+    }
+}
+
+fn valid_utf8(source: &[u8]) -> bool {
+    let mut cursor: usize = 0;
+    while cursor < source.len() {
+        let (width, scalar) = utf8_scalar(&source[0..source.len()], copy(cursor));
+        drop(scalar);
+        if width == 0 { return false; }
+        cursor = cursor + width;
+    }
+    true
+}
+
+// Common token classes match the Rust lexer (keywords keep their internal
+// parser codes, and operand spans remain children of the assembly token).
+fn dump_lex(tokens: &[Token], source: &[u8]) {
+    let mut index: usize = 0;
+    while index < tokens.len() {
+        let kind = tokens[index].kind;
+        if kind != 69 {
+            let start = tokens[index].start;
+            let class: i64 = if kind == 0 { 0 }
+                else if kind == 8 { 2 }
+                else if kind == 64 { 3 }
+                else if kind == 9 { 4 }
+                else if kind == 68 { 6 }
+                else if name_start(source[start]) { 1 }
+                else { 5 };
+            print(class);
+            print(start);
+            print(tokens[index].end);
+        }
+        index = index + 1;
+    }
+}
+
+fn lex_error(mode: i32, diagnostic: i64, offset: usize) -> i32 {
+    if mode == 3 { print(diagnostic); print(offset); }
+    3
+}
+
+fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) {
+    if !valid_utf8(&source[0..source.len()]) { return (3, 0); }
+    if tokens.len() < 3 { return (4, 0); }
+    let mut count: usize = 0;
+    let mut cursor: usize = 0;
+    while cursor < source.len() {
+        let start = copy(cursor);
+        let byte = source[cursor];
+        cursor = cursor + 1;
+
+        if whitespace(copy(byte)) { continue; }
+        if byte == 47 && cursor < source.len() && source[cursor] == 47 {
+            while cursor < source.len() && source[cursor] != 10 {
+                cursor = cursor + 1;
+            }
+            continue;
+        }
+
+        if count >= tokens.len() - 3 { return (4, 0); }
+        if byte == 64 && source.len() - cursor >= 3
+            && source[cursor] == 97 && source[cursor + 1] == 115 && source[cursor + 2] == 109 {
+            let open = asm_open(&source[0..source.len()], cursor + 3);
+            if open != 0 {
+                let assembly = lex_assembly(&source[0..source.len()], &mut tokens[0..tokens.len()],
+                    open, copy(count));
+                if assembly.error == 13 { return (4, 0); }
+                if assembly.error != 0 { return (lex_error(copy(check), assembly.error, assembly.offset as usize), 0); }
+                tokens[count] = Token { nominal: false, annotation: 0, kind: 68, start: start as u64, end: assembly.end };
+                cursor = assembly.end as usize;
+                count = assembly.used as usize;
+                continue;
+            }
+        }
+
+        if byte==64 && cursor<source.len() && source[cursor]==99
+            && (cursor+1==source.len() || !(name_start(source[cursor+1]) || digit(source[cursor+1]))) {
+            let native=lex_c(&source[0..source.len()],&mut tokens[0..tokens.len()],cursor+1,copy(count));
+            if native.error!=0 {return (lex_error(copy(check),native.error,native.offset as usize),0);}
+            let body=tokens[count].annotation;
+            tokens[count]=Token{nominal:false,annotation:body,kind:82,start:start as u64,end:native.end};
+            cursor=native.end as usize;count=native.used as usize;continue;
+        }
+        let mut kind: i64 = 0;
+        let mut annotation: i64 = 0;
+        let mut nominal = false;
+        if name_start(copy(byte)) {
+            while cursor < source.len() {
+                let next = source[cursor];
+                if !(name_start(copy(next)) || digit(next)) { break; }
+                cursor = cursor + 1;
+            }
+            nominal = byte >= 65 && byte <= 90;
+            kind = name_kind(&source[start..cursor]);
+            annotation = annotation_word(&source[start..cursor]);
+            if annotation == 0 && builtin_or_placeholder(&source[start..cursor]) {
+                let addr_name: [u8; 4] = [97, 100, 100, 114];
+                let spelling = &source[start..cursor];
+                annotation = if spelling.content_eq(&addr_name[..]) { -2 } else { -1 };
+            }
+        } else if digit(copy(byte)) || (byte == 46 && cursor < source.len() && digit(source[cursor])) {
+            if byte == 48 && cursor < source.len() && (source[cursor] == 120 || source[cursor] == 88) {
+                cursor = cursor + 1;
+                let first = copy(cursor);
+                while cursor < source.len() && hex_digit(source[cursor]) < 16 {
+                    cursor = cursor + 1;
+                }
+                if first == cursor { return (lex_error(copy(check), 2, copy(start)), 0); }
+                kind = 8;
+            } else {
+                while cursor < source.len() && digit(source[cursor]) { cursor = cursor + 1; }
+                kind = 8;
+                let mut digit_index = copy(start);
+                while digit_index < cursor {
+                    if source[digit_index] != 48 { annotation = 29; break; }
+                    digit_index = digit_index + 1;
+                }
+                if byte == 46 { kind = 64; }
+                if byte != 46 && cursor < source.len() && source[cursor] == 46
+                    && !(cursor + 1 < source.len() && source[cursor + 1] == 46) {
+                    kind = 64;
+                    cursor = cursor + 1;
+                    while cursor < source.len() && digit(source[cursor]) { cursor = cursor + 1; }
+                }
+            }
+        } else if byte == 34 {
+            // The whole source has already been checked for valid UTF-8.
+            while cursor < source.len() && source[cursor] != 34 {
+                let current = source[cursor];
+                if current < 32 { return (lex_error(copy(check), 3, copy(cursor)), 0); }
+                if current == 92 {
+                    let (end, error, offset) = scan_escape(&source[0..source.len()], copy(cursor));
+                    if error == 13 { return (4, 0); }
+                if error != 0 { return (lex_error(copy(check), error, offset), 0); }
+                    cursor = end;
+                } else {
+                    cursor = cursor + 1;
+                }
+            }
+            if cursor == source.len() { return (lex_error(copy(check), 12, copy(start)), 0); }
+            cursor = cursor + 1;
+            kind = 9;
+            if cursor - start == 3 && source[start + 1] == 67 { annotation = 26; }
+        } else {
+            let next: u8 = if cursor < source.len() { source[cursor] } else { 0 };
+            let (mark, width) = punctuation(byte, next);
+            kind = mark;
+            cursor = cursor + (width - 1);
+            if kind == 36 && cursor < source.len() && source[cursor] == 61 {
+                kind = 80;
+                cursor = cursor + 1;
+            }
+            if kind == 0 { return (lex_error(copy(check), 1, copy(start)), 0); }
+        }
+        tokens[count] = Token { nominal: nominal, annotation: annotation, kind: kind, start: start as u64, end: cursor as u64 };
+        count = count + 1;
+    }
+    // Keep two initialized guard tokens for lookahead on malformed input.
+    tokens[count] = Token { nominal: false, annotation: 0, kind: 0, start: cursor as u64, end: cursor as u64 };
+    (0, count)
+}
+
+fn lex(source: &[u8], check: i32) -> i32 {
+    // One token per source byte at most, plus EOF and two guards.
+    let mut tokens: [Token; 131075] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 131075];
+    let (status, count) = scan_tokens(&source[0..source.len()], &mut tokens[..], copy(check));
+    if status != 0 { return status; }
+    if check == 3 {
+        dump_lex(&tokens[..count + 1], &source[0..source.len()]);
+        return 0;
+    }
+    let selected = select_target(&source[0..source.len()], &mut tokens[..count + 3]);
+    if selected == 0 { return 7; }
+    mark_nominal_names(&source[0..source.len()], &mut tokens[..selected]);
+    let visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 1];
+    parse(&source[0..source.len()], &tokens[..selected], check, 0, false, &visibility[..0])
+}
+
+
+fn syntax_leaf(kind: i64, parent: u64, token: &Token) -> AstNode {
+    AstNode {
+        kind: kind, parent: parent, start: (*token).start, end: (*token).end,
+        name_start: (*token).start, name_end: (*token).end, public: false,
+    }
+}
+
+fn precedence(kind: i64) -> u8 {
+    if kind == 30 { return 1; }
+    if kind == 31 { return 2; }
+    if kind == 27 { return 3; }
+    if kind == 26 { return 4; }
+    if kind == 25 { return 5; }
+    if (kind >= 32 && kind <= 35) || kind == 23 || kind == 24 { return 6; }
+    if kind == 36 || kind == 37 { return 7; }
+    if kind == 19 || kind == 20 { return 8; }
+    if kind == 21 || kind == 22 || kind == 6 { return 9; }
+    if kind == 41 { return 10; }
+    0
+}
+
+// Parse a field list for either a declaration or a constructor.
+fn parse_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
+    free: u64, parent: u64, types: bool) -> (u64, u64) {
+    if depth % 256 >= 128 { return (0, 0); }
+    let mut index = open + 1;
+    let mut count = free;
+    while tokens[index].kind != 5 {
+        if !lexical_name(tokens[index].kind) || tokens[index + 1].kind != 10 { return (0, 0); }
+        let field = copy(count);
+        let start = tokens[index].start;
+        let end_name = tokens[index].end;
+        if types {
+            let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 2, count + 1, copy(field));
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+        } else {
+            let (next, used, root) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 2, count + 1, copy(field), 0);
+            drop(root);
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+        }
+        nodes[field] = AstNode { kind: 31, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: start, name_end: end_name, public: false,
+        };
+        if tokens[index].kind != 11 { break; }
+        index = index + 1;
+    }
+    if tokens[index].kind != 5 { return (0, 0); }
+    return (index + 1, count);
+}
+
+// A positional field has no source name. Its equal name offsets encode the
+// one-based position so the existing aggregate passes can resolve it.
+fn parse_positional_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
+    free: u64, parent: u64, kind: i64) -> (u64, u64) {
+    if depth % 256 >= 128 { return (0, 0); }
+    let mut index = open + 1;
+    if tokens[index].kind == 3 { return (0, 0); }
+    let mut count = free;
+    let mut position: u64 = 1;
+    while tokens[index].kind != 3 {
+        let field = copy(count);
+        let start = tokens[index].start;
+        if kind == 54 {
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            nodes[count + 1] = syntax_leaf(41, copy(field), &tokens[index]);
+            index = index + 1;
+            count = count + 2;
+        } else if kind == 4 {
+            let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index, count + 1, copy(field));
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+        } else {
+            let (next, used, value) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index, count + 1, copy(field), 0);
+            drop(value);
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+        }
+        nodes[field] = AstNode { kind: if kind == 54 { 54 } else { 31 }, parent: copy(parent), start: start,
+            end: tokens[index - 1].end, name_start: copy(position), name_end: copy(position), public: false };
+        position = position + 1;
+        if tokens[index].kind != 11 { break; }
+        index = index + 1;
+    }
+    if tokens[index].kind != 3 { return (0, 0); }
+    return (index + 1, count);
+}
+
+fn parse_import(tokens: &[Token], nodes: &mut [AstNode], first: u64, free: u64) -> (u64, u64) {
+    if !lexical_name(tokens[first + 1].kind) || tokens[first + 2].kind != 43 { return (0, 0); }
+    let mut index = first + 3;
+    let mut count = free + 1;
+    while lexical_name(tokens[index].kind) && tokens[index + 1].kind == 43 { index = index + 2; }
+    if tokens[index].kind == 4 {
+        index = index + 1;
+        if tokens[index].kind == 5 { return (0, 0); }
+        while tokens[index].kind != 5 {
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            let member = copy(index);
+            let position = copy(count);
+            count = count + 1;
+            index = index + 1;
+            if tokens[index].kind == 41 {
+                index = index + 1;
+                if !declaration_name(&tokens[index]) { return (0, 0); }
+                nodes[count] = syntax_leaf(34, copy(position), &tokens[index]);
+                count = count + 1;
+                index = index + 1;
+            }
+            nodes[position] = AstNode { kind: 33, parent: copy(free), start: tokens[member].start,
+                end: tokens[index - 1].end, name_start: tokens[member].start, name_end: tokens[member].end, public: false,
+            };
+            if tokens[index].kind != 11 { break; }
+            index = index + 1;
+        }
+        if tokens[index].kind != 5 { return (0, 0); }
+        index = index + 1;
+    } else {
+        if !lexical_name(tokens[index].kind) { return (0, 0); }
+        index = index + 1;
+        if tokens[index].kind == 41 {
+            index = index + 1;
+            if !declaration_name(&tokens[index]) { return (0, 0); }
+            nodes[count] = syntax_leaf(34, copy(free), &tokens[index]);
+            count = count + 1;
+            index = index + 1;
+        }
+    }
+    if tokens[index].kind != 14 { return (0, 0); }
+    nodes[free] = AstNode { kind: 32, parent: 0, start: tokens[first].start,
+        end: tokens[index].end, name_start: tokens[first + 1].start, name_end: tokens[first + 1].end, public: false,
+    };
+    return (index + 1, count);
+}
+
+fn reparent(nodes: &mut [AstNode], index: u64, parent: u64) {
+    let kind = nodes[index].kind;
+    let start = nodes[index].start;
+    let end = nodes[index].end;
+    let name_start = nodes[index].name_start;
+    let name_end = nodes[index].name_end;
+    nodes[index] = AstNode { kind: kind, parent: parent, start: start, end: end,
+        name_start: name_start, name_end: name_end, public: false,
+    };
+}
+
+fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    if depth % 256 >= 128 { return (0, 0); }
+    let start = tokens[first].start;
+    let mark = tokens[first].kind;
+    let mut index = first + 1;
+    let mut count = free + 1;
+    let mut name_start: u64 = 0;
+    let mut name_end: u64 = 0;
+    if mark == 25 || mark == 31 || mark == 39 {
+        if mark != 39 && tokens[index].kind == 16 { index = index + 1; }
+        let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(free));
+        if next == 0 { return (0, 0); }
+        index = next;
+        count = used;
+        if mark == 39 {
+            if tokens[index].kind == 14 {
+                index = index + 1;
+                if tokens[index].kind != 8 { return (0, 0); }
+                nodes[count] = syntax_leaf(9, copy(free), &tokens[index]);
+                count = count + 1;
+                index = index + 1;
+            }
+            if tokens[index].kind != 40 { return (0, 0); }
+            index = index + 1;
+        }
+    } else if mark == 2 || mark == 7 {
+        if mark == 7 {
+            if tokens[index].kind != 2 { return (0, 0); }
+            name_start = copy(start);
+            name_end = tokens[first].end;
+            index = index + 1;
+        }
+        let mut arity: u64 = 0;
+        while tokens[index].kind != 3 {
+            let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(free));
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+            arity = arity + 1;
+            if tokens[index].kind != 3 {
+                if tokens[index].kind != 11 { return (0, 0); }
+                index = index + 1;
+            }
+        }
+        index = index + 1;
+        if mark == 2 && arity == 1 { return (0, 0); }
+        if mark == 7 {
+            if tokens[index].kind != 12 { return (0, 0); }
+            let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 1, copy(count), copy(free));
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+        }
+    } else {
+        if !lexical_name(copy(mark)) { return (0, 0); }
+        name_start = copy(start);
+        name_end = tokens[first].end;
+        while tokens[index].kind == 43 {
+            index = index + 1;
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            index = index + 1;
+        }
+        if tokens[index].kind == 23 {
+            index = index + 1;
+            while true {
+                let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), copy(free));
+                if next == 0 { return (0, 0); }
+                index = next;
+                count = used;
+                if tokens[index].kind != 11 { break; }
+                index = index + 1;
+            }
+            if tokens[index].kind != 24 { return (0, 0); }
+            index = index + 1;
+        }
+    }
+    nodes[free] = AstNode { kind: 4, parent: parent, start: start,
+        end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false,
+    };
+    (index, count)
+}
+
+fn parse_pattern(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    if depth % 256 >= 128 { return (0, 0); }
+    let mut index = first + 1;
+    let mut count = free + 1;
+    let mut kind: i64 = 41;
+    let mut name_start = tokens[first].start;
+    let mut name_end = tokens[first].end;
+    if tokens[first].kind == 2 {
+        if tokens[index].kind != 3 { return (0, 0); }
+        index = index + 1;
+        kind = 43;
+        name_start = 0;
+        name_end = 0;
+    } else {
+        if !lexical_name(tokens[first].kind) { return (0, 0); }
+        while tokens[index].kind == 43 {
+            index = index + 1;
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            index = index + 1;
+        }
+        if tokens[index].kind == 38 {
+            index = index + 1;
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            index = index + 1;
+            kind = 53;
+            if tokens[index].kind == 2 {
+                let (next, used) = parse_positional_fields(depth + 1, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(free), 54);
+                if next == 0 { return (0, 0); }
+                index = next;
+                count = used;
+            } else if tokens[index].kind == 4 {
+                index = index + 1;
+                while tokens[index].kind != 5 {
+                    if !lexical_name(tokens[index].kind) || tokens[index + 1].kind != 10
+                        || !lexical_name(tokens[index + 2].kind) { return (0, 0); }
+                    nodes[count] = AstNode { kind: 54, parent: copy(free), start: tokens[index].start,
+                        end: tokens[index + 2].end, name_start: tokens[index].start,
+                        name_end: tokens[index].end, public: false };
+                    nodes[count + 1] = syntax_leaf(41, copy(count), &tokens[index + 2]);
+                    count = count + 2;
+                    index = index + 3;
+                    if tokens[index].kind != 11 { break; }
+                    index = index + 1;
+                }
+                if tokens[index].kind != 5 { return (0, 0); }
+                index = index + 1;
+            }
+        } else if tokens[index].kind == 2 {
+            let (next, used) = parse_pattern(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 1, copy(count), copy(free));
+            if next == 0 || tokens[next].kind != 3 { return (0, 0); }
+            index = next + 1;
+            count = used;
+            kind = 42;
+        }
+    }
+    nodes[free] = AstNode { kind: kind, parent: parent, start: tokens[first].start,
+        end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false,
+    };
+    (index, count)
+}
+
+// Return the next token, the next free node, and the expression root.
+// A next token of zero signals a syntax error.
+fn parse_expression(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64, minimum: u8) -> (u64, u64, u64) {
+    parse_expression_context(depth, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+        first, free, parent, minimum, 0, false)
+}
+
+fn parse_test_and_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    let (next, used, test) = parse_expression_context(copy(depth), &tokens[0..tokens.len()],
+        &mut nodes[0..nodes.len()], copy(first), copy(free), copy(parent), 0, 1, false);
+    drop(test);
+    if next != 0 && (tokens[next].kind == 4 || tokens[next].kind == 71) {
+        return parse_block(depth, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            next, used, parent);
+    }
+    let (retry, consumed, fallback) = parse_expression_context(copy(depth), &tokens[0..tokens.len()],
+        &mut nodes[0..nodes.len()], first, free, copy(parent), 0, 2, false);
+    drop(fallback);
+    if retry == 0 { return (0, 0); }
+    return parse_block(depth, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+        retry, consumed, parent);
+}
+
+fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64, minimum: u8, context: i64, primary_only: bool) -> (u64, u64, u64) {
+    if depth % 256 >= 128 { return (0, 0, 0); }
+    let before_block = context != 0;
+    let start = tokens[first].start;
+    let atom = tokens[first].kind;
+    let mut index = copy(first);
+    let mut root = free;
+    let mut count = root + 1;
+    if atom == 30 || atom == 27 || atom == 72 {
+        let mut name_end: u64 = 0;
+        let mut name_start: u64 = 0;
+        if atom == 72 {
+            name_start = copy(start);
+            name_end = tokens[index].end;
+            index = index + 1;
+        }
+        let header = tokens[index].kind;
+        let kind: i64 = if (header == 4 || header == 71) && atom == 72 { 56 } else { 55 };
+        if kind == 55 {
+            if header != 27 && header != 30 { return (0, 0, 0); }
+            index = index + 1;
+            if header == 27 {
+                if tokens[index].kind == 27 { return (0, 0, 0); }
+                while tokens[index].kind != 27 {
+                    let param = copy(count);
+                    let param_start = tokens[index].start;
+                    let receiver = tokens[index].kind == 25;
+                    if receiver { index = index + 1; }
+                    if tokens[index].kind == 16 { index = index + 1; }
+                    if tokens[index].kind != 66 && !declaration_name(&tokens[index]) { return (0, 0, 0); }
+                    let name = copy(index);
+                    index = index + 1;
+                    count = count + 1;
+                    if !receiver || tokens[name].kind != 66 {
+                        if tokens[index].kind != 10 { return (0, 0, 0); }
+                        let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                            index + 1, copy(count), copy(param));
+                        if next == 0 { return (0, 0, 0); }
+                        index = next;
+                        count = used;
+                    }
+                    nodes[param] = AstNode { kind: 3, parent: copy(root), start: param_start,
+                        end: tokens[index - 1].end, name_start: tokens[name].start,
+                        name_end: tokens[name].end, public: false };
+                    if tokens[index].kind == 27 { break; }
+                    if tokens[index].kind != 11 { return (0, 0, 0); }
+                    index = index + 1;
+                }
+                index = index + 1;
+            }
+            if tokens[index].kind == 12 {
+                let (next, used) = parse_type(depth + 1,
+                    &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    index + 1, copy(count), copy(root));
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used;
+            }
+        }
+        let (next, used) = parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(root));
+        if next == 0 { return (0, 0, 0); }
+        index = next;
+        count = used;
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false };
+    } else if atom == 62 {
+        let (next, used, subject) = parse_expression_context(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            index + 1, copy(count), copy(root), 0, 1, false);
+        drop(subject);
+        if next == 0 || tokens[next].kind != 4 || tokens[next + 1].kind == 5 { return (0, 0, 0); }
+        index = next + 1;
+        count = used;
+        while tokens[index].kind != 5 {
+            let arm = copy(count);
+            let arm_start = tokens[index].start;
+            let (arrow, after_pattern) = parse_pattern(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), count + 1, copy(arm));
+            if arrow == 0 || tokens[arrow].kind != 63 { return (0, 0, 0); }
+            let (after, total) = parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                arrow + 1, after_pattern, copy(arm));
+            if after == 0 { return (0, 0, 0); }
+            index = after;
+            count = total;
+            nodes[arm] = AstNode { kind: 40, parent: copy(root), start: arm_start,
+                end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false,
+            };
+            if tokens[index].kind != 11 { break; }
+            index = index + 1;
+        }
+        if tokens[index].kind != 5 { return (0, 0, 0); }
+        index = index + 1;
+        nodes[root] = AstNode { kind: 39, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false,
+        };
+    } else if atom == 39 {
+        index = index + 1;
+        let mut kind: i64 = 44;
+        let mut items: u64 = 0;
+        while tokens[index].kind != 40 {
+            let (next, used, item) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(root), 0);
+            drop(item);
+            if next == 0 { return (0, 0, 0); }
+            index = next;
+            count = used;
+            items = items + 1;
+            if tokens[index].kind == 14 && items == 1 {
+                index = index + 1;
+                if tokens[index].kind != 8 { return (0, 0, 0); }
+                nodes[count] = syntax_leaf(9, copy(root), &tokens[index]);
+                count = count + 1;
+                index = index + 1;
+                kind = 45;
+                break;
+            }
+            if tokens[index].kind != 11 { break; }
+            index = index + 1;
+        }
+        if tokens[index].kind != 40 { return (0, 0, 0); }
+        index = index + 1;
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false,
+        };
+    } else if atom == 4 || atom == 71 {
+        let (next, used) = parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(root), copy(parent));
+        if next == 0 { return (0, 0, 0); }
+        index = next;
+        count = used;
+    } else if atom == 44 || atom == 49 || atom == 76 {
+        index = index + 1;
+        let (next, used) = if atom == 44 {
+            parse_test_and_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(root))
+        } else {
+            parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(root))
+        };
+        if next == 0 { return (0, 0, 0); }
+        index = next;
+        count = used;
+        if atom == 44 && tokens[index].kind == 45 {
+            let (after, total, branch) = parse_expression_context(depth + 1, &tokens[0..tokens.len()],
+                &mut nodes[0..nodes.len()], index + 1, copy(count), copy(root), 11, 0, true);
+            if after == 0 || (nodes[branch].kind != 2 && nodes[branch].kind != 26) { return (0, 0, 0); }
+            index = after;
+            count = total;
+        }
+        let kind = if atom == 44 { 26 } else if atom == 76 { 65 } else { 27 };
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false,
+        };
+    } else if atom == 25 || atom == 21 || atom == 20 || atom == 28 || atom == 29 {
+        let operator = copy(index);
+        index = index + 1;
+        if atom == 25 && tokens[index].kind == 16 { index = index + 1; }
+        let (next, used, unused_root_0) = parse_expression_context(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(root), 11, copy(context), false); drop(unused_root_0);
+        if next == 0 { return (0, 0, 0); }
+        index = next;
+        count = used;
+        let kind = if atom == 25 { 13 } else if atom == 21 { 14 } else { 12 };
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: tokens[operator].start,
+            name_end: tokens[operator].end, public: false,
+        };
+    } else if atom == 2 {
+        index = index + 1;
+        let mut kind: i64 = 19;
+        if tokens[index].kind != 3 {
+            let (next, used, unused_root_1) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(root), 0); drop(unused_root_1);
+            if next == 0 { return (0, 0, 0); }
+            index = next;
+            count = used;
+            if tokens[index].kind == 11 {
+                kind = 20;
+                if tokens[index + 1].kind == 3 { return (0, 0, 0); }
+                while tokens[index].kind == 11 {
+                    index = index + 1;
+                    if tokens[index].kind == 3 { break; }
+                    let (next_item, used_item, unused_root_2) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(root), 0); drop(unused_root_2);
+                    if next_item == 0 { return (0, 0, 0); }
+                    index = next_item;
+                    count = used_item;
+                }
+            }
+        }
+        if tokens[index].kind != 3 { return (0, 0, 0); }
+        index = index + 1;
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false,
+        };
+    } else {
+        if !lexical_name(copy(atom)) && atom != 8 && atom != 9 && atom != 64 { return (0, 0, 0); }
+        let kind = if atom == 8 || atom == 9 || atom == 18 || atom == 64 { 9 } else { 7 };
+        let mut name_end = tokens[index].end;
+        let mut name_start = copy(start);
+        let mut kind = kind;
+        index = index + 1;
+        if kind == 7 {
+            while tokens[index].kind == 43 {
+                index = index + 1;
+                if !lexical_name(tokens[index].kind) { return (0, 0, 0); }
+                index = index + 1;
+                kind = 36;
+            }
+            if tokens[index].kind == 23 {
+                let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(first), copy(count), copy(root));
+                if next != 0 {
+                    if tokens[first].annotation == 20 && tokens[next].kind == 2 {
+                        if tokens[next + 1].kind != 8 || tokens[next + 2].kind != 3 { return (0, 0, 0); }
+                        nodes[used] = syntax_leaf(9, copy(root), &tokens[next + 1]);
+                        count = used + 1;
+                        index = next + 3;
+                        kind = 66;
+                    } else if tokens[next].kind == 43 && lexical_name(tokens[next + 1].kind)
+                        && tokens[next + 2].kind == 2 {
+                        name_start = tokens[next + 1].start;
+                        name_end = tokens[next + 1].end;
+                        count = used;
+                        index = next + 2;
+                        kind = 36;
+                    }
+                }
+            }
+            if tokens[index].kind == 4 && tokens[index - 1].nominal
+                && (!before_block || tokens[index + 2].kind == 10 || (context == 1 && tokens[index + 1].kind == 5)) {
+                let (next, used) = parse_fields(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), copy(root), false);
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used;
+                kind = 37;
+            }
+        }
+        nodes[root] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false,
+        };
+    }
+
+    if primary_only { return (index, count, root); }
+    let mut nominal_receiver = nodes[root].kind == 7 || nodes[root].kind == 36;
+    nominal_receiver = nominal_receiver && tokens[index - 1].nominal;
+    while tokens[index].kind == 2 || tokens[index].kind == 38 || tokens[index].kind == 39 || tokens[index].kind == 84 {
+        let outer = copy(count);
+        count = count + 1;
+        reparent(&mut nodes[0..nodes.len()], copy(root), copy(outer));
+        if tokens[index].kind==84 {
+            nodes[outer]=AstNode{kind:79,parent:copy(parent),start:nodes[root].start,end:tokens[index].end,
+                name_start:tokens[index].start,name_end:tokens[index].end,public:false};
+            index=index+1;root=outer;nominal_receiver=false;continue;
+        }
+        let mut kind: i64 = 15;
+        let mut name_start: u64 = 0;
+        let mut name_end: u64 = 0;
+        let mut method: i64 = 0;
+        let mut closed = false;
+        let mark = tokens[index].kind;
+        let member_token = index + 1;
+        index = index + 1;
+        if mark == 38 {
+            if !lexical_name(tokens[index].kind) { return (0, 0, 0); }
+            method = tokens[index].annotation;
+            let awaiting = tokens[index].kind == 61;
+            name_start = tokens[index].start;
+            name_end = tokens[index].end;
+            index = index + 1;
+            kind = if awaiting { 38 } else if tokens[index].kind == 2 { 16 } else { 17 };
+            if kind == 16 && nominal_receiver {
+                let (next, used) = parse_positional_fields(depth + 1, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(outer), 31);
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used;
+                kind = 37;
+                closed = true;
+            }
+            if kind == 16 {
+                index = index + 1;
+                if method == 21 && tokens[index].kind == 4
+                    && (tokens[index + 1].kind == 5 || tokens[index + 2].kind == 10) {
+                    let initializer = copy(count);
+                    let initializer_start = tokens[index].start;
+                    let (next, used) = parse_fields(depth + 1, &tokens[0..tokens.len()],
+                        &mut nodes[0..nodes.len()], copy(index), count + 1, copy(initializer), false);
+                    if next == 0 || tokens[next].kind != 3 { return (0, 0, 0); }
+                    nodes[initializer] = AstNode { kind: 74, parent: copy(outer), start: initializer_start,
+                        end: tokens[next].end, name_start: 0, name_end: 0, public: false };
+                    index = next + 1;
+                    count = used;
+                    closed = true;
+                } else if lexical_name(tokens[index].kind) && tokens[index + 1].kind == 10 {
+                    while tokens[index].kind != 3 {
+                        if !lexical_name(tokens[index].kind) || tokens[index + 1].kind != 10 { return (0, 0, 0); }
+                        let field = copy(count);
+                        let label = copy(index);
+                        let (next, used, value) = parse_expression(depth + 1, &tokens[0..tokens.len()],
+                            &mut nodes[0..nodes.len()], index + 2, count + 1, copy(field), 0);
+                        drop(value);
+                        if next == 0 { return (0, 0, 0); }
+                        index = next;
+                        count = used;
+                        nodes[field] = AstNode { kind: 31, parent: copy(outer), start: tokens[label].start,
+                            end: tokens[index - 1].end, name_start: tokens[label].start,
+                            name_end: tokens[label].end, public: false };
+                        if tokens[index].kind != 11 { break; }
+                        index = index + 1;
+                    }
+                    if tokens[index].kind != 3 { return (0, 0, 0); }
+                    index = index + 1;
+                    closed = true;
+                }
+            }
+            if kind == 17 && tokens[index].kind == 4
+                && nominal_receiver
+                && (!before_block || tokens[index + 2].kind == 10 || (context == 1 && tokens[index + 1].kind == 5)) {
+                let (next, used) = parse_fields(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), copy(outer), false);
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used;
+                kind = 37;
+            }
+        }
+        if mark == 39 || (kind == 16 && method == 28 && !closed && tokens[index].kind != 3) {
+            let closing: i64 = if mark == 39 { 40 } else { 3 };
+            if mark == 39 { kind = 18; }
+            if mark == 39 && tokens[index].kind == closing { return (0, 0, 0); }
+            while tokens[index].kind != closing {
+                let range_start = tokens[index].start;
+                let mut first_bound: u64 = 0;
+                if tokens[index].kind != 42 {
+                    let (next, used, bound) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(outer), 0);
+                    if next == 0 { return (0, 0, 0); }
+                    index = next;
+                    count = used;
+                    first_bound = bound;
+                }
+                if tokens[index].kind == 42 {
+                    let range = copy(count);
+                    count = count + 1;
+                    let separator = copy(index);
+                    if first_bound != 0 {
+                        reparent(&mut nodes[0..nodes.len()], copy(first_bound), copy(range));
+                    }
+                    index = index + 1;
+                    if tokens[index].kind != closing && tokens[index].kind != 11 {
+                        let (next, used, bound) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                            copy(index), copy(count), copy(range), 0);
+                        drop(bound);
+                        if next == 0 { return (0, 0, 0); }
+                        index = next;
+                        count = used;
+                    }
+                    nodes[range] = AstNode { kind: 46, parent: copy(outer), start: range_start,
+                        end: tokens[index - 1].end, name_start: tokens[separator].start,
+                        name_end: tokens[separator].end, public: false,
+                    };
+                }
+                if mark == 39 || tokens[index].kind != 11 { break; }
+                index = index + 1;
+            }
+            if tokens[index].kind != closing { return (0, 0, 0); }
+            index = index + 1;
+        } else if !closed && kind != 17 && kind != 38 && kind != 37 {
+            while tokens[index].kind != 3 {
+                let (next, used, unused_root_4) = parse_expression(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), copy(outer), 0); drop(unused_root_4);
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used;
+                if tokens[index].kind != 3 {
+                    if tokens[index].kind != 11 { return (0, 0, 0); }
+                    index = index + 1;
+                }
+            }
+            index = index + 1;
+        }
+        nodes[outer] = AstNode { kind: kind, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false,
+        };
+        nominal_receiver = mark == 38 && nodes[outer].kind == 17 && tokens[member_token].nominal;
+        root = outer;
+    }
+
+    let mut compared = false;
+    while true {
+        let mark = tokens[index].kind;
+        let mut composite = copy(mark);
+        let mut width: u64 = 1;
+        if mark == 24 && assignment_width(&tokens[0..tokens.len()], copy(index)) == 3 { break; }
+        if mark == 24 && tokens[index].end == tokens[index + 1].start {
+            if tokens[index + 1].kind == 24 { composite = 37; width = 2; }
+            if tokens[index + 1].kind == 13 { composite = 35; width = 2; }
+        }
+        let priority = precedence(composite);
+        if priority == 0 || priority < minimum { break; }
+        if priority == 6 {
+            if compared { return (0, 0, 0); }
+            compared = true;
+        }
+        let operator = copy(index);
+        index = index + width;
+        let outer = copy(count);
+        count = count + 1;
+        reparent(&mut nodes[0..nodes.len()], copy(root), copy(outer));
+        if priority == 10 {
+            let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(outer));
+            if next == 0 { return (0, 0, 0); }
+            index = next;
+            count = used;
+        } else {
+            let (next, used, unused_root_5) = parse_expression_context(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(outer), priority + 1, copy(context), false); drop(unused_root_5);
+            if next == 0 { return (0, 0, 0); }
+            index = next;
+            count = used;
+        }
+        nodes[outer] = AstNode { kind: 11, parent: copy(parent), start: copy(start),
+            end: tokens[index - 1].end, name_start: tokens[operator].start,
+            name_end: tokens[operator].end, public: false,
+        };
+        root = outer;
+    }
+    (index, count, root)
+}
+
+fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    if tokens[first].kind != 71 || tokens[first + 1].kind != 2
+        || tokens[first + 2].kind != 1 { return (0, 0); }
+    let tag_token = first + 2;
+    let tag = tokens[tag_token].annotation;
+    let mut index = first + 3;
+    let mut count = free + 1;
+    if tag == 4 {
+        if tokens[index].kind != 10 || tokens[index + 1].annotation != 6 { return (0, 0); }
+        index = index + 2;
+        if tokens[index].kind != 13 || tokens[index + 1].kind != 66 { return (0, 0); }
+        index = index + 1;
+        let target = copy(index);
+        index = index + 1;
+        let mut kind: i64 = 59;
+        if tokens[index].kind == 11 {
+            if tokens[index + 1].annotation != 7 { return (0, 0); }
+            index = index + 2;
+            if tokens[index].kind != 13 || tokens[index + 1].annotation != 27 { return (0, 0); }
+            index = index + 2;
+            kind = 60;
+        }
+        nodes[count] = AstNode { kind: kind, parent: copy(free), start: tokens[target].start,
+            end: tokens[index - 1].end, name_start: tokens[target].start, name_end: tokens[target].end,
+            public: false };
+        count = count + 1;
+    } else if tag == 5 {
+        if tokens[index].kind == 10 {
+            if tokens[index + 1].annotation != 8 || tokens[index + 2].kind != 13 { return (0, 0); }
+            index = index + 3;
+            if tokens[index].annotation != 9 || tokens[index + 1].kind != 38 { return (0, 0); }
+            index = index + 2;
+            let end = copy(index);
+            if tokens[index].kind == 61 {
+                index = index + 1;
+            } else {
+                if tokens[index].kind != 1 || tokens[index + 1].kind != 2
+                    || tokens[index + 2].kind != 3 { return (0, 0); }
+                index = index + 3;
+            }
+            nodes[count] = AstNode { kind: 61, parent: copy(free), start: tokens[end].start,
+                end: tokens[index - 1].end, name_start: tokens[end].start, name_end: tokens[end].end,
+                public: false };
+            count = count + 1;
+        }
+    } else if tag == 22 {
+        if tokens[index].kind != 10 || tokens[index + 1].kind != 1 { return (0, 0); }
+        let carrier = index + 1;
+        index = index + 2;
+        if tokens[index].kind == 21 {
+            nodes[count] = AstNode { kind: 67, parent: copy(free), start: tokens[carrier].start,
+                end: tokens[index].end, name_start: tokens[carrier].start,
+                name_end: tokens[carrier].end, public: false };
+            count = count + 1;
+            index = index + 1;
+        } else {
+            if tokens[index].kind == 23 {
+            if tokens[index + 1].kind != 1 { return (0, 0); }
+            let parameter = index + 1;
+            let parameter_node = copy(count);
+            count = count + 1;
+            index = index + 2;
+            if tokens[index].kind == 10 {
+                index = index + 1;
+                while true {
+                    let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(parameter_node));
+                    if next == 0 { return (0, 0); }
+                    index = next;
+                    count = used;
+                    if tokens[index].kind != 11 { break; }
+                    index = index + 1;
+                }
+            }
+            if tokens[index].kind != 24 { return (0, 0); }
+            index = index + 1;
+            nodes[parameter_node] = AstNode { kind: 68, parent: copy(free), start: tokens[parameter].start,
+                end: tokens[index - 1].end, name_start: tokens[parameter].start,
+                name_end: tokens[parameter].end, public: false };
+            }
+            let mut kind: i64 = 70;
+            if tokens[index].annotation == 23 { kind = 69; index = index + 1; }
+            if tokens[index].kind != 4 || tokens[index + 1].kind == 5 { return (0, 0); }
+            index = index + 1;
+            let contract = copy(count);
+            count = count + 1;
+            while tokens[index].kind != 5 {
+                let method_start = tokens[index].start;
+                let asynchronous = tokens[index].kind == 60;
+                if asynchronous { index = index + 1; }
+                let method_node = copy(count);
+                let (next, used) = parse_function(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), count + 1, copy(contract), copy(method_start), 71);
+                if next == 0 { return (0, 0); }
+                if asynchronous {
+                    let method_end = nodes[method_node].end;
+                    let method_name_start = nodes[method_node].name_start;
+                    let method_name_end = nodes[method_node].name_end;
+                    nodes[method_node] = AstNode { kind: 35, parent: copy(contract), start: method_start,
+                        end: method_end, name_start: method_name_start,
+                        name_end: method_name_end, public: false };
+                }
+                index = next;
+                count = used;
+            }
+            index = index + 1;
+            nodes[contract] = AstNode { kind: kind, parent: copy(free), start: tokens[carrier].start,
+                end: tokens[index - 1].end, name_start: tokens[carrier].start,
+                name_end: tokens[carrier].end, public: false };
+        }
+    } else if tag == 24 {
+        if tokens[index].kind != 10 || tokens[index + 2].kind != 13 { return (0, 0); }
+        if tokens[index + 1].annotation == 30 {
+            let property = index + 1;
+            index = index + 3;
+            if tokens[index].kind != 8 || tokens[index].annotation != 29
+                || tokens[index + 1].annotation < 17 || tokens[index + 1].annotation > 19 {
+                return (0, 0);
+            }
+            index = index + 2;
+            nodes[count] = AstNode { kind: 75, parent: copy(free), start: tokens[property].start,
+                end: tokens[index - 1].end, name_start: tokens[property].start,
+                name_end: tokens[property].end, public: false };
+            nodes[count + 1] = syntax_leaf(9, copy(count), &tokens[index - 2]);
+            count = count + 2;
+        } else {
+            if tokens[index].kind != 10 || tokens[index + 1].annotation != 25
+                || tokens[index + 2].kind != 13 || tokens[index + 3].kind != 4 { return (0, 0); }
+            let property = index + 1;
+            let capacities = copy(count);
+            count = count + 1;
+            index = index + 4;
+            if tokens[index].kind == 5 { return (0, 0); }
+            while tokens[index].kind != 5 {
+                let name = copy(index);
+                if tokens[index].kind != 1 { return (0, 0); }
+                index = index + 1;
+                while tokens[index].kind == 43 {
+                    index = index + 1;
+                    if tokens[index].kind != 1 { return (0, 0); }
+                    index = index + 1;
+                }
+                if tokens[index].kind != 10 || tokens[index + 1].kind != 8 { return (0, 0); }
+                index = index + 1;
+                nodes[count + 1] = syntax_leaf(9, copy(count), &tokens[index]);
+                nodes[count] = AstNode { kind: 72, parent: copy(capacities), start: tokens[name].start,
+                    end: tokens[index].end, name_start: tokens[name].start, name_end: tokens[name].end,
+                    public: false };
+                count = count + 2;
+                index = index + 1;
+                if tokens[index].kind != 11 { break; }
+                index = index + 1;
+            }
+            if tokens[index].kind != 5 { return (0, 0); }
+            nodes[capacities] = AstNode { kind: 73, parent: copy(free), start: tokens[property].start,
+                end: tokens[index].end, name_start: tokens[property].start, name_end: tokens[property].end,
+                public: false };
+            index = index + 1;
+        }
+    } else if tag == 1 || tag == 2 {
+        if tokens[index].kind != 10 { return (0, 0); }
+        index = index + 1;
+        let mut properties: i64 = 0;
+        while tokens[index].kind != 3 {
+            let key = tokens[index].annotation;
+            let mut kind: i64 = 62;
+            if tag == 2 {
+                if key != 15 && key != 16 { return (0, 0); }
+                if properties == 0 && key != 15 { return (0, 0); }
+                if key == 16 { kind = 63; }
+            } else if key < 10 || key > 14 { return (0, 0); }
+            let mask: i64 = 1 << (key - 10);
+            if (properties & mask) != 0 { return (0, 0); }
+            properties = properties | mask;
+            let property = copy(index);
+            if tokens[index + 1].kind != 13 || tokens[index + 2].kind != 8
+                || tokens[index + 2].annotation != 29 { return (0, 0); }
+            index = index + 2;
+            nodes[count + 1] = syntax_leaf(9, copy(count), &tokens[index]);
+            index = index + 1;
+            if kind == 62 {
+                if tokens[index].annotation < 17 || tokens[index].annotation > 19 { return (0, 0); }
+                index = index + 1;
+            }
+            nodes[count] = AstNode { kind: kind, parent: copy(free), start: tokens[property].start,
+                end: tokens[index - 1].end, name_start: tokens[property].start,
+                name_end: tokens[property].end, public: false };
+            count = count + 2;
+            if tokens[index].kind != 11 { break; }
+            index = index + 1;
+            if tokens[index].kind == 3 { return (0, 0); }
+        }
+        if tag == 2 && properties == 0 { return (0, 0); }
+    } else if tag != 3 {
+        return (0, 0);
+    }
+    if tokens[index].kind != 3 { return (0, 0); }
+    nodes[free] = AstNode { kind: 58, parent: parent, start: tokens[first].start,
+        end: tokens[index].end, name_start: tokens[tag_token].start,
+        name_end: tokens[tag_token].end, public: false };
+    (index + 1, count)
+}
+
+fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    if depth % 256 >= 128 { return (0, 0); }
+    let mut index = copy(first);
+    let mut count = free + 1;
+    if tokens[index].kind == 71 {
+        let region = tokens[index + 2].annotation == 2;
+        let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(free));
+        if next == 0 { return (0, 0); }
+        index = next;
+        count = used;
+        if region && tokens[index].kind == 71 && tokens[index + 2].annotation == 3 {
+            let (after, total) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(free));
+            if after == 0 { return (0, 0); }
+            index = after;
+            count = total;
+        }
+    }
+    if tokens[index].kind != 4 { return (0, 0); }
+    index = index + 1;
+    let mut named_moves = true;
+    while tokens[index].kind != 5 {
+        let start = tokens[index].start;
+        let statement = copy(count);
+        count = count + 1;
+        let mark = tokens[index].kind;
+        if mark == 72 && lexical_name(tokens[index + 1].kind) && tokens[index + 2].kind == 14 {
+            if !named_moves { return (0, 0); }
+            nodes[statement] = AstNode { kind: 57, parent: copy(free), start: start,
+                end: tokens[index + 2].end, name_start: tokens[index + 1].start,
+                name_end: tokens[index + 1].end, public: false };
+            index = index + 3;
+            continue;
+        }
+        named_moves = false;
+        if mark == 67 {
+            if tokens[index + 1].kind != 70 || tokens[index + 2].kind != 4 { return (0, 0); }
+            let (next, used) = parse_block(256 + (depth % 256) + 1,
+                &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 2, copy(count), copy(statement));
+            if next == 0 { return (0, 0); }
+            index = next;
+            count = used;
+            nodes[statement] = AstNode { kind: 50, parent: copy(free), start: start,
+                end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false };
+            continue;
+        }
+        if mark==82 {
+            if depth<256 {return (0,0);}
+            let end=tokens[index].end;let body=raw_offset(tokens[index].annotation);index=index+1;
+            while tokens[index].kind==83 || tokens[index].kind==69 {
+                nodes[count]=AstNode{kind:if tokens[index].kind==83{78}else{52},parent:copy(statement),
+                    start:tokens[index].start,end:tokens[index].end,name_start:0,name_end:0,public:false};
+                count=count+1;index=index+1;
+            }
+            nodes[statement]=AstNode{kind:77,parent:copy(free),start:start,end:end,name_start:copy(body),name_end:body,public:false};continue;
+        }
+        if mark == 68 {
+            if depth < 256 { return (0, 0); }
+            let end = tokens[index].end;
+            index = index + 1;
+            while tokens[index].kind == 69 {
+                nodes[count] = AstNode { kind: 52, parent: copy(statement), start: tokens[index].start,
+                    end: tokens[index].end, name_start: 0, name_end: 0, public: false };
+                count = count + 1;
+                index = index + 1;
+            }
+            nodes[statement] = AstNode { kind: 51, parent: copy(free), start: start,
+                end: end, name_start: 0, name_end: 0, public: false };
+            continue;
+        }
+        let mut kind: i64 = 8;
+        let mut name_start: u64 = 0;
+        let mut name_end: u64 = 0;
+        let mut tuple_start: u64 = 0;
+        let mut tuple_end: u64 = 0;
+        if mark == 15 {
+            kind = 5;
+            index = index + 1;
+            if tokens[index].kind == 2 {
+                kind = 47;
+                index = index + 1;
+                tuple_start = copy(index);
+                let mut bindings: u64 = 0;
+                while tokens[index].kind != 3 {
+                    if tokens[index].kind == 16 { index = index + 1; }
+                    if !declaration_name(&tokens[index]) { return (0, 0); }
+                    bindings = bindings + 1;
+                    index = index + 1;
+                    if tokens[index].kind != 3 {
+                        if tokens[index].kind != 11 { return (0, 0); }
+                        index = index + 1;
+                    }
+                }
+                if bindings < 2 { return (0, 0); }
+                tuple_end = copy(index);
+                index = index + 1;
+            } else {
+                if tokens[index].kind == 16 { index = index + 1; }
+                if !declaration_name(&tokens[index]) { return (0, 0); }
+                name_start = tokens[index].start;
+                name_end = tokens[index].end;
+                index = index + 1;
+            }
+            if tokens[index].kind == 10 {
+                let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    index + 1, copy(count), copy(statement));
+                if next == 0 { return (0, 0); }
+                index = next;
+                count = used;
+            }
+            if tokens[index].kind != 13 { return (0, 0); }
+            index = index + 1;
+        } else if mark == 17 || mark == 47 || mark == 48 || mark == 50 {
+            kind = if mark == 17 { 6 } else if mark == 47 { 23 } else if mark == 48 { 24 } else { 25 };
+            index = index + 1;
+        }
+        if mark == 46 {
+            let (after, total) = parse_test_and_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 1, copy(count), copy(statement));
+            if after == 0 { return (0, 0); }
+            index = after;
+            count = total;
+            kind = 22;
+        } else {
+            let mut root: u64 = 0;
+            if !((kind == 6 || kind == 23 || kind == 24 || kind == 25) && tokens[index].kind == 14) {
+                if kind == 24 || kind == 25 { return (0, 0); }
+                let (next, used, value) = parse_expression(depth + 1, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(statement), 0);
+                if next == 0 { return (0, 0); }
+                index = next;
+                count = used;
+                root = value;
+            }
+            let width = assignment_width(&tokens[0..tokens.len()], copy(index));
+            if kind == 8 && width != 0 {
+                kind = 21;
+                name_start = tokens[index].start;
+                name_end = tokens[index + width - 1].end;
+                let (next, used, rhs) = parse_expression(depth + 1, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], index + width, copy(count), copy(statement), 0);
+                drop(rhs);
+                if next == 0 { return (0, 0); }
+                index = next;
+                count = used;
+            }
+            if tokens[index].kind == 14 {
+                index = index + 1;
+            } else {
+                if kind != 8 { return (0, 0); }
+                if tokens[index].kind == 5 {
+                    kind = 10;
+                } else if nodes[root].kind != 2 && nodes[root].kind != 26 && nodes[root].kind != 27 && nodes[root].kind != 39 && nodes[root].kind != 56 && nodes[root].kind != 65 {
+                    return (0, 0);
+                }
+            }
+        }
+        while tuple_start < tuple_end {
+            let binding_start = tokens[tuple_start].start;
+            if tokens[tuple_start].kind == 16 { tuple_start = tuple_start + 1; }
+            nodes[count] = AstNode { kind: 48, parent: copy(statement), start: binding_start,
+                end: tokens[tuple_start].end, name_start: tokens[tuple_start].start,
+                name_end: tokens[tuple_start].end, public: false,
+            };
+            count = count + 1;
+            tuple_start = tuple_start + 1;
+            if tokens[tuple_start].kind == 11 { tuple_start = tuple_start + 1; }
+        }
+        nodes[statement] = AstNode { kind: kind, parent: copy(free), start: start,
+            end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false,
+        };
+    }
+    nodes[free] = AstNode { kind: 2, parent: parent, start: tokens[first].start,
+        end: tokens[index].end, name_start: 0, name_end: 0, public: false,
+    };
+    return (index + 1, count);
+}
+
+fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, available: u64, parent: u64, item_start: u64, function_kind: i64) -> (u64, u64) {
+    let method_addr = parent != 0 && tokens[first + 1].annotation == -2;
+    if tokens[first].kind != 7 || !method_addr && !declaration_name(&tokens[first + 1])
+    || tokens[first + 2].kind != 2 { return (0, 0); }
+    let function = free;
+    let name_start = tokens[first + 1].start;
+    let name_end = tokens[first + 1].end;
+    let mut count = available;
+    let mut index = first + 3;
+    while tokens[index].kind != 3 {
+        let start = tokens[index].start;
+        let receiver = tokens[index].kind == 25;
+        if receiver { index = index + 1; }
+        if tokens[index].kind == 16 { index = index + 1; }
+        let name = copy(index);
+        let mark = tokens[index].kind;
+        if mark != 66 && !declaration_name(&tokens[index]) { return (0, 0); }
+        let parameter = copy(count);
+        count = count + 1;
+        index = index + 1;
+        if !receiver || mark != 66 {
+            if tokens[index].kind != 10 { return (0, 0); }
+            let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                index + 1, copy(count), copy(parameter));
+            if next == 0 { return (0, 0); }
+            count = used;
+            index = next;
+        }
+        nodes[parameter] = AstNode { kind: 3, parent: copy(function), start: start,
+            end: tokens[index - 1].end, name_start: tokens[name].start, name_end: tokens[name].end, public: false,
+        };
+        if tokens[index].kind != 3 {
+            if tokens[index].kind != 11 { return (0, 0); }
+            index = index + 1;
+        }
+    }
+    index = index + 1;
+    if tokens[index].kind == 12 {
+        index = index + 1;
+        let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(function));
+        if next == 0 { return (0, 0); }
+        index = next;
+        count = used;
+    }
+    if function_kind == 71 {
+        if tokens[index].kind != 14 { return (0, 0); }
+        nodes[function] = AstNode { kind: 1, parent: parent, start: item_start,
+            end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false };
+        return (index + 1, count);
+    }
+    if function_kind == 64 {
+        if tokens[index].kind != 14 { return (0, 0); }
+        nodes[function] = AstNode { kind: function_kind, parent: parent, start: item_start,
+            end: tokens[index].end, name_start: name_start, name_end: name_end, public: false };
+        return (index + 1, count);
+    }
+    let (next, used) = parse_block(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+        copy(index), copy(count), copy(function));
+    if next == 0 { return (0, 0); }
+    nodes[function] = AstNode {
+        kind: function_kind, parent: parent, start: item_start, end: tokens[next - 1].end,
+        name_start: name_start, name_end: name_end, public: false,
+    };
+    return (next, used);
+}
+
+// A node index also identifies the scope or binding introduced by that node.
+
+struct ExitContext {
+    function: u64,
+    loop_target: u64,
+}
+
+fn child_order(nodes: &[AstNode], left: u64, right: u64) -> bool {
+    let left_kind = nodes[left].kind;
+    let right_kind = nodes[right].kind;
+    if left_kind == 48 && right_kind != 48 { return false; }
+    if left_kind != 48 && right_kind == 48 { return true; }
+    if left_kind == 68 && (right_kind == 69 || right_kind == 70) { return true; }
+    if right_kind == 68 && (left_kind == 69 || left_kind == 70) { return false; }
+    nodes[left].start < nodes[right].start
+}
+
+fn set_child(graph: &mut [StaticNode], node: u64, child: u64) {
+    let sibling = graph[node].next_sibling;
+    graph[node] = StaticNode { first_child: child, next_sibling: sibling,
+        scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 };
+}
+
+fn set_sibling(graph: &mut [StaticNode], node: u64, sibling: u64) {
+    let child = graph[node].first_child;
+    graph[node] = StaticNode { first_child: child, next_sibling: sibling,
+        scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 };
+}
+
+fn find_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    node: u64, visible: u64) -> u64 {
+    let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+    let mut candidate = visible;
+    while candidate != 0 {
+        let name = &source[nodes[candidate].name_start..nodes[candidate].name_end];
+        if spelling.content_eq(&name[0..name.len()]) { return candidate; }
+        candidate = graph[candidate].visible;
+    }
+    0
+}
+
+fn resolve_node(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [StaticNode],
+    node: u64, parent_scope: u64, visible: u64, shared_body: u64, context: &ExitContext, track_fields: bool) -> u64 {
+    let kind = nodes[node].kind;
+    let first_child = graph[node].first_child;
+    let mut scope = copy(parent_scope);
+    let mut scope_parent: u64 = 0;
+    let mut body: u64 = 0;
+    if kind == 1 || kind == 35 || kind == 55 || kind == 40 || kind == 27 || kind == 22 || kind == 64 {
+        let mut last = copy(first_child);
+        while last != 0 && graph[last].next_sibling != 0 { last = graph[last].next_sibling; }
+        if last != 0 && nodes[last].kind == 2 {
+            body = copy(last);
+            scope = last;
+        } else {
+            scope = copy(node);
+        }
+        if kind == 22 { scope = copy(node); }
+    } else if kind == 2 && node != shared_body {
+        scope = copy(node);
+    }
+    let scope_entry = scope != parent_scope;
+    if scope_entry { scope_parent = copy(parent_scope); }
+    let mut function = (*context).function;
+    let mut loop_target = (*context).loop_target;
+    if kind == 1 || kind == 35 || kind == 55 {
+        function = copy(node);
+        loop_target = 0;
+    }
+    if kind == 22 || kind == 27 { loop_target = copy(node); }
+    let destination: u64 = if kind == 6 { copy(function) }
+        else if kind == 23 || kind == 24 { copy(loop_target) } else { 0 };
+    let child_context = ExitContext { function: function, loop_target: loop_target };
+    let mut candidate = copy(visible);
+    let mut child = copy(first_child);
+    let mut last_child: u64 = 0;
+    let mut type_node: u64 = 0;
+    while child != 0 {
+        candidate = resolve_node(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()],
+            &mut graph[0..graph.len()], copy(child), copy(scope), candidate, copy(body), &child_context, copy(track_fields));
+        if type_node == 0 && nodes[child].kind == 4 { type_node = copy(child); }
+        last_child = copy(child);
+        child = graph[child].next_sibling;
+    }
+    let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+    let mut introduces = kind == 5 || kind == 3 || kind == 48 || kind == 57;
+    if kind == 41 && first_child == 0 && spelling.len() > 0 {
+        introduces = spelling[0] >= 97 && spelling[0] <= 122;
+    }
+    if spelling.len() == 1 && spelling[0] == 95 { introduces = false; }
+    let mut binding: u64 = 0;
+    if kind == 7 || kind == 57 {
+        binding = find_binding(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(node), copy(visible));
+    }
+    if kind == 52 {
+        // Operand nodes carry their spelling in their byte span.
+        let operand = &source[nodes[node].start..nodes[node].end];
+        binding = copy(visible);
+        while binding != 0 {
+            let name = &source[nodes[binding].name_start..nodes[binding].name_end];
+            if operand.content_eq(&name[0..name.len()]) { break; }
+            binding = graph[binding].visible;
+        }
+    }
+    let declaration = introduces;
+    let method_new = kind == 16 && spelling.len() == 3
+        && spelling[0] == 110 && spelling[1] == 101 && spelling[2] == 119;
+    let fact = if kind == 57 && !declaration { 0 } else { fact_kind(copy(kind), method_new) };
+    let mutable = point_mutable(&tokens[0..tokens.len()], nodes[node].start, nodes[node].name_start,
+        copy(fact) == 3, copy(declaration));
+    let mut field_name: u64 = 0;
+    if track_fields && (kind == 31 || kind == 54) && nodes[node].name_start == nodes[node].name_end {
+        field_name = (tokens.len() as u64) + nodes[node].name_start;
+    } else if track_fields && (kind == 17 || kind == 31 || kind == 54) {
+        // Resolve each member spelling to a canonical token span. The
+        // verifier can compare field identities without reopening source.
+        let mut token: u64 = 0;
+        while token < tokens.len() as u64 {
+            let candidate = &source[tokens[token].start..tokens[token].end];
+            if spelling.content_eq(&candidate[0..candidate.len()]) {
+                field_name = token + 1;
+                break;
+            }
+            token = token + 1;
+        }
+    }
+    let sibling = graph[node].next_sibling;
+    graph[node] = StaticNode { first_child: first_child, next_sibling: sibling,
+        scope: copy(scope), scope_parent: scope_parent, scope_entry: scope_entry, declaration: copy(declaration),
+        mutable: mutable, type_node: if declaration { type_node } else { 0 },
+        initializer: if declaration && kind == 5 { last_child } else { 0 },
+        fact: fact, visible: copy(candidate), binding: binding, destination: destination, field_name: field_name, private_start: 0, private_end: 0 };
+    if scope != parent_scope || kind == 2 || kind == 1 || kind == 35 || kind == 55
+        || kind == 40 || kind == 27 || kind == 22 || kind == 64 || kind == 58 { return visible; }
+    if declaration { return node; }
+    candidate
+}
+
+// Child links are the point's operands. Fact-specific payloads select these
+// operands, except for resolved bindings, exit destinations and captures.
+fn fact_kind(kind: i64, is_new: bool) -> i64 {
+    if kind == 7 || kind == 52 { return 1; }
+    if kind == 57 { return 2; }
+    if kind == 13 { return 3; }
+    if kind == 66 { return 4; }
+    if kind == 16 && is_new { return 5; }
+    if kind == 44 || kind == 45 || kind == 37 { return 6; }
+    if kind == 55 { return 7; }
+    if kind == 6 || kind == 23 || kind == 24 || kind == 10 { return 8; }
+    if kind == 38 { return 9; }
+    if kind == 18 || kind == 17 || kind == 14 { return 10; }
+    if kind == 15 || kind == 16 { return 11; }
+    if kind == 21 { return 12; }
+    if kind == 26 || kind == 39 || kind == 22 { return 13; }
+    if kind == 25 { return 14; }
+    0
+}
+
+
+fn point_mutable(tokens: &[Token], start: u64, name_start: u64, borrow: bool, declaration: bool) -> bool {
+    if !borrow && !declaration { return false; }
+    let mut prefix = token_at(&tokens[0..tokens.len()], start);
+    if borrow { return tokens[prefix + 1].kind == 16; }
+    while tokens[prefix].kind != 0 && tokens[prefix].start < name_start {
+        if tokens[prefix].kind == 16 { return true; }
+        prefix = prefix + 1;
+    }
+    false
+}
+
+fn emit_point(nodes: &[AstNode], graph: &[StaticNode], node: u64) {
+    print(graph[node].fact);
+    print(if graph[node].mutable { 1 } else { 0 });
+    print(graph[node].destination);
+    print(if nodes[node].kind == 55 && nodes[node].name_end > nodes[node].name_start { 1 } else { 0 });
+    print(graph[node].type_node);
+    print(graph[node].initializer);
+}
+
+// Walk each closure's subtree once. The marker array deduplicates repeated
+// uses of a declaration without clearing the array between closures.
+fn emit_captures(nodes: &[AstNode], graph: &[StaticNode]) {
+    let mut seen: [u64; 524289] = [0; 524289];
+    let mut closure: u64 = 1;
+    while closure < nodes.len() as u64 {
+        if nodes[closure].kind == 55 {
+            let scope = graph[closure].scope;
+            let mut cursor = graph[closure].first_child;
+            while cursor != 0 {
+                let kind = nodes[cursor].kind;
+                let binding = graph[cursor].binding;
+                if binding != 0 && (kind == 7 || kind == 52) && seen[binding] != closure {
+                    let origin_scope = graph[binding].scope;
+                    let mut ancestor = nodes[closure].parent;
+                    while ancestor != 0 && graph[ancestor].scope != origin_scope {
+                        ancestor = nodes[ancestor].parent;
+                    }
+                    if graph[ancestor].scope == origin_scope && origin_scope != scope {
+                        seen[binding] = copy(closure);
+                        print(closure);
+                        print(binding);
+                    }
+                }
+                let child = graph[cursor].first_child;
+                if child != 0 {
+                    cursor = child;
+                    continue;
+                }
+                while cursor != closure && graph[cursor].next_sibling == 0 {
+                    cursor = nodes[cursor].parent;
+                }
+                if cursor == closure { break; }
+                cursor = graph[cursor].next_sibling;
+            }
+        }
+        closure = closure + 1;
+    }
+}
+
+fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [StaticNode], track_fields: bool) {
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        let parent = nodes[node].parent;
+        let mut sibling = graph[parent].first_child;
+        let mut previous: u64 = 0;
+        while sibling != 0 && !child_order(&nodes[0..nodes.len()], copy(node), copy(sibling)) {
+            previous = copy(sibling);
+            sibling = graph[sibling].next_sibling;
+        }
+        set_sibling(&mut graph[0..graph.len()], copy(node), sibling);
+        if previous == 0 {
+            set_child(&mut graph[0..graph.len()], parent, copy(node));
+        } else {
+            set_sibling(&mut graph[0..graph.len()], previous, copy(node));
+        }
+        node = node + 1;
+    }
+    let context = ExitContext { function: 0, loop_target: 0 };
+    let visible = resolve_node(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()], &mut graph[0..graph.len()], 0, 0, 0, 0, &context, track_fields);
+    drop(visible);
+}
+
+fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+    let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 }; 524289];
+    build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()], &mut graph[..], true);
+    let mut node: u64 = 0;
+    if check != 0 {
+        let mut layout: usize = 0;
+        let mut declaration = graph[0].first_child;
+        while declaration != 0 && layout < visibility.len() && visibility[layout].name != 0 {
+            if nodes[declaration].name_start == visibility[layout].name
+                && (nodes[declaration].kind == 28 || visibility[layout].kind != 0) {
+                if visibility[layout].kind != 0 {
+                    let fact = &mut graph[declaration].fact;
+                    *fact = 40 + visibility[layout].kind;
+                }
+                let start = visibility[layout].start;
+                let end = visibility[layout].end;
+                let private_start = &mut graph[declaration].private_start;
+                *private_start = start;
+                let private_end = &mut graph[declaration].private_end;
+                *private_end = end;
+                layout = layout + 1;
+            }
+            declaration = graph[declaration].next_sibling;
+        }
+        if layout < visibility.len() && visibility[layout].name != 0 { return 9; }
+        let mut item = graph[0].first_child;
+        let mut custom = false;
+        while item != 0 {
+            if nodes[item].kind == 49 { custom = true; }
+            item = graph[item].next_sibling;
+        }
+        let status = check_tree(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], &tokens[0..tokens.len()], copy(custom), check == 5 || check == 2, copy(env_call), package);
+        if status != 0 { return status; }
+        if check == 5 || (check == 1 && !custom) { return 0; }
+        if check == 2 {
+            if emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false) == 0 {
+                return emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], true);
+            }
+            if lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false, env_call != 0)
+                && lower_program(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], true, env_call != 0) { return 0; }
+            return 9;
+        }
+        return emit_pool_c(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], false);
+    }
+    print(-1);
+    node = 0;
+    while node < nodes.len() as u64 {
+        print(graph[node].scope);
+        print(graph[node].binding);
+        print(graph[node].scope_parent);
+        print(if graph[node].declaration { 1 } else { 0 });
+        emit_point(&nodes[0..nodes.len()], &graph[..], copy(node));
+        node = node + 1;
+    }
+    print(-3);
+    node = 0;
+    while node < nodes.len() as u64 {
+        let mut child = graph[node].first_child;
+        while child != 0 {
+            print(node);
+            print(child);
+            child = graph[child].next_sibling;
+        }
+        node = node + 1;
+    }
+    print(-4);
+    node = 1;
+    while node < nodes.len() as u64 {
+        if graph[node].scope_entry { print(graph[node].scope); }
+        node = node + 1;
+    }
+    print(-2);
+    emit_captures(&nodes[0..nodes.len()], &graph[..]);
+    0
+}
+
+// Parse top-level items into a flat AST.
+// The lexer always supplies a final EOF token.
+fn parse_constant(tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    item: u64, parent: u64, item_start: u64, public: bool) -> (u64, u64) {
+    if !declaration_name(&tokens[first + 1]) || tokens[first + 2].kind != 10 { return (0, 0); }
+    let (equal, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+        first + 3, item + 1, copy(item));
+    if equal == 0 || tokens[equal].kind != 13 { return (0, 0); }
+    let initializer = equal + 1;
+    let negative = tokens[initializer].kind == 20;
+    let literal = if negative { initializer + 1 } else { copy(initializer) };
+    let kind = tokens[literal].kind;
+    if (kind != 8 && kind != 64 && (kind != 18 || negative)) || tokens[literal + 1].kind != 14 {
+        return (0, 0);
+    }
+    if negative {
+        nodes[used] = AstNode { kind: 12, parent: copy(item), start: tokens[initializer].start,
+            end: tokens[literal].end, name_start: tokens[initializer].start,
+            name_end: tokens[initializer].end, public: false };
+        nodes[used + 1] = syntax_leaf(9, copy(used), &tokens[literal]);
+    } else {
+        nodes[used] = syntax_leaf(9, copy(item), &tokens[literal]);
+    }
+    nodes[item] = AstNode { kind: 76, parent: parent, start: item_start,
+        end: tokens[literal + 1].end, name_start: tokens[first + 1].start,
+        name_end: tokens[first + 1].end, public: public };
+    (literal + 2, used + (if negative { 2 } else { 1 }))
+}
+
+fn parse_generic_parameters(tokens: &[Token], nodes: &mut [AstNode], first: u64,
+    free: u64, parent: u64) -> (u64, u64) {
+    let mut index = first + 1;
+    let mut count = copy(free);
+    while true {
+        if !declaration_name(&tokens[index]) { return (0, 0); }
+        let mut previous = copy(free);
+        while previous < count {
+            if tokens[index].start == nodes[previous].name_start { return (0, 0); }
+            previous = previous + 1;
+        }
+        nodes[count] = AstNode { kind: 67, parent: copy(parent), start: tokens[index].start,
+            end: tokens[index].end, name_start: tokens[index].start, name_end: tokens[index].end, public: false };
+        count = count + 1;
+        index = index + 1;
+        if tokens[index].kind != 11 { break; }
+        index = index + 1;
+    }
+    if tokens[index].kind != 24 { return (0, 0); }
+    return (index + 1, count);
+}
+
+fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
+    let mut count: u64 = 1;
+    let mut index: u64 = 0;
+    if tokens[index].kind == 71 && tokens[index + 2].annotation == 1 {
+        let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), 0);
+        if next == 0 { return 0; }
+        index = next;
+        count = used;
+    }
+    while tokens[index].kind != 0 {
+        let item_start = tokens[index].start;
+        if tokens[index].kind == 56 {
+            let (next, used) = parse_import(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count));
+            if next == 0 { return 0; }
+            index = next;
+            count = used;
+            continue;
+        }
+        let mut public = tokens[index].kind == 57;
+        if public { index = index + 1; }
+        if tokens[index].kind == 71 && tokens[index + 2].annotation == 24 {
+            if public { return 0; }
+            let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), 0);
+            if next == 0 { return 0; }
+            index = next;
+            count = used;
+            continue;
+        }
+        let item = copy(count);
+        while tokens[index].kind == 71 {
+            if tokens[index + 2].annotation != 4 && tokens[index + 2].annotation != 5
+                && tokens[index + 2].annotation != 22 { return 0; }
+            if count == item { count = count + 1; }
+            let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), copy(item));
+            if next == 0 { return 0; }
+            index = next;
+            count = used;
+        }
+        if tokens[index].kind == 57 {
+            if public { return 0; }
+            public = true;
+            index = index + 1;
+        }
+        let item_kind = tokens[index].kind;
+        if count != item && item_kind != 7 && item_kind != 60 && item_kind != 73 && item_kind != 58 && item_kind != 59 { return 0; }
+        if item_kind == 81 {
+            let (next, used) = parse_constant(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                copy(index), copy(count), 0, item_start, public);
+            if next == 0 { return 0; }
+            index = next;
+            count = used;
+            continue;
+        }
+        if item_kind == 58 || item_kind == 59 {
+            if !declaration_name(&tokens[index + 1]) { return 0; }
+            let declaration = copy(item);
+            let name_start = tokens[index + 1].start;
+            let name_end = tokens[index + 1].end;
+            if count == item { count = count + 1; }
+            index = index + 2;
+            if tokens[index].kind == 23 {
+                let (next, used) = parse_generic_parameters(&tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(declaration));
+                if next == 0 { return 0; }
+                index = next;
+                count = used;
+            }
+            if tokens[index].kind != 4 { return 0; }
+            if item_kind == 58 {
+                let (next, used) = parse_fields(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), copy(count), copy(declaration), true);
+                if next == 0 { return 0; }
+                count = used;
+                index = next;
+            } else {
+                index = index + 1;
+                if tokens[index].kind == 5 { return 0; }
+                while tokens[index].kind != 5 {
+                    if !declaration_name(&tokens[index]) { return 0; }
+                    let name = copy(index);
+                    let variant = copy(count);
+                    count = count + 1;
+                    index = index + 1;
+                    if tokens[index].kind == 4 {
+                        let (next, used) = parse_fields(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                            copy(index), copy(count), copy(variant), true);
+                        if next == 0 { return 0; }
+                        index = next;
+                        count = used;
+                    } else if tokens[index].kind == 2 {
+                        let (next, used) = parse_positional_fields(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                            copy(index), copy(count), copy(variant), 4);
+                        if next == 0 { return 0; }
+                        count = used;
+                        index = next;
+                    }
+                    nodes[variant] = AstNode { kind: 30, parent: copy(declaration), start: tokens[name].start,
+                        end: tokens[index - 1].end, name_start: tokens[name].start, name_end: tokens[name].end, public: false,
+                    };
+                    if tokens[index].kind != 11 { break; }
+                    index = index + 1;
+                }
+                if tokens[index].kind != 5 { return 0; }
+                index = index + 1;
+            }
+            let kind = if item_kind == 58 { 28 } else { 29 };
+            nodes[declaration] = AstNode { kind: kind, parent: 0, start: item_start,
+                end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: copy(public),
+            };
+            continue;
+        }
+        if item_kind == 65 {
+            if public { return 0; }
+            let implementation = copy(count);
+            count = count + 1;
+            index = index + 1;
+            if !lexical_name(tokens[index].kind) { return 0; }
+            let type_name = copy(index);
+            index = index + 1;
+            while tokens[index].kind == 43 {
+                index = index + 1;
+                if !lexical_name(tokens[index].kind) { return 0; }
+                index = index + 1;
+            }
+            if tokens[index].kind == 23 {
+                let (next, used) = parse_generic_parameters(&tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(implementation));
+                if next == 0 { return 0; }
+                index = next;
+                count = used;
+            }
+            if tokens[index].kind != 4 { return 0; }
+            index = index + 1;
+            while tokens[index].kind != 5 {
+                if tokens[index].kind == 81 {
+                    let start = tokens[index].start;
+                    let (next, used) = parse_constant(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(implementation), start, false);
+                    if next == 0 { return 0; }
+                    index = next;
+                    count = used;
+                    continue;
+                }
+                let method = copy(count);
+                let method_start = tokens[index].start;
+                count = count + 1;
+                while tokens[index].kind == 71 {
+                    if tokens[index + 2].annotation != 4 && tokens[index + 2].annotation != 5
+                        && tokens[index + 2].annotation != 22 { return 0; }
+                    let (after, total) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(method));
+                    if after == 0 { return 0; }
+                    index = after;
+                    count = total;
+                }
+                let method_kind: i64 = if tokens[index].kind == 60 { 35 } else { 1 };
+                if copy(method_kind) == 35 { index += 1; }
+                let (next, used) = parse_function(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    copy(index), method, copy(count), copy(implementation), method_start, method_kind);
+                if next == 0 { return 0; }
+                count = used;
+                index = next;
+            }
+            nodes[implementation] = AstNode { kind: 49, parent: 0, start: item_start,
+                end: tokens[index].end, name_start: tokens[type_name].start, name_end: tokens[type_name].end, public: false,
+            };
+            index = index + 1;
+            continue;
+        }
+        let function_kind: i64 = if item_kind == 60 { 35 } else if item_kind == 73 { 64 } else { 1 };
+        if item_kind == 60 { index = index + 1; }
+        if item_kind == 73 {
+            if tokens[index + 1].kind != 9 || tokens[index + 1].annotation != 26 {
+                return 0;
+            }
+            index = index + 2;
+        }
+        if (tokens.len() as u64) - index < 4 || tokens[index].kind != 7
+            || !declaration_name(&tokens[index + 1]) || tokens[index + 2].kind != 2 { return 0; }
+
+        if count == item { count = count + 1; }
+        let (next, used) = parse_function(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(item), copy(count), 0, item_start, function_kind);
+        if next == 0 { return 0; }
+        if public {
+            let declaration = AstNode { kind: nodes[item].kind, parent: 0, start: nodes[item].start,
+                end: nodes[item].end, name_start: nodes[item].name_start, name_end: nodes[item].name_end,
+                public: true };
+            nodes[item] = declaration;
+        }
+        count = used;
+        index = next;
+    }
+    nodes[0] = AstNode {
+        kind: 0, parent: 0, start: 0, end: tokens[index].end, name_start: 0, name_end: 0, public: false,
+    };
+    count
+}
+
+fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+    let mut nodes = [AstNode {
+        kind: 0, parent: 0, start: 0, end: 0, name_start: 0, name_end: 0, public: false,
+    }; 524289];
+    let count = parse_nodes(&tokens[0..tokens.len()], &mut nodes[..]);
+    if count == 0 { return 7; }
+    let mut node: usize = 0;
+    while (node as u64) < count {
+        if check != 0 && check != 4 { node = node + 1; continue; }
+        print(nodes[node].kind);
+        print(nodes[node].parent);
+        print(nodes[node].start);
+        print(nodes[node].end);
+        print(nodes[node].name_start);
+        print(nodes[node].name_end);
+        print(if nodes[node].public { 1 } else { 0 });
+        node = node + 1;
+    }
+    if check == 4 { return 0; }
+    let mut generic = false;
+    let mut candidate: u64 = 1;
+    while candidate < count {
+        let kind = nodes[candidate].kind;
+        if (kind == 58 || kind == 67) && (nodes[nodes[candidate].parent].kind == 28 || nodes[nodes[candidate].parent].kind == 29)
+            && !deferred_iterator(&source[0..source.len()], &nodes[..node], nodes[candidate].parent) { generic = true; }
+        candidate = candidate + 1;
+    }
+    if check != 0 && (generic || has_pipeline(&source[0..source.len()], &tokens[0..tokens.len()])) {
+        return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
+            check, env_call, package, &visibility[0..visibility.len()], generic);
+    }
+    emit_static_tree(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()], check, env_call, package, visibility)
+}
+
+fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    generic: bool, factory: u64, expanded: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    if factory != 0 {
+        return specialize_factory(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], factory, expanded, offsets);
+    }
+    if generic {
+        return specialize_structs(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets);
+    }
+    specialize_pipelines(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets)
+}
+
+fn parse_pipeline(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
+    env_call: u64, package: bool, visibility: &[LayoutVisibility], generic: bool) -> i32 {
+    // The offset table includes the end of input.
+    if source.len() >= 3145728 { return 4; }
+    let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
+        scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,
+        visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 }; 524289];
+    build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()],
+        &mut graph[..], true);
+    let mut expanded: [u8; 3145728] = [0; 3145728];
+    let mut offsets: [u64; 3145728] = [0; 3145728];
+    let factory = iterator_factory(&source[0..source.len()], &nodes[0..nodes.len()]);
+    let (error, length) = rewrite_pipeline(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..],
+        &tokens[0..tokens.len()], copy(generic), copy(factory), &mut expanded[..], &mut offsets[..]);
+    if error != 0 { return error; }
+    let mut relocated = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let mut item: usize = 0;
+    while item < visibility.len() && visibility[item].name != 0 {
+        relocated[item] = LayoutVisibility { kind: visibility[item].kind, name: offsets[visibility[item].name],
+            start: offsets[visibility[item].start], end: offsets[visibility[item].end] };
+        item = item + 1;
+    }
+    let env: u64 = if env_call == 0 { 0 } else { offsets[env_call] };
+    let mut rewritten = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
+    let (status, count) = scan_tokens(&expanded[..length], &mut rewritten[..], copy(check));
+    if status != 0 { return status; }
+    let selected = select_target(&expanded[..length], &mut rewritten[..count + 3]);
+    if selected == 0 { return 7; }
+    mark_nominal_names(&expanded[..length], &mut rewritten[..selected]);
+    let mut syntax = [AstNode { kind: 0, parent: 0, start: 0, end: 0, name_start: 0,
+        name_end: 0, public: false }; 524289];
+    let used = parse_nodes(&rewritten[..selected], &mut syntax[..]);
+    if used == 0 { return 7; }
+    if generic || factory != 0 {
+        return parse(&expanded[..length], &rewritten[..selected], check, env, package, &relocated[..item]);
+    }
+    emit_static_tree(&expanded[..length], &syntax[..used], &rewritten[..selected],
+        check, env, package, &relocated[..item])
+}
+
+fn main() -> i32 {
+    match args() {
+        Err(error) => { drop(error); return 6; },
+        Ok(arguments) => {
+            if arguments.len() == 2 || arguments.len() == 4 {
+                let flag = arguments[0];
+                let check_flag: [u8; 7] = [45, 45, 99, 104, 101, 99, 107];
+                let bytes = flag.as_bytes();
+                let build_flag: [u8; 5] = [98, 117, 105, 108, 100]; // build
+                if bytes.content_eq(&build_flag[..]) {
+                    if arguments.len() != 4 { return build_usage(); }
+                    let option = arguments[2];
+                    let option_bytes = option.as_bytes();
+                    let output_flag: [u8; 2] = [45, 111]; // -o
+                    if !option_bytes.content_eq(&output_flag[..]) { return build_usage(); }
+                    let directory = arguments[1];
+                    let directory_bytes = directory.as_bytes();
+                    let output = arguments[3];
+                    let output_bytes = output.as_bytes();
+                    return build_package(directory_bytes, output_bytes);
+                }
+                let package_flag_bytes: [u8; 16] = [45, 45, 101, 109, 105, 116, 45, 112, 97, 99, 107, 97, 103, 101, 45, 99]; // --emit-package-c
+                let package_flag = &package_flag_bytes[..];
+                if bytes.content_eq(&package_flag[0..package_flag.len()]) {
+                    let directory = arguments[1];
+                    let directory_bytes = directory.as_bytes();
+                    if arguments.len() == 2 {
+                        let empty: [u8; 0] = [];
+                        return compile_package(directory_bytes, &empty[..]);
+                    }
+                    let option = arguments[2];
+                    let option_bytes = option.as_bytes();
+                    let stdlib_flag: [u8; 12] = [45, 45, 115, 116, 100, 108, 105, 98, 45, 100, 105, 114]; // --stdlib-dir
+                    if !option_bytes.content_eq(&stdlib_flag[..]) { return 6; }
+                    let stdlib = arguments[3];
+                    let stdlib_bytes = stdlib.as_bytes();
+                    return compile_package(directory_bytes, stdlib_bytes);
+                }
+                if arguments.len() != 2 { return 6; }
+                let emit_flag: [u8; 8] = [45, 45, 101, 109, 105, 116, 45, 99];
+                let lex_flag: [u8; 5] = [45, 45, 108, 101, 120];
+                let ast_flag: [u8; 5] = [45, 45, 97, 115, 116];
+                let verify_flag: [u8; 8] = [45,45,118,101,114,105,102,121];
+                let mode: i32 = if bytes.content_eq(&check_flag[..]) { 1 }
+                    else if bytes.content_eq(&emit_flag[..]) { 2 }
+                    else if bytes.content_eq(&lex_flag[..]) { 3 }
+                    else if bytes.content_eq(&ast_flag[..]) { 4 }
+                    else if bytes.content_eq(&verify_flag[..]) { 5 } else { 0 };
+                if mode == 0 { return 6; }
+                let filename = arguments[1];
+                let path = filename.as_bytes();
+                return compile_file(path, mode);
+            }
+            if arguments.len() != 1 { return 6; }
+            let argument = arguments[0];
+            let path = argument.as_bytes();
+            return compile_file(path, 0);
+        },
+    };
+}
+
+fn compile_file(filename: &[u8], check: i32) -> i32 {
+    if filename.len() >= 4096 { return 6; }
+    let mut path: [u8; 4096] = [0; 4096];
+    let mut index: usize = 0;
+    while index < filename.len() {
+        path[index] = filename[index];
+        index = index + 1;
+    }
+    let mut buffer: [u8; 131072] = [0; 131072];
+    let (status, filled) = read_source(&path[..index + 1], &mut buffer[..]);
+    if status != 0 { return status; }
+    lex(&buffer[..filled], check)
+}
+
+fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
+    // Include the compiler sources and the documented standard library in a single package.
+    let mut source: [u8; 3145728] = [0; 3145728];
+    let mut names: [u8; 131072] = [0; 131072];
+    let mut files = [PackageFile { end: 0, module_start: 0, module_end: 0, entry: false, package: 0, visible: 0 }; 256];
+    let package = read_package(root, stdlib, &mut source[..], &mut names[..], &mut files[..]);
+    if package.error != 0 { return package.error; }
+    // Allow 768 Ki tokens for the combined compiler and standard library, plus sentinels.
+    let mut tokens: [Token; 786435] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 786435];
+    let (status, count) = scan_tokens(&source[..package.source_end], &mut tokens[..], 2);
+    if status != 0 { return status; }
+    let selected = select_target(&source[..package.source_end], &mut tokens[..count + 3]);
+    if selected == 0 { return 7; }
+    prepare_native_exports(&source[..package.source_end], &names[..package.names_end],
+        &files[..package.files_end], &mut tokens[..selected]);
+    mark_nominal_names(&source[..package.source_end], &mut tokens[..selected]);
+    let mut nodes = [AstNode {
+        kind: 0, parent: 0, start: 0, end: 0, name_start: 0, name_end: 0, public: false,
+    }; 524289];
+    let used = parse_nodes(&tokens[..selected], &mut nodes[..]);
+    if used == 0 { return 7; }
+    let mut graph = [StaticNode {
+        first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false,
+        declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,
+        visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0,
+    }; 524289];
+    build_graph(&source[..package.source_end], &nodes[..used], &tokens[..selected], &mut graph[..], false);
+    let mut linked: [u8; 3145728] = [0; 3145728];
+    let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let (error, length, env_call) = link_package(&source[..package.source_end], &names[..package.names_end],
+        &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..]);
+    if error != 0 { return error; }
+    // Reuse the package token storage for the rewritten source.
+    let (rewritten_status, rewritten_count) = scan_tokens(&linked[..length], &mut tokens[..], 2);
+    if rewritten_status != 0 { return rewritten_status; }
+    let remaining = select_target(&linked[..length], &mut tokens[..rewritten_count + 3]);
+    if remaining == 0 { return 7; }
+    mark_nominal_names(&linked[..length], &mut tokens[..remaining]);
+    parse(&linked[..length], &tokens[..remaining], 2, env_call, true, &visibility[..])
+}
+
+
+#(if: target.os == "macos" && target.arch == "aarch64")
+fn build_usage() -> i32 {
+    let message: [u8; 38] = [117, 115, 97, 103, 101, 58, 32, 99, 111, 114, 98, 111, 99, 32, 98, 117, 105, 108, 100, 32, 80, 65, 67, 75, 65, 71, 69, 32, 45, 111, 32, 79, 85, 84, 80, 85, 84, 10]; // usage: corboc build PACKAGE -o OUTPUT
+    diagnostic(&message[..]);
+    6
+}
+
+fn build_package(root: &[u8], output: &[u8]) -> i32 {
+    if output.len() == 0 || output.len() >= 4096 { return build_usage(); }
+    let mut stdlib: [u8; 4096] = [0; 4096];
+    let std_end = stdlib_path(&mut stdlib[..]);
+    if std_end == 0 {
+        let message: [u8; 64] = [99, 111, 114, 98, 111, 99, 58, 32, 115, 116, 97, 110, 100, 97, 114, 100, 32, 108, 105, 98, 114, 97, 114, 121, 32, 109, 105, 115, 115, 105, 110, 103, 32, 102, 114, 111, 109, 32, 46, 46, 47, 115, 104, 97, 114, 101, 47, 99, 111, 114, 98, 111, 47, 115, 116, 100, 108, 105, 98, 47, 115, 114, 99, 10]; // corboc: standard library missing from ../share/corbo/stdlib/src
+        diagnostic(&message[..]);
+        return 11;
+    }
+    let mut workspace: [u8; 4096] = [0; 4096];
+    let end = workspace_path(&output[0..output.len()], &mut workspace[..]);
+    if end == 0 {
+        let message: [u8; 48] = [99, 111, 114, 98, 111, 99, 58, 32, 99, 97, 110, 110, 111, 116, 32, 99, 114, 101, 97, 116, 101, 32, 116, 101, 109, 112, 111, 114, 97, 114, 121, 32, 98, 117, 105, 108, 100, 32, 100, 105, 114, 101, 99, 116, 111, 114, 121, 10]; // corboc: cannot create temporary build directory
+        diagnostic(&message[..]);
+        return 11;
+    }
+    let mut source: [u8; 4096] = [0; 4096];
+    let mut binary: [u8; 4096] = [0; 4096];
+    let mut destination: [u8; 4096] = [0; 4096];
+    let c_suffix: [u8; 10] = [47, 112, 114, 111, 103, 114, 97, 109, 46, 99]; // /program.c
+    let exe_suffix: [u8; 8] = [47, 112, 114, 111, 103, 114, 97, 109]; // /program
+    let cb = append(&mut source[..], 0, &workspace[..end]);
+    let ce = append(&mut source[..], cb, &c_suffix[..]);
+    let eb = append(&mut binary[..], 0, &workspace[..end]);
+    let ee = append(&mut binary[..], eb, &exe_suffix[..]);
+    let destination_end = append(&mut destination[..], 0, output);
+    let status = build_in_workspace(root, &stdlib[..std_end], &source[..ce + 1],
+        &binary[..ee + 1], &destination[..destination_end + 1]);
+    clean(&workspace[..end + 1], &source[..ce + 1], &binary[..ee + 1]);
+    status
+}
+
+fn dependency_diagnostic(status: i32) {
+    if status == 12 {
+        let message: [u8; 54] = [99,111,114,98,111,99,58,32,105,110,118,97,108,105,100,32,112,97,99,107,97,103,101,32,109,97,110,105,102,101,115,116,32,111,114,32,100,101,112,101,110,100,101,110,99,121,32,102,105,101,108,100,115,10]; // invalid package manifest or dependency fields
+        diagnostic(&message[..]);
+    }
+    if status == 13 {
+        let message: [u8; 54] = [99,111,114,98,111,99,58,32,105,109,112,111,114,116,32,117,110,97,118,97,105,108,97,98,108,101,32,111,114,32,100,101,112,101,110,100,101,110,99,121,32,110,111,116,32,100,101,99,108,97,114,101,100,10]; // import unavailable or dependency not declared
+        diagnostic(&message[..]);
+    }
+    if status == 16 {
+        let message: [u8; 25] = [99,111,114,98,111,99,58,32,100,101,112,101,110,100,101,110,99,121,32,99,121,99,108,101,10]; // dependency cycle
+        diagnostic(&message[..]);
+    }
+    if status == 17 {
+        let message: [u8; 43] = [99,111,114,98,111,99,58,32,100,101,112,101,110,100,101,110,99,121,32,110,97,109,101,32,111,114,32,115,111,117,114,99,101,32,99,111,110,102,108,105,99,116,10]; // dependency name or source conflict
+        diagnostic(&message[..]);
+    }
+    if status == 18 {
+        let message: [u8; 41] = [99,111,114,98,111,99,58,32,114,101,118,32,109,117,115,116,32,98,101,32,97,32,102,117,108,108,32,71,105,116,32,99,111,109,109,105,116,32,73,68,10]; // rev must be a full Git commit ID
+        diagnostic(&message[..]);
+    }
+    if status == 19 {
+        let message: [u8; 37] = [99,111,114,98,111,99,58,32,71,105,116,32,102,101,116,99,104,32,111,114,32,99,104,101,99,107,111,117,116,32,102,97,105,108,101,100,10]; // Git fetch or checkout failed
+        diagnostic(&message[..]);
+    }
+    if status == 20 {
+        let message: [u8; 56] = [99,111,114,98,111,99,58,32,112,97,116,104,32,100,101,112,101,110,100,101,110,99,121,32,101,115,99,97,112,101,115,32,105,116,115,32,112,105,110,110,101,100,32,71,105,116,32,99,104,101,99,107,111,117,116,10]; // path dependency escapes its pinned Git checkout
+        diagnostic(&message[..]);
+    }
+}
+
+fn build_in_workspace(root: &[u8], stdlib: &[u8], source: &[u8], binary: &[u8], output: &[u8]) -> i32 {
+    let saved = redirect_stdout(&source[0..source.len()]);
+    if saved < 0 {
+        let message: [u8; 39] = [99, 111, 114, 98, 111, 99, 58, 32, 99, 97, 110, 110, 111, 116, 32, 111, 112, 101, 110, 32, 116, 101, 109, 112, 111, 114, 97, 114, 121, 32, 67, 32, 111, 117, 116, 112, 117, 116, 10]; // corboc: cannot open temporary C output
+        diagnostic(&message[..]);
+        return 11;
+    }
+    let status = compile_package(root, stdlib);
+    if !restore_stdout(saved) {
+        let message: [u8; 40] = [99, 111, 114, 98, 111, 99, 58, 32, 99, 97, 110, 110, 111, 116, 32, 102, 108, 117, 115, 104, 32, 116, 101, 109, 112, 111, 114, 97, 114, 121, 32, 67, 32, 111, 117, 116, 112, 117, 116, 10]; // corboc: cannot flush temporary C output
+        diagnostic(&message[..]);
+        return 11;
+    }
+    if status != 0 {
+        let message: [u8; 35] = [99, 111, 114, 98, 111, 99, 58, 32, 112, 97, 99, 107, 97, 103, 101, 32, 99, 111, 109, 112, 105, 108, 97, 116, 105, 111, 110, 32, 102, 97, 105, 108, 101, 100, 10]; // corboc: package compilation failed
+        diagnostic(&message[..]);
+        dependency_diagnostic(copy(status));
+        if status == 8 {
+            let mut details: [u8; 128] = [0; 128];
+            let (read_status, count) = read_source(&source[0..source.len()], &mut details[..]);
+            if read_status == 0 && count > 0 { diagnostic(&details[..count]); }
+        }
+        return status;
+    }
+    let compiled = toolchain(&source[0..source.len()], &binary[0..binary.len()]);
+    if compiled != 0 {
+        let message: [u8; 31] = [99, 111, 114, 98, 111, 99, 58, 32, 67, 32, 99, 111, 109, 112, 105, 108, 101, 114, 32, 102, 97, 105, 108, 101, 100, 32, 40, 99, 99, 41, 10]; // corboc: C compiler failed (cc)
+        diagnostic(&message[..]);
+        return compiled;
+    }
+    if !publish(&binary[0..binary.len()], output) {
+        let message: [u8; 34] = [99, 111, 114, 98, 111, 99, 58, 32, 99, 97, 110, 110, 111, 116, 32, 112, 117, 98, 108, 105, 115, 104, 32, 101, 120, 101, 99, 117, 116, 97, 98, 108, 101, 10]; // corboc: cannot publish executable
+        diagnostic(&message[..]);
+        return 11;
+    }
+    0
+}
+#(endif)
+
+#(if: target.os == "linux" || target.os == "windows" || target.arch == "x86_64")
+fn build_usage() -> i32 { 6 }
+fn build_package(root: &[u8], output: &[u8]) -> i32 {
+    drop(root);
+    drop(output);
+    6
+}
+#(endif)

@@ -1,0 +1,222 @@
+// Native directory cursors stay inside the package loader.
+#(if: target.os == "macos" && target.arch == "aarch64")
+    fn open_directory(path: &[u8]) -> usize {
+        let mut directory: usize = 0;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov x0, ${address}
+                bl _opendir
+                mov ${directory}, x0
+            }
+        }
+        directory
+    }
+
+    fn read_directory(directory: usize, name: &mut [u8]) -> i32 {
+        let mut kind: i32 = 0;
+        @unchecked {
+            let address = addr(&name[0]);
+            @asm {
+                bl ___error
+                str wzr, [x0]
+                mov x0, ${directory}
+                bl _readdir
+                cbnz x0, 4f
+                bl ___error
+                ldr w11, [x0]
+                cmp w11, #0
+                csetm w11, ne
+                b 2f
+                4:
+                ldrb w11, [x0, #20]
+                cmp w11, #0
+                csinv w11, w11, wzr, ne
+                add x9, x0, #21
+                mov x10, ${address}
+                mov x12, #256
+                1:
+                ldrb w13, [x9], #1
+                strb w13, [x10], #1
+                cbz w13, 2f
+                subs x12, x12, #1
+                b.ne 1b
+                mov w11, #-1
+                2:
+                mov ${kind}, w11
+            }
+        }
+        kind
+    }
+
+    fn close_directory(directory: usize) {
+        @unchecked {
+            @asm {
+                mov x0, ${directory}
+                bl _closedir
+            }
+        }
+    }
+#(endif)
+
+#(if: target.os == "macos" && target.arch == "x86_64")
+    fn open_directory(path: &[u8]) -> usize {
+        let mut directory: usize = 0;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov rdi, ${address}
+                call _opendir
+                mov ${directory}, rax
+            }
+        }
+        directory
+    }
+
+    // The offsets come from the platform dirent ABI for these targets.
+    fn read_directory(directory: usize, name: &mut [u8]) -> i32 {
+        let mut entry: usize = 0;
+        let mut kind: i32 = 0;
+        @unchecked {
+            let address = addr(&name[0]);
+            @asm {
+                call ___error
+                mov dword ptr [rax], 0
+                mov rdi, ${directory}
+                call _readdir
+                mov ${entry}, rax
+                test rax, rax
+                jne 3f
+                call ___error
+                cmp dword ptr [rax], 0
+                setne al
+                movzx eax, al
+                neg eax
+                mov ${kind}, eax
+                3:
+            }
+            if entry == 0 { return kind; }
+            @asm {
+                mov rax, ${entry}
+                movzx r8d, byte ptr [rax + 20]
+                lea r9, [rax + 21]
+                mov r10, ${address}
+                mov r11d, 256
+                1:
+                mov dl, [r9]
+                mov [r10], dl
+                test dl, dl
+                je 2f
+                inc r9
+                inc r10
+                dec r11d
+                jne 1b
+                mov r8d, -1
+                2:
+                mov ${kind}, r8d
+            }
+        }
+        if kind == 0 { return -1; }
+        kind
+    }
+
+    fn close_directory(directory: usize) {
+        @unchecked {
+            @asm {
+                mov rdi, ${directory}
+                call _closedir
+            }
+        }
+    }
+#(endif)
+
+#(if: target.os == "linux" && target.arch == "x86_64")
+    fn open_directory(path: &[u8]) -> usize {
+        let mut directory: usize = 0;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov rdi, ${address}
+                call opendir
+                mov ${directory}, rax
+            }
+        }
+        directory
+    }
+
+    // The offsets come from the platform dirent ABI for these targets.
+    fn read_directory(directory: usize, name: &mut [u8]) -> i32 {
+        let mut entry: usize = 0;
+        let mut kind: i32 = 0;
+        @unchecked {
+            let address = addr(&name[0]);
+            @asm {
+                call __errno_location
+                mov dword ptr [rax], 0
+                mov rdi, ${directory}
+                call readdir
+                mov ${entry}, rax
+                test rax, rax
+                jne 3f
+                call __errno_location
+                cmp dword ptr [rax], 0
+                setne al
+                movzx eax, al
+                neg eax
+                mov ${kind}, eax
+                3:
+            }
+            if entry == 0 { return kind; }
+            @asm {
+                mov rax, ${entry}
+                movzx r8d, byte ptr [rax + 18]
+                lea r9, [rax + 19]
+                mov r10, ${address}
+                mov r11d, 256
+                1:
+                mov dl, [r9]
+                mov [r10], dl
+                test dl, dl
+                je 2f
+                inc r9
+                inc r10
+                dec r11d
+                jne 1b
+                mov r8d, -1
+                2:
+                mov ${kind}, r8d
+            }
+        }
+        if kind == 0 { return -1; }
+        kind
+    }
+
+    fn close_directory(directory: usize) {
+        @unchecked {
+            @asm {
+                mov rdi, ${directory}
+                call closedir
+            }
+        }
+    }
+#(endif)
+
+#(if: target.os == "windows" && target.arch == "aarch64")
+    fn open_directory(path: &[u8]) -> usize { drop(path); 0 }
+    fn read_directory(directory: usize, name: &mut [u8]) -> i32 { drop(directory); drop(name); -1 }
+    fn close_directory(directory: usize) { drop(directory); }
+#(endif)
+
+#(if: target.family == "unix" || target.os == "windows" && target.arch == "aarch64")
+    fn open_package_directory(path: &[u8], cache: &mut [u32; 150]) -> usize {
+        drop(cache);
+        open_directory(path)
+    }
+
+    fn read_package_directory(directory: usize, cache: &mut [u32; 150], name: &mut [u8]) -> i32 {
+        drop(cache);
+        read_directory(directory, name)
+    }
+
+    fn close_package_directory(directory: usize) { close_directory(directory); }
+#(endif)

@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn halves(left:&mut i64,right:&mut i64)->(&mut i64,&mut i64){(left,right)}
+fn slices(left:&[u8],right:&[u8])->(&[u8],&[u8]){(left,right)}
+struct Point{value:i64}
+fn points(left:&Point,right:&Point)->(&Point,&Point){(left,right)}
+fn main(){
+    let mut a:i64=1;let mut b:i64=2;
+    let (mut x,mut y)=halves(&mut a,&mut b);*x=3;*y=4;
+    print(a);print(b);
+    let bytes:[u8;3]=[7,8,9];let more:[u8;1]=[10];
+    let (first,second)=slices(&bytes[..],&more[..]);print(first[2]);print(second[0]);
+    let p=Point{value:11};let q=Point{value:12};
+    let (left,right)=points(&p,&q);print((*left).value);print((*right).value);
+}

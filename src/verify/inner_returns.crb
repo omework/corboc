@@ -1,0 +1,36 @@
+use bootstrap::declarations::has_void_result;
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::tasks::task_exit;
+use bootstrap::results::result_annotation;
+use bootstrap::tuples::{tuple_annotation, tuple_value};
+
+// The enclosing expression has a different result destination from return.
+fn check_inner_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64) -> i64 {
+    let function = graph[statement].destination;
+    let mut annotation = graph[function].first_child;
+    while nodes[annotation].kind == 3 { annotation = graph[annotation].next_sibling; }
+    let expression = graph[statement].first_child;
+    if expression==0 && (nodes[annotation].kind!=4 || has_void_result(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation))) {
+        return task_exit(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],statement,0);
+    }
+    if nodes[annotation].kind != 4 || expression == 0 { return 9; }
+    let tuple = tuple_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+    let checked = if tuple {
+        tuple_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], expression, annotation)
+    } else {
+        let mut expected = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+        if expected == 0 || graph[annotation].first_child != 0 {
+            expected = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+        }
+        if expected <= 0 { return 9; }
+        let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], expression, copy(expected), 1);
+        if actual >= 0 && actual != expected { return violation(1, nodes[statement].start); }
+        actual
+    };
+    if checked < 0 { return 0 - checked; }
+    task_exit(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], statement, 0)
+}

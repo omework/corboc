@@ -1,0 +1,61 @@
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::ownership::plain_structure;
+use bootstrap::tasks::instantiate_constructor_result;
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::calls::associated_callee;
+use bootstrap::places::resolve_record_receiver;
+use bootstrap::process_arguments::{is_process_arguments_call, is_process_arguments_result, read_argument_value};
+use bootstrap::signatures::check_signature;
+
+// -10 leaves ordinary expression dispatch in charge.
+fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    let child = graph[node].first_child;
+    let kind = nodes[node].kind;
+    if kind == 15 && nodes[child].kind == 36 {
+        let method = associated_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(node));
+        if method != 0 {
+            if mode == 1 && (expected == 0 || expected == 300) {
+                let mut output = graph[method].first_child;
+                while nodes[output].kind == 3 { output = graph[output].next_sibling; }
+                let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(output));
+                if nodes[output].kind == 4 && nodes[nominal].kind == 28 && graph[output].first_child == 0
+                    && !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(nominal), 0) {
+                    return instantiate_constructor_result(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], &mut values[0..values.len()], node, copy(method), output, nodes[method].kind == 35);
+                }
+            }
+            return check_signature(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], method, graph[child].next_sibling, expected, mode, node);
+        }
+    }
+    if kind == 15 && values[node].ty == 2000139 && is_process_arguments_result(copy(expected))
+        && is_process_arguments_call(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(node)) { return expected; }
+    if kind == 16 || kind == 18 {
+        let argument = read_argument_value(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], copy(node), 0, copy(expected), copy(mode));
+        if argument != 0 { return argument; }
+    }
+    if kind == 16 {
+        let method = resolve_record_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &values[0..values.len()], copy(node));
+        if method != 0 {
+            return check_signature(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], method, graph[child].next_sibling, expected, mode, node);
+        }
+    }
+    return -10;
+}
+
+fn loop_has_break(nodes: &[AstNode], graph: &[StaticNode], target: u64) -> bool {
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        if nodes[point].kind == 23 && graph[point].destination == target { return true; }
+        point = point + 1;
+    }
+    false
+}

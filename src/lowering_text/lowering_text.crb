@@ -1,0 +1,61 @@
+use bootstrap::model::hex_digit;
+use bootstrap::lowering_types::{number, signed};
+use bootstrap::target_c::character;
+
+fn byte(value: u64, emit: bool) {
+    if emit { number(value); character(44); }
+}
+
+fn utf8(scalar: u64, emit: bool) -> u64 {
+    if scalar < 128 { byte(scalar, emit); return 1; }
+    if scalar < 2048 {
+        byte(192 + scalar / 64, copy(emit)); byte(128 + scalar % 64, emit); return 2;
+    }
+    if scalar < 65536 {
+        byte(224 + scalar / 4096, copy(emit)); byte(128 + scalar / 64 % 64, copy(emit));
+        byte(128 + scalar % 64, emit); return 3;
+    }
+    byte(240 + scalar / 262144, copy(emit)); byte(128 + scalar / 4096 % 64, copy(emit));
+    byte(128 + scalar / 64 % 64, copy(emit)); byte(128 + scalar % 64, emit); 4
+}
+
+fn unit(source: &[u8], start: u64) -> u64 {
+    (hex_digit(source[start]) as u64) * 4096 + (hex_digit(source[start+1]) as u64) * 256
+        + (hex_digit(source[start+2]) as u64) * 16 + (hex_digit(source[start+3]) as u64)
+}
+
+pub fn string_bytes(source: &[u8], start: u64, stop: u64, emit: bool) -> i64 {
+    if stop < start + 2 || source[start] != 34 || source[stop-1] != 34 { return -1; }
+    let mut cursor = start + 1;
+    let mut length: u64 = 0;
+    let end = stop - 1;
+    while cursor < end {
+        let ch = source[cursor] as u64;
+        cursor = cursor + 1;
+        if ch != 92 {
+            byte(ch, copy(emit)); length = length + 1; continue;
+        }
+        if cursor >= end { return -1; }
+        let escape = source[cursor] as u64;
+        cursor = cursor + 1;
+        if escape == 117 {
+            if end-cursor < 4 { return -1; }
+            let mut code = unit(&source[0..source.len()], copy(cursor));
+            cursor = cursor + 4;
+            if code >= 55296 && code <= 56319 {
+                if end-cursor < 6 || source[cursor] != 92 || source[cursor+1] != 117 { return -1; }
+                let tail = unit(&source[0..source.len()], cursor+2);
+                if tail < 56320 || tail > 57343 { return -1; }
+                code = 65536 + (code-55296)*1024 + (tail-56320);
+                cursor = cursor + 6;
+            }
+            length = length + utf8(code, copy(emit));
+        } else {
+            let value: u64 = if escape == 110 { 10 } else if escape == 114 { 13 } else if escape == 116 { 9 }
+                else if escape == 98 { 8 } else if escape == 102 { 12 }
+                else if escape == 34 || escape == 47 || escape == 92 { escape } else { return -1; };
+            byte(value, copy(emit)); length = length + 1;
+        }
+    }
+    signed(length)
+}

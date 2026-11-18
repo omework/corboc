@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Backend entry points only; native implementations live in /runtime/.
+use bootstrap::runtime_sources::{pool_runtime, task_value_runtime, native_runtime, reclaim_runtime};
+
+pub fn emit_pools() { pool_runtime(); }
+
+pub fn emit_task_value_runtime() { task_value_runtime(); }
+
+pub fn emit_native_runtime() { native_runtime(); }
+
+pub fn emit_reclaim_runtime(threaded: bool) { reclaim_runtime(threaded); }

@@ -1,0 +1,2072 @@
+use bootstrap::socket_runtime::{completion_call,emit_completion};
+use bootstrap::lowering_c::lower_c;
+use bootstrap::socket_runtime::{socket_wait_call, emit_socket_wait};
+use bootstrap::constants::{resolve_constant, constant_type};
+use bootstrap::declarations::{verification_field, layout_visible};
+use bootstrap::scalar_options::option_variant;
+use bootstrap::calls::borrowed_receiver;
+use bootstrap::regional_calls::region_signature;
+use bootstrap::results::result_variant;
+use bootstrap::model::{result_type, result_has_nominal_payload};
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::scalar::{verify_primitive, integer_value, integer_width};
+use bootstrap::calls::bootstrap_callee;
+use bootstrap::tasks::thread_block;
+use bootstrap::lowering_annotations::{word, same_bytes, nominal, annotation_type, fixed_array};
+use bootstrap::lowering_frames::{frame_aliases, suspends};
+use bootstrap::lowering_text::string_bytes;
+use bootstrap::lowering_asm::lower_asm;
+use bootstrap::lowering_types::slice_element;
+use bootstrap::lowering_types::{
+    number, local, temporary, signed, unsigned, scalar_reference, scalar_referent,
+    vector_type, vector_element, c_type, declaration, consume, array_shape, wide_array, placed_array,
+    array_value_type, array_item, array_length, array_name, array_has_owners,
+    nominal_type, pool_type, wrap_pool, uses_pool, tuple_code, is_tuple, tuple_item,
+    tuple_count, tuple_part, tuple_has_owners, future_type, handle_type, completion, task_code, task_payload, async_handle_type,
+    map_code, map_type, map_key, map_value, option_code, optional, option_payload,
+};
+use bootstrap::lowering_regions::{stack_region, enter_region, exit_region, unwind_regions, free_pages, reclaim_scope, forced_reclaim};
+use bootstrap::ownership::nominal_variant;
+
+use bootstrap::check_flow::pattern_variant;
+use bootstrap::target_c::{byte_text, character};
+
+pub struct Lowering {
+    emit: bool,
+    result: i64,
+    loop_result: i64,
+    loop_slot: u64,
+    function: u64,
+    loop_node: u64,
+    storage: bool,
+    poll_body: u64,
+}
+
+fn function_result(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    let mut next = graph[function].first_child;
+    while nodes[next].kind == 3 { next = graph[next].next_sibling; }
+    if nodes[next].kind == 4 { return next; }
+    0
+}
+
+fn guess(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64], node: u64) -> i64 {
+    let child = graph[node].first_child;
+    let kind = nodes[node].kind;
+    if kind == 9 && (source[nodes[node].start] == 116 || source[nodes[node].start] == 102) { return 3; }
+    let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if constant != 0 {
+        return constant_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], constant);
+    }
+    if kind == 7 { return types[graph[node].binding]; }
+    if kind == 17 {
+        return member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], node, false);
+    }
+    if kind == 13 && nodes[child].kind == 7 {
+        let ty = types[graph[child].binding];
+        if ty >= 10000 && ty < 1000000 { return ty + 1000000; }
+        let loan = scalar_reference(ty, graph[node].mutable);
+        if loan > 0 { return loan; }
+        return 0;
+    }
+    if kind == 14 && nodes[child].kind == 7 {
+        let ty = types[graph[child].binding];
+        if ty >= 6000000 && ty < 7000000 { return pool_type(ty); }
+        let referent = scalar_referent(ty);
+        if referent > 0 { return referent; }
+        return 0;
+    }
+    if kind == 19 { return guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], child); }
+    if kind == 15 {
+        let name = graph[node].first_child;
+        let copy_name: [u8;4] = [99,111,112,121];
+        if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(name), &copy_name[..]) {
+            return guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], graph[name].next_sibling);
+        }
+        let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+        if callee != 0 { return types[callee]; }
+    }
+    if kind == 11 {
+        let mark = nodes[node].name_start;
+        if source[mark] == 97 {
+            return annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[child].next_sibling);
+        }
+        let left = guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], copy(child));
+        if left != 0 { return left; }
+        return guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], graph[child].next_sibling);
+    }
+    0
+}
+
+fn outcome(ctx: &Lowering, slot: u64, expression: u64, expected: i64, found: i64) -> i64 {
+    if found < 0 || (expected != 0 && expected != found) { return -1; }
+    if (*ctx).emit && found != 0 {
+        if slot == 0 && (*ctx).function == 0 { { let code: [u8;12] = [109,97,105,110,95,115,116,97,116,117,115,61]; byte_text(&code[..]); } }
+        else if slot == 0 { { let code: [u8;7] = [114,101,116,117,114,110,32]; byte_text(&code[..]); } }
+        else { temporary(copy(slot)); character(61); }
+        temporary(expression);
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        if slot == 0 && (*ctx).function == 0 { { let code: [u8;19] = [103,111,116,111,32,109,97,105,110,95,99,108,101,97,110,117,112,59,10]; byte_text(&code[..]); } }
+    }
+    found
+}
+
+fn map_operation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, binding: u64, map: i64) -> i64 {
+    let insert_word: [u8;6] = [105,110,115,101,114,116];
+    let remove_word: [u8;6] = [114,101,109,111,118,101];
+    let get_word: [u8;3] = [103,101,116];
+    let mutable_word: [u8;7] = [103,101,116,95,109,117,116];
+    let insert = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &insert_word[..]);
+    let remove = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &remove_word[..]);
+    let mutable = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &mutable_word[..]);
+    if !insert && !remove && !mutable
+        && !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &get_word[..]) { return -1; }
+    let key_type = map_key(copy(map));
+    let value = map_value(map);
+    let key = graph[graph[node].first_child].next_sibling;
+    if key == 0 { return -1; }
+    let operand = graph[key].next_sibling;
+    if (insert && (operand == 0 || graph[operand].next_sibling != 0)) || (!insert && operand != 0) { return -1; }
+    let key_got = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(key), if insert { copy(key_type) } else { scalar_reference(copy(key_type), false) });
+    if (insert && key_got != key_type) || (!insert && scalar_referent(key_got) != key_type) { return -1; }
+    if insert {
+        let got = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(operand), copy(value));
+        if got != value { return -1; }
+    }
+    let payload = if insert || remove { value } else { scalar_reference(value, mutable) };
+    let kind = option_code(payload);
+    if kind < 0 { return -1; }
+    types[node] = copy(kind);
+    if (*ctx).emit {
+        declaration(copy(kind), copy(node)); { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); } temporary(copy(node));
+        if insert { { let code: [u8;17] = [46,115,111,109,101,61,109,97,112,95,105,110,115,101,114,116,40]; byte_text(&code[..]); } }
+        else if remove { { let code: [u8;17] = [46,115,111,109,101,61,109,97,112,95,114,101,109,111,118,101,40]; byte_text(&code[..]); } }
+        else { { let code: [u8;15] = [46,118,97,108,117,101,61,109,97,112,95,103,101,116,40]; byte_text(&code[..]); } }
+        local(binding); { let code: [u8;11] = [44,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); }
+        if !insert { character(42); }
+        temporary(key);
+        if insert { { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(operand); }
+        if insert || remove { { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;6] = [46,118,97,108,117,101]; byte_text(&code[..]); } }
+        { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        if !insert && !remove {
+            temporary(copy(node)); { let code: [u8;6] = [46,115,111,109,101,61]; byte_text(&code[..]); } temporary(node); { let code: [u8;14] = [46,118,97,108,117,101,33,61,78,85,76,76,59,10]; byte_text(&code[..]); }
+        }
+    }
+    kind
+}
+
+fn joined_payload(ty: i64, destination: u64, source: u64, awaited: bool) {
+    let payload = task_payload(copy(ty));
+    declaration(copy(ty), copy(destination));
+    if payload <= 9 { { let code: [u8;11] = [61,106,111,105,110,95,116,97,115,107,40]; byte_text(&code[..]); } }
+    else {
+        { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); } temporary(copy(destination)); { let code: [u8;19] = [46,111,107,61,106,111,105,110,95,116,97,115,107,95,105,110,116,111,40]; byte_text(&code[..]); }
+    }
+    if awaited { { let code: [u8;12] = [102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(source); } else { temporary(source); }
+    if payload <= 9 { { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); } }
+    else {
+        { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(destination); { let code: [u8;14] = [46,118,97,108,117,101,44,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(payload); { let code: [u8;4] = [41,41,59,10]; byte_text(&code[..]); }
+    }
+}
+
+// Cache the lowered type of every evaluated value, including unbound temporaries.
+fn expression(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let ty=expression_inner(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(node),expected);
+    if ty>0{types[node]=copy(ty);}ty
+}
+
+fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let kind = nodes[node].kind;
+    let child = graph[node].first_child;
+    let emit = (*ctx).emit;
+    if kind==79{return lower_propagation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,node);}
+    if optional(copy(expected)) && kind == 7 && graph[node].binding == 0
+        && option_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(node)) == 2 {
+        if emit {
+            declaration(copy(expected), node);
+            { let code: [u8; 6] = [61,123,48,125,59,10]; byte_text(&code[..]); }
+        }
+        return expected;
+    }
+    if kind == 9 && source[nodes[node].start] == 34 {
+        return lower_text_literal(&source[0..source.len()], &nodes[node], node, expected, emit);
+    }
+    if kind == 9 || (kind == 12 && nodes[child].kind == 9 && source[nodes[node].name_start] == 45) {
+        return literal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node), node, expected, emit);
+    }
+    let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if constant != 0 {
+        let ty = constant_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constant));
+        if expected != 0 && expected != ty { return -1; }
+        let init = graph[graph[constant].first_child].next_sibling;
+        return literal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], init, node, ty, emit);
+    }
+    if (kind == 37 || kind == 17) && nodes[child].kind == 7 && graph[child].binding == 0 {
+        let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child));
+        if nodes[record].kind == 29 {
+            return enum_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, node, record);
+        }
+    }
+    if kind == 37 {
+        return record_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, expected);
+    }
+    if kind == 13 && nodes[child].kind == 14 {
+        let field = graph[child].first_child;
+        if nodes[field].kind == 17 && prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(field)) {
+            let ty = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], copy(field), false);
+            let scalar = scalar_referent(copy(ty));
+            if slice_element(copy(ty)) > 0 || (ty > 4000000 && ty < 5000000) || (graph[node].mutable && ty > 5000000 && ty < 6000000)
+                || (ty > 20 && ty < 60 && scalar > 0) {
+                let result = if ty > 20 && ty < 60 { scalar_reference(scalar, graph[node].mutable) } else { ty };
+                if emit {
+                    declaration(copy(result), node);
+                    character(61);
+                    let lowered = member_place(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], &types[0..types.len()], field, true);
+                    drop(lowered);
+                    character(59);
+                    character(10);
+                }
+                return result;
+            }
+        }
+    }
+    if kind == 13 && nodes[child].kind == 14 {
+        let place = graph[child].first_child;
+        if nodes[place].kind == 7 {
+            let binding = graph[place].binding;
+            let ty = types[binding];
+            if (ty >= 1000000 && ty < 2000000) || (ty >= 4000000 && ty < 5000000) {
+                if emit {
+                    declaration(copy(ty), node); character(61);
+                    local(binding); character(59); character(10);
+                }
+                return ty;
+            }
+        }
+    }
+    if kind == 17 || (kind == 13 && nodes[child].kind == 17) {
+        let place = if kind == 17 { copy(node) } else { copy(child) };
+        if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place)) { return -1; }
+        let ty = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], copy(place), false);
+        if ty <= 0 || uses_pool(copy(ty)) { return -1; }
+        let result = if kind == 17 { ty }
+            else if (ty >= 3000000 && ty < 4000000) || (ty >= 10000 && ty < 1000000) { ty + 1000000 }
+            else if ty < 20 { ty + (if graph[node].mutable { 40 } else { 20 }) }
+            else { return -1; };
+        if emit {
+            declaration(copy(result), node); character(61);
+            if kind == 13 { character(38); }
+            let lowered = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], place, true);
+            drop(lowered); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return result;
+    }
+    if kind == 38 {
+        return direct_await(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node);
+    }
+    if kind == 66 {
+        let ty = pool_construct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(node));
+        types[node] = copy(ty);
+        return ty;
+    }
+    if kind == 16 && types[graph[child].binding] == 2000138 {
+        return argument_bytes(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ctx, node);
+    }
+    if kind == 16 {
+        let method = lower_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(node));
+        if method != -2 { return method; }
+    }
+    if kind == 16 && nodes[child].kind == 17 {
+        let pop: [u8; 3] = [112,111,112];
+        if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &pop[..])
+            && prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(child)) {
+            let ty = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], copy(child), false);
+            if vector_type(pool_type(copy(ty))) {
+                let element = vector_element(pool_type(ty));
+                if handle_type(copy(element)) {
+                    return vector_operation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &mut types[0..types.len()], ctx, node, element);
+                }
+            }
+        }
+    }
+    if kind == 16 {
+        let receiver = graph[child].binding;
+        let pool = types[receiver];
+        if map_type(copy(pool)) {
+            return map_operation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, node, receiver, pool);
+        }
+        let join: [u8;4] = [106,111,105,110];
+        if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &join[..]) {
+            if graph[child].next_sibling != 0 || (*ctx).poll_body != 0 { return -1; }
+            let handle = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(child), 0);
+            if !handle_type(copy(handle)) || async_handle_type(copy(handle)) { return -1; }
+            let ty = task_code(3, task_payload(handle));
+            types[node] = copy(ty);
+            if emit { joined_payload(copy(ty), node, child, false); }
+            return ty;
+        }
+        if pool >= 5000000 && pool < 6000000 {
+            let ty = pool_new(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(node), pool);
+            types[node] = copy(ty);
+            return ty;
+        }
+        if pool_type(copy(pool)) == 7600140 {
+            let push: [u8;8] = [112,117,115,104,95,115,116,114];
+            let len: [u8;8] = [98,121,116,101,95,108,101,110];
+            let argument = graph[child].next_sibling;
+            if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &push[..]) {
+                if argument == 0 || graph[argument].next_sibling != 0 { return -1; }
+                let start = nodes[argument].start;
+                let end = nodes[argument].end;
+                let size = string_bytes(&source[0..source.len()], copy(start), copy(end), false);
+                if size < 0 { return -1; }
+                if emit && size != 0 {
+                    { let code: [u8;20] = [118,97,108,117,101,95,114,101,103,105,111,110,95,97,112,112,101,110,100,40]; byte_text(&code[..]); } local(receiver); { let code: [u8;30] = [46,115,108,111,116,44,40,99,111,110,115,116,32,117,110,115,105,103,110,101,100,32,99,104,97,114,91,93,41,123]; byte_text(&code[..]); }
+                    let used = string_bytes(&source[0..source.len()], start, end, true);
+                    { let code: [u8;2] = [125,44]; byte_text(&code[..]); } number(unsigned(used)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+                }
+                return 0;
+            }
+            if argument != 0 || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &len[..]) { return -1; }
+            if emit { declaration(7, node); { let code: [u8;11] = [61,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); } local(receiver); { let code: [u8;13] = [46,115,108,111,116,41,45,62,108,101,110,59,10]; byte_text(&code[..]); } }
+            return 7;
+        }
+        if vector_type(pool_type(copy(pool))) {
+            return vector_operation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, node, vector_element(pool_type(pool)));
+        }
+        let content: [u8;10] = [99,111,110,116,101,110,116,95,101,113];
+        if nodes[child].kind == 7 && types[graph[child].binding] == 2000004
+            && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &content[..]) {
+            let argument = graph[child].next_sibling;
+            if argument == 0 || graph[argument].next_sibling != 0 { return -1; }
+            let rhs = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(argument), 2000004);
+            if rhs != 2000004 { return -1; }
+            if emit {
+                let binding = graph[child].binding;
+                declaration(3, node); character(61);
+                local(copy(binding)); { let code: [u8;6] = [46,108,101,110,61,61]; byte_text(&code[..]); } temporary(copy(argument)); { let code: [u8;8] = [46,108,101,110,38,38,40,33]; byte_text(&code[..]); }
+                local(copy(binding)); { let code: [u8;14] = [46,108,101,110,124,124,33,109,101,109,99,109,112,40]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;6] = [46,100,97,116,97,44]; byte_text(&code[..]); }
+                temporary(argument); { let code: [u8;6] = [46,100,97,116,97,44]; byte_text(&code[..]); } local(binding); { let code: [u8;8] = [46,108,101,110,41,41,59,10]; byte_text(&code[..]); }
+            }
+            return 3;
+        }
+        let size: [u8;3] = [108,101,110];
+        if !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &size[..])
+            || nodes[child].kind != 7 || graph[child].next_sibling != 0 { return -1; }
+        let binding = graph[child].binding;
+        let shape = types[binding];
+        if shape < 10000 { return -1; }
+        if emit {
+            declaration(7, node); character(61);
+            if shape >= 2000000 { local(binding); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
+            else { number(unsigned((array_shape(shape) - 10000) / 100)); }
+            { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return 7;
+    }
+    if kind == 13 && nodes[child].kind == 18
+        && nodes[graph[graph[child].first_child].next_sibling].kind == 46 {
+        return slice_borrow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node);
+    }
+    if kind == 20 {
+        return tuple_initializer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, expected);
+    }
+    if kind == 44 || kind == 45 {
+        return array_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, expected);
+    }
+    if kind == 13 && nodes[child].kind == 14 {
+        let operand = graph[child].first_child;
+        let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(operand), 0);
+        let ret = scalar_reference(scalar_referent(ty), graph[node].mutable);
+        if ret <= 0 { return -1; }
+        if emit { declaration(copy(ret), node); character(61); temporary(operand); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+        return ret;
+    }
+    if kind == 18 || (kind == 13 && nodes[child].kind == 18) {
+        let place = if kind == 18 { copy(node) } else { copy(child) };
+        let element = indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place));
+        if element <= 0 || uses_pool(copy(element)) { return -1; }
+        let ty = if kind != 13 { element } else if element < 20 {
+            element + (if graph[node].mutable { 40 } else { 20 })
+        } else if element >= 3000000 && element < 4000000 && !graph[node].mutable {
+            element + 1000000
+        } else { return -1; };
+        if emit {
+            declaration(copy(ty), node); character(61);
+            if kind == 18 { character(42); }
+            character(112); number(place); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return ty;
+    }
+    if kind == 7 || kind == 13 || kind == 14 {
+        let place = if kind == 7 { copy(node) } else { copy(child) };
+        if nodes[place].kind != 7 && kind != 14 { return -1; }
+        if nodes[place].kind != 7 { return dereference(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, node); }
+        let binding = graph[place].binding;
+        let ty = types[binding];
+        if ty <= 0 { return -1; }
+        if future_type(copy(ty)) || handle_type(copy(ty)) || completion(copy(ty)) {
+            if kind != 7 { return -1; }
+            if emit {
+                declaration(copy(ty), node); character(61); local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                if !completion(copy(ty)) { local(binding); { let code: [u8;15] = [46,115,116,111,114,97,103,101,61,78,85,76,76,59,10]; byte_text(&code[..]); } }
+                else if task_payload(copy(ty)) > 9 { local(binding); { let code: [u8;11] = [46,111,107,61,102,97,108,115,101,59,10]; byte_text(&code[..]); } }
+            }
+            return ty;
+        }
+        if map_type(copy(ty)) || optional(copy(ty)) {
+            if kind != 7 { return -1; }
+            if emit {
+                declaration(copy(ty), node); character(61); local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                local(binding);
+                if map_type(copy(ty)) { { let code: [u8;7] = [61,78,85,76,76,59,10]; byte_text(&code[..]); } } else { { let code: [u8;13] = [46,115,111,109,101,61,102,97,108,115,101,59,10]; byte_text(&code[..]); } }
+            }
+            return ty;
+        }
+        if uses_pool(copy(ty)) {
+            if vector_type(pool_type(copy(ty))) && kind != 7 && ty >= 6000000 { return -1; }
+            if kind == 14 && ty >= 6000000 && handle_type(pool_type(copy(ty))) {
+                let content = pool_type(ty);
+                if emit {
+                    declaration(copy(content), node); { let code: [u8;14] = [61,42,40,84,97,115,107,86,97,108,117,101,42,41]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;7] = [46,115,108,111,116,59,10]; byte_text(&code[..]); }
+                    { let code: [u8;13] = [40,40,84,97,115,107,86,97,108,117,101,42,41]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;26] = [46,115,108,111,116,41,45,62,115,116,111,114,97,103,101,61,78,85,76,76,59,112,117,116,40,38]; byte_text(&code[..]); }
+                    local(binding); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+                }
+                return content;
+            }
+            let result = if ty < 6000000 && (kind == 13 || (kind == 7 && nodes[binding].kind == 3)) { copy(ty) }
+                else if ty >= 6000000 && kind == 7 { copy(ty) }
+                else if ty >= 6000000 && kind == 14 { pool_type(copy(ty)) }
+                else if ty >= 6000000 && kind == 13 && pool_type(copy(ty)) > 3000000 { pool_type(copy(ty)) + 1000000 }
+                else { return -1; };
+            if emit {
+                declaration(copy(result), node); character(61);
+                if kind == 14 || (kind == 13 && ty >= 6000000) {
+                    if kind == 14 { character(42); }
+                    character(40); c_type(pool_type(copy(ty))); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;7] = [46,115,108,111,116,59,10]; byte_text(&code[..]); }
+                    let payload = pool_type(copy(ty));
+                    if kind == 14 && payload > 3000000 && payload < 4000000 {
+                        local(copy(binding)); { let code: [u8;19] = [46,100,101,115,116,114,111,121,61,78,85,76,76,59,112,117,116,40,38]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+                    }
+                } else {
+                    local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                    if ty >= 6000000 { local(binding); { let code: [u8;12] = [46,112,111,111,108,61,78,85,76,76,59,10]; byte_text(&code[..]); } }
+                }
+            }
+            return result;
+        }
+        let result = if kind == 13 && ty >= 3000000 && ty < 4000000 { ty + 1000000 }
+            else if kind == 14 && ty >= 4000000 && ty < 5000000 { ty - 1000000 }
+            else if kind == 13 && ty >= 10000 && ty < 1000000 { ty + 1000000 }
+            else if kind == 13 { scalar_reference(copy(ty), graph[node].mutable) }
+            else if kind == 14 && ty >= 1000000 && ty < 2000000 { array_shape(copy(ty)) }
+            else if kind == 14 { scalar_referent(copy(ty)) }
+            else if kind == 7 { copy(ty) } else { return -1; };
+        if result <= 0 || (kind == 14 && uses_pool(copy(result))) { return -1; }
+        if emit {
+            declaration(copy(result), node); character(61);
+            if kind == 13 { character(38); }
+            if kind == 14 { character(42); }
+            local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            if kind == 7 && result_has_nominal_payload(copy(ty)) { clear_result(copy(binding)); }
+            if kind == 7 && ((ty >= 3000000 && ty < 4000000 && (*ctx).storage) || array_has_owners(copy(ty)) || tuple_has_owners(copy(ty))) {
+                { let code: [u8;8] = [109,101,109,115,101,116,40,38]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;10] = [44,48,44,115,105,122,101,111,102,32]; byte_text(&code[..]); } local(binding); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            }
+        }
+        return result;
+    }
+    if kind == 19 || kind == 12 {
+        let op = if kind == 12 { source[nodes[node].name_start] } else { 0 };
+        let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child),
+            if op == 33 { 3 } else { expected });
+        if ty <= 0 { return -1; }
+        if kind == 12 && op != 33 && op != 45 && op != 126 { return -1; }
+        if emit {
+            declaration(copy(ty), copy(node));
+            if op == 45 && ty <= 2 {
+                { let code: [u8;29] = [59,105,102,40,95,95,98,117,105,108,116,105,110,95,115,117,98,95,111,118,101,114,102,108,111,119,40,48,44]; byte_text(&code[..]); } temporary(child); { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(node); { let code: [u8;22] = [41,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+            } else {
+                character(61);
+                if op != 0 { character(op as i32); }
+                temporary(child); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+        }
+        return ty;
+    }
+    if kind == 11 {
+        return binary(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, node, expected);
+    }
+    let completion=completion_call(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node));
+    if completion!=0 {
+        if (completion==2 && (*ctx).poll_body==0) || (expected!=0 && expected!=2){return -1;}
+        if emit{emit_completion(&nodes[0..nodes.len()],&graph[0..graph.len()],node,completion);}return 2;
+    }
+    if socket_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if (*ctx).poll_body == 0 || (expected != 0 && expected != 2) { return -1; }
+        if emit { emit_socket_wait(&nodes[0..nodes.len()], &graph[0..graph.len()], node); }
+        return 2;
+    }
+    if kind == 15 {
+        return call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, node, expected);
+    }
+    if kind == 2 || kind == 26 || kind == 27 || kind == 39 {
+        // Determine the common result before opening its C scope.
+        let dry = Lowering { emit: false, function: (*ctx).function, result: (*ctx).result,
+            loop_result: (*ctx).loop_result, loop_slot: (*ctx).loop_slot, loop_node: (*ctx).loop_node, storage: (*ctx).storage, poll_body: (*ctx).poll_body };
+        let ty = flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], &dry, copy(node), expected, copy(node));
+        if ty < 0 { return ty; }
+        if emit {
+            if ty != 0 { declaration(copy(ty), copy(node)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+            let emitted = flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(node), copy(ty), node);
+            if emitted < 0 { return emitted; }
+        }
+        return ty;
+    }
+    return -1;
+}
+
+fn dereference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    let child = graph[node].first_child;
+    let emit = (*ctx).emit;
+    if nodes[child].kind == 14 {
+        let operand = graph[child].first_child;
+        if nodes[operand].kind == 7 {
+            let binding = graph[operand].binding;
+            let ty = types[binding];
+            if ty >= 7700002 && ty <= 7700019 {
+                let result = pool_type(scalar_referent(ty));
+                if emit {
+                    declaration(copy(result), node); { let code: [u8;4] = [61,42,40,40]; byte_text(&code[..]); } c_type(copy(result)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); }
+                    local(binding); { let code: [u8;9] = [45,62,115,108,111,116,41,59,10]; byte_text(&code[..]); }
+                }
+                return result;
+            }
+        }
+    }
+    if nodes[child].kind == 17 {
+        if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(child)) { return -1; }
+        let owner = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], copy(child), false);
+        if owner >= 6000000 && owner < 7000000 {
+            let ty = pool_type(owner);
+            // The projection reads a primitive in place. The field retains the allocation.
+            if ty <= 0 || ty >= 20 { return -1; }
+            if emit {
+                declaration(copy(ty), node); { let code: [u8;4] = [61,42,40,40]; byte_text(&code[..]); } c_type(copy(ty)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); }
+                let field = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &types[0..types.len()], child, true);
+                drop(field); { let code: [u8;8] = [46,115,108,111,116,41,59,10]; byte_text(&code[..]); }
+            }
+            return ty;
+        }
+    }
+    if nodes[child].kind == 18 {
+        let name = graph[child].first_child;
+        let storage = pool_type(types[graph[name].binding]);
+        if nodes[name].kind == 7 && vector_type(copy(storage)) {
+            let element = vector_element(storage);
+            if uses_pool(copy(element)) {
+                let actual = indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[0..types.len()], ctx, copy(child));
+                if actual != element { return -1; }
+                let ty = pool_type(element);
+                if emit {
+                    declaration(copy(ty), node); { let code: [u8;4] = [61,42,40,40]; byte_text(&code[..]); } c_type(copy(ty)); { let code: [u8;3] = [42,41,112]; byte_text(&code[..]); } number(child); { let code: [u8;9] = [45,62,115,108,111,116,41,59,10]; byte_text(&code[..]); }
+                }
+                return ty;
+            }
+        }
+    }
+    let reference = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(child), 0);
+    let ty = scalar_referent(reference);
+    if ty <= 0 { return -1; }
+    if emit { declaration(copy(ty), node); { let code: [u8;2] = [61,42]; byte_text(&code[..]); } temporary(child); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+    ty
+}
+
+fn indexed(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    let base = graph[node].first_child;
+    let index = graph[base].next_sibling;
+    let mut place = copy(base);
+    while nodes[place].kind == 19 { place = graph[place].first_child; }
+    let indirect = nodes[place].kind == 14;
+    if indirect { place = graph[place].first_child; }
+    let field = nodes[place].kind == 17;
+    let nested = nodes[place].kind == 18;
+    if nodes[place].kind != 7 && !field && !nested { return -1; }
+    let binding = graph[place].binding;
+    let array = if nested {
+        indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place))
+    } else if field {
+        if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place)) { return -1; }
+        member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], copy(place), false)
+    } else { types[binding] };
+    let payload = pool_type(copy(array));
+    if vector_type(copy(payload)) && !field && !indirect {
+        return vector_index(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, binding, index, vector_element(payload));
+    }
+    let wide = wide_array(copy(array));
+    let slice = array >= 2000000 && array < 3000000;
+    if !wide && (array < 10000 || array >= 3000000 || indirect != (array >= 1000000 && !slice)) { return -1; }
+    let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(index), 0);
+    if ty < 1 || ty > 7 || ty == 3 { return -1; }
+    let element = if slice { slice_element(copy(array)) } else { array_item(copy(array)) };
+    if element < 0 { return -1; }
+    if (*ctx).emit {
+        { let code: [u8;13] = [105,102,40,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(copy(index)); { let code: [u8;2] = [62,61]; byte_text(&code[..]); }
+        if slice {
+            local(copy(binding)); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); }
+            { let code: [u8;74] = [41,123,102,112,117,116,115,40,34,99,111,114,98,111,58,32,105,110,100,105,99,101,32,104,111,114,115,32,100,101,32,108,97,32,116,114,97,110,99,104,101,92,110,34,44,115,116,100,101,114,114,41,59,101,120,105,116,40,69,88,73,84,95,70,65,73,76,85,82,69,41,59,125,10]; byte_text(&code[..]); }
+        } else {
+            number(array_length(copy(array)));
+            { let code: [u8;71] = [41,123,102,112,117,116,115,40,34,99,111,114,98,111,58,32,105,110,100,105,99,101,32,104,111,114,115,32,100,117,32,116,97,98,108,101,97,117,92,110,34,44,115,116,100,101,114,114,41,59,101,120,105,116,40,69,88,73,84,95,70,65,73,76,85,82,69,41,59,125,10]; byte_text(&code[..]); }
+        }
+        c_type(copy(element)); { let code: [u8;3] = [32,42,112]; byte_text(&code[..]); } number(node); { let code: [u8;2] = [61,38]; byte_text(&code[..]); }
+        if field {
+            let lowered = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], place, true);
+            drop(lowered);
+        } else if nested {
+            { let code: [u8;3] = [40,42,112]; byte_text(&code[..]); } number(place); character(41);
+        } else {
+            local(binding);
+        }
+        if slice { { let code: [u8;6] = [46,100,97,116,97,91]; byte_text(&code[..]); } } else if indirect || placed_array(array) { { let code: [u8;8] = [45,62,105,116,101,109,115,91]; byte_text(&code[..]); } } else { { let code: [u8;7] = [46,105,116,101,109,115,91]; byte_text(&code[..]); } }
+        temporary(index); { let code: [u8;3] = [93,59,10]; byte_text(&code[..]); }
+    }
+    element
+}
+
+fn array_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let repeated = nodes[node].kind == 45;
+    let first = graph[node].first_child;
+    let mut count: u64 = 0;
+    if repeated {
+        let atom = integer_value(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], graph[first].next_sibling);
+        if !atom.known || atom.negative { return -1; }
+        count = atom.magnitude;
+    } else {
+        let mut item = copy(first);
+        while item != 0 { count = count + 1; item = graph[item].next_sibling; }
+    }
+    let mut element = if array_value_type(copy(expected)) { array_item(copy(expected)) } else { 0 };
+    if element == 0 && (nodes[first].kind == 44 || nodes[first].kind == 45 || nodes[first].kind == 37) {
+        let dry = Lowering { emit:false, result:(*ctx).result, function:(*ctx).function, loop_result:(*ctx).loop_result,
+            loop_slot:(*ctx).loop_slot, loop_node:(*ctx).loop_node, storage:(*ctx).storage, poll_body:(*ctx).poll_body };
+        element = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], &dry, copy(first), 0);
+    }
+    if element == 0 {
+        let mut item = copy(first);
+        while item != 0 {
+            element = guess(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &types[0..types.len()], copy(item));
+            if element > 0 || repeated { break; }
+            item = graph[item].next_sibling;
+        }
+        if element == 0 && first != 0 { element = 2; }
+    }
+    let ty = fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(element), copy(count));
+    if ty < 0 || (expected != 0 && ty != expected) { return -1; }
+    let placed = placed_array(copy(ty));
+    if placed && !(*ctx).storage { return -1; }
+    if (*ctx).emit {
+        declaration(copy(ty), copy(node));
+        if placed {
+            { let code: [u8;13] = [61,112,117,115,104,40,115,105,122,101,111,102,40]; byte_text(&code[..]); } array_name(copy(ty)); { let code: [u8;11] = [41,44,95,65,108,105,103,110,111,102,40]; byte_text(&code[..]); } array_name(copy(ty)); { let code: [u8;6] = [41,44,49,41,59,10]; byte_text(&code[..]); }
+        } else { { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); } }
+    }
+    let mut item = first;
+    let mut position: u64 = 0;
+    while item != 0 {
+        let inner = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(item), copy(element));
+        if inner != element { return -1; }
+        if (*ctx).emit {
+            if repeated {
+                if count == 0 { consume(copy(element), copy(item), false); }
+                else {
+                    { let code: [u8;19] = [102,111,114,40,117,105,110,116,54,52,95,116,32,105,61,48,59,105,60]; byte_text(&code[..]); } number(copy(count)); { let code: [u8;5] = [59,43,43,105,41]; byte_text(&code[..]); }
+                    temporary(copy(node)); if placed { { let code: [u8;11] = [45,62,105,116,101,109,115,91,105,93,61]; byte_text(&code[..]); } } else { { let code: [u8;10] = [46,105,116,101,109,115,91,105,93,61]; byte_text(&code[..]); } } temporary(copy(item)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+            } else {
+                temporary(copy(node)); if placed { { let code: [u8;8] = [45,62,105,116,101,109,115,91]; byte_text(&code[..]); } } else { { let code: [u8;7] = [46,105,116,101,109,115,91]; byte_text(&code[..]); } } number(copy(position)); { let code: [u8;2] = [93,61]; byte_text(&code[..]); } temporary(copy(item)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+        }
+        position = position + 1;
+        item = if repeated { 0 } else { graph[item].next_sibling };
+    }
+    types[node] = copy(ty);
+    ty
+}
+
+fn prepare_member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> bool {
+    let kind = nodes[node].kind;
+    if kind == 17 || kind == 19 || kind == 14 {
+        return prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, graph[node].first_child);
+    }
+    if kind == 18 {
+        let ty = indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(node));
+        types[node] = copy(ty);
+        return ty > 0;
+    }
+    true
+}
+
+fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64],
+    node: u64, emit: bool) -> i64 {
+    let kind = nodes[node].kind;
+    let base = graph[node].first_child;
+    if kind == 7 {
+        let binding = graph[node].binding;
+        if emit { local(copy(binding)); }
+        return types[binding];
+    }
+    if kind == 19 { return member_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &types[0..types.len()], base, emit); }
+    if kind == 14 && nodes[base].kind == 7 {
+        let binding = graph[base].binding;
+        let ty = types[binding];
+        if ty >= 6000000 && ty < 7000000 {
+            let payload = pool_type(ty);
+            if payload <= 3000000 { return -1; }
+            if emit { { let code: [u8;3] = [40,42,40]; byte_text(&code[..]); } c_type(copy(payload)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } local(binding); { let code: [u8;6] = [46,115,108,111,116,41]; byte_text(&code[..]); } }
+            return payload;
+        }
+        if ty < 4000000 || ty >= 5000000 { return -1; }
+        if emit { { let code: [u8;2] = [40,42]; byte_text(&code[..]); } local(binding); character(41); }
+        return ty - 1000000;
+    }
+    if kind == 18 {
+        if emit { { let code: [u8;3] = [40,42,112]; byte_text(&code[..]); } number(copy(node)); character(41); }
+        return types[node];
+    }
+    if kind != 17 { return -1; }
+    let parent = member_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &types[0..types.len()], base, copy(emit));
+    if parent < 3000000 || parent >= 4000000 { return -1; }
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal_type(parent), node);
+    if field == 0 { return -1; }
+    if emit { { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(copy(field)); }
+    types[field]
+}
+
+fn record_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if record == 0 || !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) { return -1; }
+    let ty = 3000000 + signed(copy(record));
+    if expected != 0 && ty != expected { return -1; }
+    let emit = (*ctx).emit;
+    if emit {
+        declaration(copy(ty), copy(node));
+        if types[record] > 0 { { let code: [u8;15] = [61,123,46,108,105,118,101,61,116,114,117,101,125,59,10]; byte_text(&code[..]); } } else { { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); } }
+    }
+    let mut item = graph[node].first_child;
+    while item != 0 {
+        let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(record), copy(item));
+        if field == 0 { return -1; }
+        let expected = types[field];
+        let value = graph[item].first_child;
+        let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(value), copy(expected));
+        if actual != expected { return -1; }
+        if emit {
+            temporary(copy(node)); { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(field); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        item = graph[item].next_sibling;
+    }
+    ty
+}
+
+pub fn record_types(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], record: u64) -> bool {
+    let tagged = nodes[record].kind == 29;
+    let mut group = if tagged { graph[record].first_child } else { record };
+    while group != 0 {
+        let mut field = graph[group].first_child;
+        while field != 0 {
+            let annotation = graph[field].first_child;
+            let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(annotation));
+            if ty <= 0 || vector_type(copy(ty)) || (uses_pool(copy(ty)) && ty < 6000000
+                && (ty <= 5000000 || ty > 5000007)
+                && region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], annotation, true) != 99) { return false; }
+            types[field] = ty;
+            field = graph[field].next_sibling;
+        }
+        group = if tagged { graph[group].next_sibling } else { 0 };
+    }
+    true
+}
+
+
+
+fn enum_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, record: u64) -> i64 {
+    let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(record), copy(node));
+    if variant == 0 { return -1; }
+    let ty = 3000000 + signed(record);
+    let emit = (*ctx).emit;
+    if emit {
+        declaration(copy(ty), copy(node)); { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); }
+        temporary(copy(node)); { let code: [u8;5] = [46,116,97,103,61]; byte_text(&code[..]); } number(copy(variant)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+    let mut item = graph[graph[node].first_child].next_sibling;
+    while item != 0 {
+        let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(variant), copy(item));
+        if field == 0 { return -1; }
+        let value = graph[item].first_child;
+        let expected = types[field];
+        let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(value), copy(expected));
+        if actual != expected { return -1; }
+        if emit {
+            temporary(copy(node)); { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(field); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        item = graph[item].next_sibling;
+    }
+    ty
+}
+
+fn option_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, subject: u64, payload: i64, expected: i64, slot: u64) -> i64 {
+    let some: [u8;4] = [83,111,109,101];
+    let none: [u8;4] = [78,111,110,101];
+    let mut arm = graph[subject].next_sibling;
+    let mut common = expected;
+    let mut first = true;
+    let emit = (*ctx).emit;
+    while arm != 0 {
+        let pattern = graph[arm].first_child;
+        let present = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &some[..]);
+        if !present && !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &none[..]) { return -1; }
+        let binder = graph[pattern].first_child;
+        if emit {
+            if first {
+                { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } if !present { character(33); } temporary(copy(subject)); { let code: [u8;8] = [46,115,111,109,101,41,123,10]; byte_text(&code[..]); }
+            } else { { let code: [u8;6] = [101,108,115,101,123,10]; byte_text(&code[..]); } }
+        }
+        if present && graph[binder].declaration {
+            types[binder] = copy(payload);
+            if emit {
+                if (*ctx).poll_body == 0 { c_type(copy(payload)); character(32); }
+                local(copy(binder)); character(61);
+                temporary(copy(subject)); { let code: [u8;8] = [46,118,97,108,117,101,59,10]; byte_text(&code[..]); } consume(copy(payload), copy(binder), true);
+            }
+        } else if present && emit {
+            drop_value(option_code(copy(payload)), copy(subject), false);
+        }
+        let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, graph[pattern].next_sibling, copy(common), copy(slot));
+        if ty < 0 || (common != 0 && ty != 0 && ty != common) { return -1; }
+        if common == 0 { common = ty; }
+        if emit {
+            if present && graph[binder].declaration && needs_cleanup(copy(payload), (*ctx).storage) {
+                drop_value(copy(payload), copy(binder), true);
+            }
+            { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
+        }
+        first = false;
+        arm = graph[arm].next_sibling;
+    }
+    common
+}
+
+fn enum_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64, slot: u64) -> i64 {
+    let subject = graph[node].first_child;
+    let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(subject), 0);
+    if result_type(copy(ty)) {
+        return lower_result_match(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, subject, ty, expected, slot);
+    }
+    if optional(copy(ty)) {
+        return option_match(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, subject, option_payload(ty), expected, slot);
+    }
+    if completion(copy(ty)) {
+        return completion_match(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, subject, task_payload(ty), expected, slot);
+    }
+    if ty == 7799999 {
+        let pattern = graph[graph[subject].next_sibling].first_child;
+        let name: [u8;27] = [114,117,110,116,105,109,101,58,58,69,114,114,111,114,46,76,97,117,110,99,104,70,97,105,108,101,100];
+        let spelling = &source[nodes[pattern].start..nodes[pattern].end];
+        if !same_bytes(&spelling[0..spelling.len()], &name[..]) { return -1; }
+        if (*ctx).emit { consume(ty, copy(subject), false); }
+        return block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, graph[pattern].next_sibling, expected, slot);
+    }
+    let record = nominal_type(copy(ty));
+    if ty <= 0 || nodes[record].kind != 29 { return -1; }
+    let borrowed = ty >= 4000000;
+    let emit = (*ctx).emit;
+    let mut first = true;
+    let mut arm = graph[subject].next_sibling;
+    let mut result = expected;
+    while arm != 0 {
+        let pattern = graph[arm].first_child;
+        let variant = pattern_variant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(pattern), copy(record));
+        if variant == 0 { return -1; }
+        if emit {
+            if !first { { let code: [u8;5] = [101,108,115,101,32]; byte_text(&code[..]); } }
+            { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } temporary(copy(subject));
+            if borrowed { { let code: [u8;7] = [45,62,116,97,103,61,61]; byte_text(&code[..]); } } else { { let code: [u8;6] = [46,116,97,103,61,61]; byte_text(&code[..]); } }
+            number(copy(variant)); { let code: [u8;3] = [41,123,10]; byte_text(&code[..]); }
+        }
+        let mut item = graph[pattern].first_child;
+        while item != 0 {
+            let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(variant), copy(item));
+            if field == 0 { return -1; }
+            let binding = graph[item].first_child;
+            let payload = types[field];
+            if uses_pool(copy(payload)) { return -1; }
+            if graph[binding].declaration {
+                let mutable = borrowed && graph[subject].mutable;
+                let bound = if !borrowed || (!mutable && payload <= 9) { copy(payload) }
+                    else if payload >= 3000000 && payload < 4000000 { payload + 1000000 }
+                    else if payload >= 10000 && payload < 1000000 { payload + 1000000 }
+                    else if payload > 0 && payload <= 9 { payload + 40 } else { return -1; };
+                if emit {
+                    if (*ctx).poll_body == 0 { c_type(copy(bound)); character(32); }
+                    local(copy(binding)); character(61);
+                    if bound != payload { character(38); }
+                    temporary(copy(subject));
+                    if borrowed { { let code: [u8;3] = [45,62,109]; byte_text(&code[..]); } } else { { let code: [u8;2] = [46,109]; byte_text(&code[..]); } }
+                    number(field); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } consume(copy(bound), copy(binding), true);
+                }
+                types[binding] = bound;
+            }
+            item = graph[item].next_sibling;
+        }
+        let body = graph[pattern].next_sibling;
+        let found = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, body, copy(result), copy(slot));
+        if found < 0 || (result != 0 && found != 0 && result != found) { return -1; }
+        if result == 0 { result = found; }
+        if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+        first = false;
+        arm = graph[arm].next_sibling;
+    }
+    if emit { { let code: [u8;15] = [101,108,115,101,123,97,98,111,114,116,40,41,59,125,10]; byte_text(&code[..]); } }
+    result
+}
+
+fn vector_operation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, element: i64) -> i64 {
+    let receiver = graph[node].first_child;
+    let binding = graph[receiver].binding;
+    let argument = graph[receiver].next_sibling;
+    let push: [u8;4] = [112,117,115,104];
+    let remove_word: [u8;6] = [114,101,109,111,118,101];
+    let pop_word: [u8;3] = [112,111,112];
+    let remove = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &remove_word[..]);
+    let pop = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &pop_word[..]);
+    if nodes[receiver].kind != 7 && !(pop && nodes[receiver].kind == 17) { return -1; }
+    if remove || pop {
+        if pop && argument != 0 { return -1; }
+        if remove {
+            if argument == 0 || graph[argument].next_sibling != 0 { return -1; }
+            let index = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(argument), 0);
+            if index < 1 || index > 7 || index == 3 { return -1; }
+        }
+        let ty = if pop { option_code(copy(element)) } else { copy(element) };
+        if ty < 0 { return -1; }
+        types[node] = copy(ty);
+        if (*ctx).emit {
+            declaration(copy(ty), copy(node)); { let code: [u8;6] = [61,123,48,125,59,10]; byte_text(&code[..]); }
+            if pop {
+                temporary(copy(node)); { let code: [u8;17] = [46,115,111,109,101,61,118,101,99,116,111,114,95,112,111,112,40]; byte_text(&code[..]); }
+                if nodes[receiver].kind == 7 { local(binding); }
+                else {
+                    let place = member_place(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], &types[0..types.len()], copy(receiver), true);
+                    drop(place);
+                }
+                { let code: [u8;7] = [46,115,108,111,116,44,38]; byte_text(&code[..]); }
+                temporary(node); { let code: [u8;9] = [46,118,97,108,117,101,41,59,10]; byte_text(&code[..]); }
+            } else {
+                { let code: [u8;14] = [118,101,99,116,111,114,95,114,101,109,111,118,101,40]; byte_text(&code[..]); } local(binding); { let code: [u8;16] = [46,115,108,111,116,44,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(argument); { let code: [u8;2] = [44,38]; byte_text(&code[..]); }
+                temporary(node); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            }
+        }
+        return ty;
+    }
+    let len: [u8;3] = [108,101,110];
+    if word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &push[..]) {
+        if argument == 0 || graph[argument].next_sibling != 0 { return -1; }
+        let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(argument), copy(element));
+        if actual != element { return -1; }
+        if (*ctx).emit {
+            { let code: [u8;2] = [42,40]; byte_text(&code[..]); } c_type(element); { let code: [u8;19] = [42,41,118,97,108,117,101,95,114,101,103,105,111,110,95,97,100,100,40]; byte_text(&code[..]); } local(binding); { let code: [u8;7] = [46,115,108,111,116,41,61]; byte_text(&code[..]); } temporary(argument); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return 0;
+    }
+    if argument != 0 || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &len[..]) { return -1; }
+    if (*ctx).emit {
+        declaration(7, node); { let code: [u8;11] = [61,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); } local(binding); { let code: [u8;13] = [46,115,108,111,116,41,45,62,108,101,110,59,10]; byte_text(&code[..]); }
+    }
+    7
+}
+
+fn vector_index(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, binding: u64, index: u64, element: i64) -> i64 {
+    let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(index), 0);
+    if actual < 1 || actual > 7 || actual == 3 { return -1; }
+    if (*ctx).emit {
+        { let code: [u8;13] = [105,102,40,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(copy(index)); { let code: [u8;12] = [62,61,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;82] = [46,115,108,111,116,41,45,62,108,101,110,41,123,102,112,117,116,115,40,34,99,111,114,98,111,58,32,105,110,100,105,99,101,32,104,111,114,115,32,100,117,32,118,101,99,116,101,117,114,92,110,34,44,115,116,100,101,114,114,41,59,101,120,105,116,40,69,88,73,84,95,70,65,73,76,85,82,69,41,59,125,10]; byte_text(&code[..]); }
+        c_type(copy(element)); { let code: [u8;2] = [42,112]; byte_text(&code[..]); } number(node); { let code: [u8;2] = [61,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;12] = [42,41,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); }
+        local(binding); { let code: [u8;23] = [46,115,108,111,116,41,45,62,100,97,116,97,43,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(index); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+    element
+}
+
+fn pool_construct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    let spec = graph[node].first_child;
+    let member = graph[spec].first_child;
+    let count = graph[spec].next_sibling;
+    let element = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], member);
+    let ty = wrap_pool(copy(element), false);
+    if ty < 0 { return -1; }
+    let chosen = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(count), 0);
+    if chosen <= 0 || chosen >= 8 || chosen == 3 { return -1; }
+    if (*ctx).emit {
+        if chosen <= 2 {
+            { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } temporary(copy(count)); { let code: [u8;21] = [60,61,48,41,115,116,111,114,97,103,101,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        }
+        declaration(copy(ty), node); { let code: [u8;18] = [61,110,101,119,95,112,111,111,108,40,40,115,105,122,101,95,116,41]; byte_text(&code[..]); } temporary(count);
+        { let code: [u8;8] = [44,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [41,44]; byte_text(&code[..]); }
+        let record = nominal_type(element);
+        if nodes[record].kind == 29 {
+            let mut variant = graph[record].first_child;
+            let mut count: u64 = 0;
+            while variant != 0 { count = count + 1; variant = graph[variant].next_sibling; }
+            number(count);
+        } else { character(49); }
+        { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+    }
+    ty
+}
+
+fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, ty: i64) -> i64 {
+    let receiver = graph[node].first_child;
+    let binding = graph[receiver].binding;
+    let mut arg = graph[receiver].next_sibling;
+    let element = pool_type(ty);
+    let name: [u8;3] = [110,101,119];
+    if !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..])
+        || nodes[receiver].kind != 7 { return -1; }
+    if nodes[arg].kind == 2 {
+        let tail = graph[arg].first_child;
+        if nodes[tail].kind == 10 && graph[tail].next_sibling == 0 { arg = graph[tail].first_child; }
+    }
+    let fields = nodes[arg].kind == 31 || nodes[arg].kind == 74;
+    if !fields && graph[arg].next_sibling != 0 { return -1; }
+    let owned = wrap_pool(copy(element), true);
+    if vector_type(copy(element)) {
+        if arg != 0 { return -1; }
+        if (*ctx).emit {
+            declaration(copy(owned), copy(node)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); { let code: [u8;5] = [44,48,41,59,10]; byte_text(&code[..]); }
+            let slot = vector_element(element);
+            { let code: [u8;17] = [118,97,108,117,101,95,114,101,103,105,111,110,95,110,101,119,40]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;13] = [46,115,108,111,116,44,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(copy(slot));
+            { let code: [u8;36] = [41,44,48,44,33,99,117,114,114,101,110,116,95,98,97,110,100,38,38,33,103,108,111,98,97,108,95,98,117,100,103,101,116,41,59,10]; byte_text(&code[..]); } temporary(node);
+            if uses_pool(copy(slot)) { { let code: [u8;31] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,111,119,110,101,100,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
+            else if handle_type(copy(slot)) { { let code: [u8;30] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,116,97,115,107,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
+            else if slot > 3000000 && slot < 4000000 {
+                { let code: [u8;23] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,118,101,99,116,111,114]; byte_text(&code[..]); } number(nominal_type(slot)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            } else { { let code: [u8;25] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
+        }
+        return owned;
+    }
+    let mut arm: u64 = 0;
+    let record = nominal_type(copy(element));
+    if (fields || arg == 0) && !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) {
+        return -1;
+    }
+    if nodes[record].kind == 29 {
+        if nodes[arg].kind != 37 && nodes[arg].kind != 17 { return -1; }
+        let tag = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(record), copy(arg));
+        if tag == 0 { return -1; }
+        let mut variant = graph[record].first_child;
+        while variant != tag { arm = arm + 1; variant = graph[variant].next_sibling; }
+    }
+    let emit = (*ctx).emit;
+    let mut initial: u64 = 0;
+    if fields {
+        initial = copy(node);
+        if emit { declaration(copy(element), copy(node)); { let code: [u8;14] = [95,112,97,121,108,111,97,100,61,123,48,125,59,10]; byte_text(&code[..]); } }
+        let mut field = if nodes[arg].kind == 74 { graph[arg].first_child } else { copy(arg) };
+        while field != 0 {
+            let member = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(record), copy(field));
+            if member == 0 { return -1; }
+            let want = types[member];
+            let value = graph[field].first_child;
+            let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(value), copy(want));
+            if actual != want { return -1; }
+            if emit {
+                temporary(copy(node)); { let code: [u8;10] = [95,112,97,121,108,111,97,100,46,109]; byte_text(&code[..]); } number(member); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            field = graph[field].next_sibling;
+        }
+    } else if arg != 0 {
+        let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(arg), copy(element));
+        if actual != element { return -1; }
+        initial = arg;
+    }
+    if emit {
+        declaration(copy(owned), copy(node)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); character(44); number(arm); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        if handle_type(copy(element)) {
+            temporary(copy(node)); { let code: [u8;31] = [46,100,101,115,116,114,111,121,61,100,105,115,112,111,115,101,95,104,97,110,100,108,101,95,118,97,108,117,101,59,10]; byte_text(&code[..]); }
+        } else if record != 0 {
+            temporary(copy(node)); { let code: [u8;16] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(record)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        if record != 0 && types[record] > 0 && (initial == 0 || fields) {
+            if fields {
+                temporary(copy(node)); { let code: [u8;20] = [95,112,97,121,108,111,97,100,46,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
+            } else {
+                { let code: [u8;2] = [40,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;19] = [46,115,108,111,116,41,45,62,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
+            }
+        }
+        if initial != 0 {
+            { let code: [u8;2] = [42,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;6] = [46,115,108,111,116,61]; byte_text(&code[..]); } temporary(initial);
+            if fields { { let code: [u8;8] = [95,112,97,121,108,111,97,100]; byte_text(&code[..]); } }
+            { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+    }
+    owned
+}
+
+
+
+pub fn needs_cleanup(ty: i64, storage: bool) -> bool {
+    handle_type(copy(ty)) || future_type(copy(ty)) || map_type(copy(ty)) || optional(copy(ty)) || array_has_owners(copy(ty)) || tuple_has_owners(copy(ty))
+        || (storage && completion(copy(ty)) && result_has_nominal_payload(task_payload(copy(ty))))
+        || (storage && (result_has_nominal_payload(copy(ty)) || (ty >= 6000000 && ty < 7000000) || (ty >= 3000000 && ty < 4000000)))
+}
+
+pub fn drop_value(ty: i64, node: u64, binding: bool) {
+    if completion(copy(ty)) {
+        let result = task_payload(copy(ty));
+        if result_has_nominal_payload(copy(result)) {
+            { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); }
+            if binding { local(copy(node)); } else { temporary(copy(node)); }
+            { let code: [u8;5] = [46,111,107,41,123]; byte_text(&code[..]); }
+            result_drop_name(result); { let code: [u8;2] = [40,38]; byte_text(&code[..]); }
+            if binding { local(copy(node)); } else { temporary(copy(node)); }
+            { let code: [u8;9] = [46,118,97,108,117,101,41,59,10]; byte_text(&code[..]); }
+            if binding { local(node); } else { temporary(node); }
+            { let code: [u8;12] = [46,111,107,61,102,97,108,115,101,59,125,10]; byte_text(&code[..]); }
+            return;
+        }
+    }
+    if result_has_nominal_payload(copy(ty)) { result_drop_name(copy(ty)); { let code: [u8;2] = [40,38]; byte_text(&code[..]); } }
+    else if tuple_has_owners(copy(ty)) { { let code: [u8;10] = [100,114,111,112,95,116,117,112,108,101]; byte_text(&code[..]); } number(unsigned(copy(ty))); { let code: [u8;2] = [40,38]; byte_text(&code[..]); } }
+    else if array_has_owners(copy(ty)) { { let code: [u8;5] = [100,114,111,112,95]; byte_text(&code[..]); } array_name(copy(ty)); { let code: [u8;2] = [40,38]; byte_text(&code[..]); } }
+    else if map_type(copy(ty)) { { let code: [u8;10] = [109,97,112,95,100,114,111,112,40,38]; byte_text(&code[..]); } }
+    else if optional(copy(ty)) { { let code: [u8;11] = [100,114,111,112,95,111,112,116,105,111,110]; byte_text(&code[..]); } number(unsigned(option_payload(copy(ty)))); { let code: [u8;2] = [40,38]; byte_text(&code[..]); } }
+    else if handle_type(copy(ty)) { { let code: [u8;15] = [100,105,115,99,97,114,100,95,104,97,110,100,108,101,40]; byte_text(&code[..]); } }
+    else if future_type(copy(ty)) { { let code: [u8;15] = [100,105,115,99,97,114,100,95,102,117,116,117,114,101,40]; byte_text(&code[..]); } }
+    else if ty >= 6000000 && ty < 7000000 { { let code: [u8;5] = [112,117,116,40,38]; byte_text(&code[..]); } }
+    else if ty >= 3000000 && ty < 4000000 { { let code: [u8;7] = [100,101,115,116,114,111,121]; byte_text(&code[..]); } number(nominal_type(copy(ty))); { let code: [u8;2] = [40,38]; byte_text(&code[..]); } }
+    else { consume(ty, node, binding); return; }
+    if binding { local(copy(node)); } else { temporary(copy(node)); }
+    { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+    if handle_type(copy(ty)) || future_type(ty) {
+        if binding { local(node); } else { temporary(node); }
+        { let code: [u8;15] = [46,115,116,111,114,97,103,101,61,78,85,76,76,59,10]; byte_text(&code[..]); }
+    }
+}
+
+fn tuple_initializer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let mut member = graph[node].first_child;
+    let mut arity: u64 = 0;
+    while member != 0 { arity = arity + 1; member = graph[member].next_sibling; }
+    if arity < 2 || arity > 3 { return -1; }
+    if expected != 0 && (!is_tuple(copy(expected)) || tuple_count(copy(expected)) != arity) { return -1; }
+    let emit = (*ctx).emit;
+    member = graph[node].first_child;
+    let mut ordinal: u64 = 0;
+    let mut ty: i64 = 0;
+    while member != 0 {
+        let want = if expected == 0 { 0 } else { tuple_part(copy(expected), copy(ordinal), copy(arity)) };
+        let field = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(member), copy(want));
+        if field <= 0 || (want != 0 && field != want) { return -1; }
+        ty = tuple_code(ty, field);
+        if ty < 0 { return -1; }
+        ordinal = ordinal + 1;
+        member = graph[member].next_sibling;
+    }
+    types[node] = copy(ty);
+    if emit {
+        declaration(copy(ty), copy(node)); { let code: [u8;2] = [61,123]; byte_text(&code[..]); }
+        let mut part = graph[node].first_child;
+        while part != 0 {
+            temporary(copy(part)); part = graph[part].next_sibling;
+            if part != 0 { character(44); }
+        }
+        { let code: [u8;3] = [125,59,10]; byte_text(&code[..]); }
+    }
+    ty
+}
+
+fn tuple_bind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> bool {
+    let first = graph[node].first_child;
+    let has_type = nodes[first].kind == 4;
+    let value = if has_type { graph[first].next_sibling } else { copy(first) };
+    let want = if has_type { annotation_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], first) } else { 0 };
+    let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(value), want);
+    if !is_tuple(copy(ty)) { return false; }
+    let count = tuple_count(copy(ty));
+    let mut ordinal: u64 = 0;
+    let mut binding = graph[value].next_sibling;
+    while binding != 0 {
+        if ordinal >= count { return false; }
+        let field = tuple_part(copy(ty), copy(ordinal), copy(count));
+        if graph[binding].declaration {
+            types[binding] = copy(field);
+            if (*ctx).emit {
+                c_type(copy(field)); character(32); local(copy(binding)); character(61);
+                temporary(copy(value)); { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(copy(ordinal)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                consume(copy(field), copy(binding), true);
+            }
+        }
+        if (*ctx).emit && !graph[binding].declaration && needs_cleanup(copy(field), (*ctx).storage) {
+            declaration(copy(field), copy(binding)); character(61); temporary(copy(value));
+            { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(copy(ordinal)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } drop_value(field, copy(binding), false);
+        }
+        ordinal = ordinal + 1;
+        binding = graph[binding].next_sibling;
+    }
+    ordinal == count
+}
+
+fn async_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], name: u64) -> u64 {
+    if nodes[name].kind != 7 || graph[name].binding != 0 { return 0; }
+    let spelling = &source[nodes[name].name_start..nodes[name].name_end];
+    let mut function = graph[0].first_child;
+    while function != 0 {
+        if nodes[function].kind == 35 && word(&source[0..source.len()], &nodes[0..nodes.len()],
+            copy(function), &spelling[0..spelling.len()]) { return function; }
+        function = graph[function].next_sibling;
+    }
+    0
+}
+
+// Direct awaits poll their child from the parent task. The resume label
+// follows argument evaluation, which therefore executes once per await.
+fn direct_await(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    // Propagation is transparent to the suspension's enclosing expression.
+    let mut boundary = copy(node);
+    let mut statement = nodes[boundary].parent;
+    while nodes[statement].kind == 79 { boundary = statement; statement = nodes[boundary].parent; }
+    let form = nodes[statement].kind;
+    if (*ctx).poll_body == 0
+        || (form != 5 && form != 6 && form != 8 && form != 10
+            && form != 11 && !(form == 21 && nodes[statement].name_end - nodes[statement].name_start != 1
+                && graph[graph[statement].first_child].next_sibling == boundary)
+            && !(form == 39 && graph[statement].first_child == boundary)
+            && !(form == 15 && graph[boundary].next_sibling == 0 && graph[graph[statement].first_child].next_sibling == boundary)) { return -1; }
+    let operand = graph[node].first_child;
+    let future = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(operand), 0);
+    let blocking = async_handle_type(copy(future));
+    if !blocking && !future_type(copy(future)) { return -1; }
+    let ty = task_payload(future);
+    if blocking {
+        let completion = task_code(3, ty);
+        types[node] = copy(completion);
+        if (*ctx).emit {
+            { let code: [u8;12] = [102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node)); character(61); temporary(operand); { let code: [u8;7] = [59,10,99,97,115,101,32]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;3] = [58,59,10]; byte_text(&code[..]); }
+            { let code: [u8;28] = [105,102,40,33,116,97,115,107,95,97,119,97,105,116,40,38,102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;29] = [46,115,116,97,116,101,45,62,116,97,115,107,44,116,97,115,107,41,41,123,116,97,115,107,45,62,112,99,61]; byte_text(&code[..]); }
+            number(copy(node)); { let code: [u8;16] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10]; byte_text(&code[..]); }
+            joined_payload(copy(completion), copy(node), node, true);
+        }
+        return completion;
+    }
+    if (*ctx).emit {
+        { let code: [u8;12] = [102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node)); character(61); temporary(operand); { let code: [u8;7] = [59,10,99,97,115,101,32]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;3] = [58,59,10]; byte_text(&code[..]); }
+        { let code: [u8;12] = [102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;46] = [46,115,116,97,116,101,45,62,116,97,115,107,46,114,111,111,116,61,116,97,115,107,45,62,114,111,111,116,63,116,97,115,107,45,62,114,111,111,116,58,116,97,115,107,59,10]; byte_text(&code[..]); }
+        { let code: [u8;16] = [105,102,40,33,102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;19] = [46,112,111,108,108,40,38,102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node));
+        { let code: [u8;30] = [46,115,116,97,116,101,45,62,116,97,115,107,44,102,97,108,115,101,41,41,123,116,97,115,107,45,62,112,99,61]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;16] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10]; byte_text(&code[..]); }
+        if ty != 0 {
+            declaration(copy(ty), copy(node)); character(61);
+            if ty > 9 { { let code: [u8;3] = [42,40,40]; byte_text(&code[..]); } c_type(copy(ty)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } }
+            { let code: [u8;12] = [102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(copy(node));
+            if ty <= 9 { { let code: [u8;15] = [46,115,116,97,116,101,45,62,118,97,108,117,101,46,107]; byte_text(&code[..]); } number(unsigned(copy(ty))); }
+            else { { let code: [u8;16] = [46,115,116,97,116,101,45,62,112,97,121,108,111,97,100,41]; byte_text(&code[..]); } }
+            { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        { let code: [u8;27] = [114,101,108,101,97,115,101,95,102,117,116,117,114,101,40,102,114,97,109,101,45,62,97,119,97,105,116]; byte_text(&code[..]); } number(node); { let code: [u8;19] = [46,115,116,97,116,101,44,116,114,117,101,44,116,114,117,101,41,59,10]; byte_text(&code[..]); }
+    }
+    ty
+}
+
+fn async_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, function: u64, first: u64, receiver: u64) -> i64 {
+    let mut arg = copy(first);
+    let mut param = graph[function].first_child;
+    let ty = types[function];
+    if ty < 0 { return -1; }
+    if receiver != 0 { param = graph[param].next_sibling; }
+    while nodes[param].kind == 3 {
+        if arg == 0 { return -1; }
+        let want = types[param];
+        let got = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(arg), copy(want));
+        if want != got { return -1; }
+        arg = graph[arg].next_sibling;
+        param = graph[param].next_sibling;
+    }
+    if arg != 0 { return -1; }
+    let ret = task_code(1, ty);
+    if ret < 0 { return -1; }
+    if (*ctx).emit {
+        declaration(copy(ret), copy(node)); { let code: [u8;23] = [61,109,97,107,101,95,116,97,115,107,40,115,105,122,101,111,102,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;6] = [41,44,112,111,108,108]; byte_text(&code[..]); }
+        number(copy(function)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        temporary(copy(node)); { let code: [u8;23] = [46,115,116,97,116,101,45,62,100,105,115,112,111,115,101,61,100,105,115,112,111,115,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        arg = first; param = graph[function].first_child;
+        if receiver != 0 {
+            { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;9] = [46,115,116,97,116,101,41,45,62]; byte_text(&code[..]); }
+            character(102); number(copy(param)); character(61);
+            if types[receiver] < 4000000 { character(38); }
+            local(receiver); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            param = graph[param].next_sibling;
+        }
+        while nodes[param].kind == 3 {
+            { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;9] = [46,115,116,97,116,101,41,45,62]; byte_text(&code[..]); }
+            character(102); number(copy(param)); character(61); temporary(copy(arg)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            arg = graph[arg].next_sibling; param = graph[param].next_sibling;
+        }
+    }
+    ret
+}
+
+fn completion_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, subject: u64, payload: i64, expected: i64, slot: u64) -> i64 {
+    let mut arm = graph[subject].next_sibling;
+    let emit = (*ctx).emit;
+    let mut found_ok = false;
+    let mut found_err = false;
+    let mut common = expected;
+    let mut first = true;
+    while arm != 0 {
+        let pattern = graph[arm].first_child;
+        let binder = graph[pattern].first_child;
+        let ok: [u8;2] = [79,107];
+        let err: [u8;3] = [69,114,114];
+        let success = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &ok[..]);
+        if success {
+            if found_ok { return -1; }
+            found_ok = true;
+        } else {
+            if found_err || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &err[..]) { return -1; }
+            found_err = true;
+        }
+        if emit {
+            if first {
+                { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } if !success { character(33); }
+                temporary(copy(subject)); { let code: [u8;6] = [46,111,107,41,123,10]; byte_text(&code[..]); }
+            } else { { let code: [u8;6] = [101,108,115,101,123,10]; byte_text(&code[..]); } }
+        }
+        if graph[binder].declaration {
+            if success && payload == 0 { return -1; }
+            let bound = if success { copy(payload) } else { 7799999 };
+            types[binder] = copy(bound);
+            if emit {
+                if (*ctx).poll_body == 0 { c_type(copy(bound)); character(32); }
+                local(copy(binder)); character(61);
+                if success {
+                    temporary(copy(subject)); { let code: [u8;6] = [46,118,97,108,117,101]; byte_text(&code[..]); }
+                    if payload <= 9 { { let code: [u8;2] = [46,107]; byte_text(&code[..]); } number(unsigned(copy(payload))); }
+                } else { { let code: [u8;4] = [116,114,117,101]; byte_text(&code[..]); } }
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); } consume(bound, copy(binder), true);
+            }
+        }
+        if success && payload > 9 && !graph[binder].declaration && emit {
+            c_type(copy(payload)); character(32); temporary(copy(pattern)); character(61);
+            temporary(copy(subject)); { let code: [u8;8] = [46,118,97,108,117,101,59,10]; byte_text(&code[..]); }
+            drop_value(copy(payload), copy(pattern), false);
+        }
+        let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, graph[pattern].next_sibling, copy(common), copy(slot));
+        if ty < 0 || (common != 0 && ty != 0 && ty != common) { return -1; }
+        if common == 0 { common = ty; }
+        if emit && success && payload > 9 && graph[binder].declaration {
+            drop_value(copy(payload), binder, true);
+        }
+        if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+        first = false;
+        arm = graph[arm].next_sibling;
+    }
+    if !found_ok || !found_err { return -1; }
+    common
+}
+
+pub fn poll_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    function: u64, body: u64, emit: bool, storage: bool) -> bool {
+    let result = types[function];
+    if result < 0 { return false; }
+    let ctx = Lowering { emit: copy(emit), result: copy(result), function: copy(function),
+        loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: copy(body) };
+    if emit {
+        frame_aliases(&nodes[0..nodes.len()], &types[0..types.len()], copy(function), true);
+        { let code: [u8;21] = [115,116,97,116,105,99,32,98,111,111,108,32,112,111,108,108,95,115,116,101,112]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;14] = [40,84,97,115,107,32,42,116,97,115,107,41,123,10]; byte_text(&code[..]); }
+        { let code: [u8;5] = [70,114,97,109,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;32] = [42,102,114,97,109,101,61,40,118,111,105,100,42,41,116,97,115,107,59,40,118,111,105,100,41,102,114,97,109,101,59,10]; byte_text(&code[..]); }
+        { let code: [u8;26] = [115,119,105,116,99,104,40,116,97,115,107,45,62,112,99,41,123,99,97,115,101,32,48,58,59,10]; byte_text(&code[..]); }
+    }
+    let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], &ctx, body, copy(result), 0);
+    if ty < 0 { return false; }
+    if emit {
+        let mut formal = graph[function].first_child;
+        while nodes[formal].kind == 3 {
+            let ty = types[formal];
+            if needs_cleanup(copy(ty), copy(storage)) { drop_value(ty, copy(formal), true); }
+            formal = graph[formal].next_sibling;
+        }
+        { let code: [u8;31] = [114,101,116,117,114,110,32,116,114,117,101,59,100,101,102,97,117,108,116,58,97,98,111,114,116,40,41,59,125,125,10]; byte_text(&code[..]); }
+        frame_aliases(&nodes[0..nodes.len()], &types[0..types.len()], copy(function), false);
+        { let code: [u8;19] = [115,116,97,116,105,99,32,118,111,105,100,32,100,105,115,112,111,115,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;39] = [40,84,97,115,107,83,116,97,116,101,42,32,115,116,97,116,101,44,98,111,111,108,32,99,111,109,112,108,101,116,101,100,41,123,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(function)); { let code: [u8;47] = [42,102,114,97,109,101,61,40,118,111,105,100,42,41,115,116,97,116,101,59,40,118,111,105,100,41,102,114,97,109,101,59,105,102,40,99,111,109,112,108,101,116,101,100,41,123,10]; byte_text(&code[..]); }
+        if result > 9 && needs_cleanup(copy(result), copy(storage)) {
+            declaration(copy(result), 0); { let code: [u8;16] = [61,102,114,97,109,101,45,62,114,101,115,117,108,116,59,10]; byte_text(&code[..]); } drop_value(copy(result), 0, false);
+        }
+        { let code: [u8;7] = [125,101,108,115,101,123,10]; byte_text(&code[..]); }
+        formal = graph[function].first_child;
+        while nodes[formal].kind == 3 {
+            let ty = types[formal];
+            if needs_cleanup(copy(ty), copy(storage)) {
+                c_type(copy(ty)); character(32); local(copy(formal));
+                { let code: [u8;9] = [61,102,114,97,109,101,45,62,102]; byte_text(&code[..]); } number(copy(formal)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } drop_value(ty, copy(formal), true);
+            }
+            formal = graph[formal].next_sibling;
+        }
+        { let code: [u8;3] = [125,125,10]; byte_text(&code[..]); }
+        { let code: [u8;16] = [115,116,97,116,105,99,32,98,111,111,108,32,112,111,108,108]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;54] = [40,84,97,115,107,32,42,116,97,115,107,44,98,111,111,108,32,102,97,105,108,101,100,41,123,84,97,115,107,83,116,97,116,101,42,115,116,97,116,101,61,40,118,111,105,100,42,41,116,97,115,107,59,10]; byte_text(&code[..]); }
+        { let code: [u8;18] = [105,102,40,102,97,105,108,101,100,41,123,100,105,115,112,111,115,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;28] = [40,115,116,97,116,101,44,102,97,108,115,101,41,59,114,101,116,117,114,110,32,116,114,117,101,59,125,10]; byte_text(&code[..]); }
+        { let code: [u8;47] = [67,108,97,115,115,105,99,83,116,97,99,107,32,111,108,100,61,115,119,97,112,95,99,108,97,115,115,105,99,40,115,116,97,116,101,45,62,99,108,97,115,115,105,99,41,59,10]; byte_text(&code[..]); }
+        if storage { { let code: [u8;58] = [105,102,40,33,98,97,115,101,41,123,114,101,115,101,114,118,101,40,103,108,111,98,97,108,95,102,105,120,101,100,95,98,117,100,103,101,116,41,59,119,111,114,107,101,114,95,114,101,103,105,111,110,115,40,41,59,125,10]; byte_text(&code[..]); } }
+        else { { let code: [u8;40] = [105,102,40,33,98,97,115,101,41,123,114,101,115,101,114,118,101,40,49,41,59,119,111,114,107,101,114,95,114,101,103,105,111,110,115,40,41,59,125,10]; byte_text(&code[..]); } }
+        { let code: [u8;20] = [98,111,111,108,32,114,101,97,100,121,61,112,111,108,108,95,115,116,101,112]; byte_text(&code[..]); } number(function); { let code: [u8;8] = [40,116,97,115,107,41,59,10]; byte_text(&code[..]); }
+        { let code: [u8;117] = [105,102,40,114,101,97,100,121,41,123,112,116,104,114,101,97,100,95,109,117,116,101,120,95,108,111,99,107,40,38,116,97,115,107,95,108,111,99,107,41,59,114,101,103,105,111,110,95,114,101,115,116,111,114,101,40,78,85,76,76,41,59,112,116,104,114,101,97,100,95,109,117,116,101,120,95,117,110,108,111,99,107,40,38,116,97,115,107,95,108,111,99,107,41,59,114,101,108,101,97,115,101,40,41,59,98,97,115,101,61,78,85,76,76,59,125,10]; byte_text(&code[..]); }
+        { let code: [u8;48] = [115,116,97,116,101,45,62,99,108,97,115,115,105,99,61,115,119,97,112,95,99,108,97,115,115,105,99,40,111,108,100,41,59,114,101,116,117,114,110,32,114,101,97,100,121,59,125,10]; byte_text(&code[..]); }
+    }
+    true
+}
+
+
+fn binary(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let left = graph[node].first_child;
+    let right = graph[left].next_sibling;
+    let mark = nodes[node].name_start;
+    let first = source[mark];
+    let second = source[mark + 1];
+    let pair = (first == second || second == 61) && (nodes[node].name_end > mark + 1 || first == 62);
+    let logical = pair && first == second && (first == 38 || first == 124);
+    let shift = pair && first == second && (first == 60 || first == 62);
+    let compare = !shift && (first == 60 || first == 62 || (pair && (first == 33 || first == 61)));
+    let cast = first == 97 && second == 115;
+    let emit = (*ctx).emit;
+    let mut hint = if logical { 3 } else if compare || cast { 0 } else { expected };
+    if hint == 0 && !cast {
+        hint = guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], copy(left));
+        if hint == 0 && !shift { hint = guess(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], copy(right)); }
+    }
+    let a = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(left), hint);
+    if a <= 0 { return -1; }
+    if cast {
+        let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], right);
+        if ty <= 0 || ty > 9 || a > 9 { return -1; }
+        if emit {
+            declaration(copy(ty), node); { let code: [u8;2] = [61,40]; byte_text(&code[..]); } c_type(copy(ty)); character(41); temporary(left); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return ty;
+    }
+    if logical && emit {
+        declaration(3, copy(node)); character(61); temporary(copy(left)); { let code: [u8;5] = [59,10,105,102,40]; byte_text(&code[..]); }
+        if first == 124 { character(33); }
+        temporary(copy(left)); { let code: [u8;3] = [41,123,10]; byte_text(&code[..]); }
+    }
+    let spilled = (*ctx).poll_body != 0 && !logical && suspends(&nodes[0..nodes.len()], copy(right));
+    if spilled {
+        types[node] = copy(a);
+        if emit { { let code: [u8;12] = [102,114,97,109,101,45,62,115,112,105,108,108]; byte_text(&code[..]); } number(copy(node)); character(61); temporary(copy(left)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+    }
+    let b = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(right), if shift { 0 } else { copy(a) });
+    if b <= 0 || (!shift && b != a) { return -1; }
+    if spilled && emit { temporary(copy(left)); { let code: [u8;13] = [61,102,114,97,109,101,45,62,115,112,105,108,108]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+    if logical {
+        if emit { temporary(node); character(61); temporary(right); { let code: [u8;4] = [59,10,125,10]; byte_text(&code[..]); } }
+        return 3;
+    }
+    let ty = if compare { 3 } else { copy(a) };
+    if !compare && (a > 9 || b > 9) { return -1; }
+    if emit { emit_binary(node, left, right, copy(a), copy(ty), first, second, pair, shift, compare); }
+    ty
+}
+
+fn emit_binary(node: u64, left: u64, right: u64, a: i64, ty: i64,
+    first: u8, second: u8, pair: bool, shift: bool, compare: bool) {
+    declaration(copy(ty), copy(node));
+    if shift {
+        { let code: [u8;14] = [59,105,102,40,40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(copy(right)); { let code: [u8;2] = [62,61]; byte_text(&code[..]); }
+        number(integer_width(copy(a))); { let code: [u8;21] = [41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        if first == 60 {
+            { let code: [u8;26] = [105,102,40,95,95,98,117,105,108,116,105,110,95,109,117,108,95,111,118,101,114,102,108,111,119,40]; byte_text(&code[..]); } temporary(left); { let code: [u8;14] = [44,85,73,78,84,54,52,95,67,40,49,41,60,60]; byte_text(&code[..]); }
+            temporary(right); { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(node); { let code: [u8;22] = [41,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        } else {
+            temporary(node); character(61);
+            if a <= 2 {
+                temporary(copy(left)); { let code: [u8;30] = [60,48,63,45,49,45,40,105,110,116,54,52,95,116,41,40,40,117,105,110,116,54,52,95,116,41,40,45,49,45]; byte_text(&code[..]); }
+                temporary(copy(left)); { let code: [u8;3] = [41,62,62]; byte_text(&code[..]); } temporary(copy(right)); { let code: [u8;2] = [41,58]; byte_text(&code[..]); }
+            }
+            { let code: [u8;10] = [40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(left); { let code: [u8;2] = [62,62]; byte_text(&code[..]); } temporary(right); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+    } else if !compare && a < 8 && (first == 43 || first == 45 || first == 42) {
+        { let code: [u8;14] = [59,105,102,40,95,95,98,117,105,108,116,105,110,95]; byte_text(&code[..]); }
+        if first == 43 { { let code: [u8;3] = [97,100,100]; byte_text(&code[..]); } } else if first == 45 { { let code: [u8;3] = [115,117,98]; byte_text(&code[..]); } } else { { let code: [u8;3] = [109,117,108]; byte_text(&code[..]); } }
+        { let code: [u8;10] = [95,111,118,101,114,102,108,111,119,40]; byte_text(&code[..]); } temporary(left); character(44); temporary(right);
+        { let code: [u8;2] = [44,38]; byte_text(&code[..]); } temporary(node); { let code: [u8;22] = [41,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+    } else if !compare && (first == 47 || first == 37) {
+        { let code: [u8;4] = [59,105,102,40]; byte_text(&code[..]); } temporary(copy(right)); { let code: [u8;24] = [61,61,48,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        if a <= 2 && first == 47 {
+            { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } division_overflow(copy(a), copy(left), copy(right)); { let code: [u8;21] = [41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        }
+        temporary(node); character(61);
+        if a <= 2 && first == 37 { division_overflow(copy(a), copy(left), copy(right)); { let code: [u8;3] = [63,48,58]; byte_text(&code[..]); } }
+        if a >= 8 && first == 37 {
+            if a == 8 { { let code: [u8;6] = [102,109,111,100,102,40]; byte_text(&code[..]); } } else { { let code: [u8;5] = [102,109,111,100,40]; byte_text(&code[..]); } }
+            temporary(left); character(44); temporary(right); character(41);
+        } else { temporary(left); character(first as i32); temporary(right); }
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    } else {
+        character(61); temporary(left); character(first as i32);
+        if pair { character(second as i32); }
+        temporary(right); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+}
+
+fn compound_assignment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, statement: u64) -> bool {
+    let place = graph[statement].first_child;
+    let right = graph[place].next_sibling;
+    let op = source[nodes[statement].name_start];
+    let shift = op == 60 || op == 62;
+    let kind = nodes[place].kind;
+    let child = graph[place].first_child;
+    let emit = (*ctx).emit;
+    let ty = if kind == 18 {
+        indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place))
+    } else if kind == 17 {
+        if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(place)) { return false; }
+        member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &types[0..types.len()], copy(place), false)
+    } else if kind == 14 {
+        let reference = expression(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), 0);
+        scalar_referent(reference)
+    } else if kind == 7 { types[graph[place].binding] }
+    else { return false; };
+    if ty <= 0 || ty > 9 || ty == 3 { return false; }
+    let spilled = (*ctx).poll_body != 0 && suspends(&nodes[0..nodes.len()], copy(right));
+    if spilled { types[statement] = copy(ty); }
+    if emit {
+        c_type(copy(ty)); { let code: [u8;3] = [32,42,112]; byte_text(&code[..]); } number(copy(statement)); character(61);
+        if kind == 18 { character(112); number(copy(place)); }
+        else if kind == 14 { temporary(child); }
+        else if kind == 17 {
+            character(38);
+            let field = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], copy(place), true);
+            drop(field);
+        } else { character(38); local(graph[place].binding); }
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        declaration(copy(ty), copy(place));
+        { let code: [u8;3] = [61,42,112]; byte_text(&code[..]); } number(copy(statement));
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        if spilled { spill_compound(copy(statement), copy(place), true); }
+    }
+    let operand = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, copy(right), if shift { 0 } else { copy(ty) });
+    if (!shift && operand != ty) || (shift && integer_width(operand) == 0) { return false; }
+    if emit {
+        if spilled { spill_compound(copy(statement), copy(place), false); }
+        emit_binary(copy(statement), place, right, copy(ty), ty, copy(op), op, copy(shift), shift, false);
+        { let code: [u8;2] = [42,112]; byte_text(&code[..]); } number(copy(statement));
+        character(61); temporary(statement); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+    true
+}
+
+fn spill_compound(statement: u64, place: u64, save: bool) {
+    let pointer: [u8;12] = [102,114,97,109,101,45,62,112,108,97,99,101]; // frame->place
+    let scalar: [u8;12] = [102,114,97,109,101,45,62,115,112,105,108,108]; // frame->spill
+    let end: [u8;2] = [59,10];
+    if save {
+        byte_text(&pointer[..]); number(copy(statement)); character(61); character(112); number(copy(statement)); byte_text(&end[..]);
+        byte_text(&scalar[..]); number(statement); character(61); temporary(place); byte_text(&end[..]);
+    } else {
+        character(112); number(copy(statement)); character(61); byte_text(&pointer[..]); number(copy(statement)); byte_text(&end[..]);
+        temporary(place); character(61); byte_text(&scalar[..]); number(statement); byte_text(&end[..]);
+    }
+}
+
+fn division_overflow(ty: i64, left: u64, right: u64) {
+    character(40); temporary(left);
+    if ty == 1 { { let code: [u8;11] = [61,61,73,78,84,51,50,95,77,73,78]; byte_text(&code[..]); } } else { { let code: [u8;11] = [61,61,73,78,84,54,52,95,77,73,78]; byte_text(&code[..]); } }
+    { let code: [u8;2] = [38,38]; byte_text(&code[..]); } temporary(right); { let code: [u8;5] = [61,61,45,49,41]; byte_text(&code[..]); }
+}
+
+// A native worker uses the ordinary synchronous block lowering. Its
+// entry bindings are loaded from a frame populated before pthread_create.
+fn native_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, worker: u64, expected: i64) -> i64 {
+    if (*ctx).poll_body != 0 { return -1; }
+    let mut capture = graph[worker].first_child;
+    while nodes[capture].kind == 57 {
+        let ty = types[graph[capture].binding];
+        if ty <= 0 || (ty >= 140 && !uses_pool(copy(ty)) && nominal_type(copy(ty)) == 0
+            && !handle_type(copy(ty)) && !map_type(copy(ty))) { return -1; }
+        types[capture] = ty;
+        capture = graph[capture].next_sibling;
+    }
+    let want = if handle_type(copy(expected)) { task_payload(expected) } else { 0 };
+    let dry = Lowering { emit: false, result: copy(want), function: copy(worker),
+        loop_result: 0, loop_slot: 0, loop_node: 0, storage: (*ctx).storage, poll_body: 0 };
+    let result = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], &dry, copy(worker), copy(want), 0);
+    if result < 0 || (want != 0 && result != want) { return -1; }
+    let result_type = task_code(2, result);
+    if result_type < 0 { return -1; }
+    types[worker] = copy(result_type);
+    if (*ctx).emit {
+        declaration(copy(result_type), copy(node)); { let code: [u8;25] = [61,109,97,107,101,95,110,97,116,105,118,101,40,115,105,122,101,111,102,40,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(worker)); { let code: [u8;6] = [41,44,112,111,108,108]; byte_text(&code[..]); } number(copy(worker)); { let code: [u8;8] = [44,100,105,115,112,111,115,101]; byte_text(&code[..]); } number(copy(worker)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        capture = graph[worker].first_child;
+        while nodes[capture].kind == 57 {
+            { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(worker)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;9] = [46,115,116,97,116,101,41,45,62]; byte_text(&code[..]); }
+            local(copy(capture)); character(61); local(graph[capture].binding); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            let original = graph[capture].binding;
+            let ty = types[capture];
+            if ty >= 6000000 && ty < 7000000 { local(original); { let code: [u8;12] = [46,112,111,111,108,61,78,85,76,76,59,10]; byte_text(&code[..]); } }
+            else if handle_type(copy(ty)) { local(original); { let code: [u8;15] = [46,115,116,111,114,97,103,101,61,78,85,76,76,59,10]; byte_text(&code[..]); } }
+            else if map_type(copy(ty)) { local(original); { let code: [u8;7] = [61,78,85,76,76,59,10]; byte_text(&code[..]); } }
+            else if ty >= 3000000 && ty < 4000000 && (*ctx).storage {
+                { let code: [u8;8] = [109,101,109,115,101,116,40,38]; byte_text(&code[..]); } local(copy(original)); { let code: [u8;10] = [44,48,44,115,105,122,101,111,102,32]; byte_text(&code[..]); } local(original); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            }
+            capture = graph[capture].next_sibling;
+        }
+        { let code: [u8;13] = [115,116,97,114,116,95,110,97,116,105,118,101,40]; byte_text(&code[..]); } temporary(node); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+    }
+    result_type
+}
+
+pub fn emit_native_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    body: u64, storage: bool) -> bool {
+    let result = task_payload(types[body]);
+    let ctx = Lowering { emit: true, result: copy(result), function: copy(body),
+        loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: 0 };
+    { let code: [u8;7] = [115,116,97,116,105,99,32]; byte_text(&code[..]); } c_type(copy(result)); { let code: [u8;12] = [32,110,97,116,105,118,101,95,98,111,100,121]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;6] = [40,70,114,97,109,101]; byte_text(&code[..]); }
+    number(copy(body)); { let code: [u8;21] = [42,102,114,97,109,101,41,123,40,118,111,105,100,41,102,114,97,109,101,59,10]; byte_text(&code[..]); }
+    let mut capture = graph[body].first_child;
+    while nodes[capture].kind == 57 {
+        let ty = types[capture];
+        c_type(copy(ty)); character(32); local(copy(capture)); { let code: [u8;8] = [61,102,114,97,109,101,45,62]; byte_text(&code[..]); } local(copy(capture)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        consume(ty, copy(capture), true);
+        capture = graph[capture].next_sibling;
+    }
+    if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], &ctx, copy(body), copy(result), 0) < 0 { return false; }
+    if result != 0 { { let code: [u8;9] = [97,98,111,114,116,40,41,59,10]; byte_text(&code[..]); } }
+    { let code: [u8;18] = [125,10,115,116,97,116,105,99,32,98,111,111,108,32,112,111,108,108]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;48] = [40,84,97,115,107,32,42,116,97,115,107,44,98,111,111,108,32,102,97,105,108,101,100,41,123,105,102,40,102,97,105,108,101,100,41,114,101,116,117,114,110,32,116,114,117,101,59,10]; byte_text(&code[..]); }
+    if result != 0 {
+        { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;9] = [42,41,116,97,115,107,41,45,62]; byte_text(&code[..]); }
+        if result <= 9 { { let code: [u8;13] = [115,116,97,116,101,46,118,97,108,117,101,46,107]; byte_text(&code[..]); } number(unsigned(copy(result))); }
+        else { { let code: [u8;6] = [114,101,115,117,108,116]; byte_text(&code[..]); } }
+        character(61);
+    }
+    { let code: [u8;11] = [110,97,116,105,118,101,95,98,111,100,121]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;15] = [40,40,118,111,105,100,42,41,116,97,115,107,41,59,10]; byte_text(&code[..]); }
+    if result > 9 {
+        { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;31] = [42,41,116,97,115,107,41,45,62,115,116,97,116,101,46,112,97,121,108,111,97,100,61,38,40,40,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(body)); { let code: [u8;17] = [42,41,116,97,115,107,41,45,62,114,101,115,117,108,116,59,10]; byte_text(&code[..]); }
+    }
+    { let code: [u8;14] = [114,101,116,117,114,110,32,116,114,117,101,59,125,10]; byte_text(&code[..]); }
+    { let code: [u8;19] = [115,116,97,116,105,99,32,118,111,105,100,32,100,105,115,112,111,115,101]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;39] = [40,84,97,115,107,83,116,97,116,101,32,42,115,116,97,116,101,44,98,111,111,108,32,99,111,109,112,108,101,116,101,100,41,123,70,114,97,109,101]; byte_text(&code[..]); }
+    number(copy(body)); { let code: [u8;47] = [42,102,114,97,109,101,61,40,118,111,105,100,42,41,115,116,97,116,101,59,40,118,111,105,100,41,102,114,97,109,101,59,105,102,40,99,111,109,112,108,101,116,101,100,41,123,10]; byte_text(&code[..]); }
+    if result > 9 && (copy(storage) || handle_type(copy(result))) {
+        c_type(copy(result)); character(32); temporary(copy(body)); { let code: [u8;16] = [61,102,114,97,109,101,45,62,114,101,115,117,108,116,59,10]; byte_text(&code[..]); }
+        drop_value(copy(result), copy(body), false);
+    }
+    { let code: [u8;7] = [125,101,108,115,101,123,10]; byte_text(&code[..]); }
+    capture = graph[body].first_child;
+    while nodes[capture].kind == 57 {
+        let ty = types[capture];
+        if needs_cleanup(copy(ty), copy(storage)) {
+            c_type(copy(ty)); character(32); local(copy(capture)); { let code: [u8;8] = [61,102,114,97,109,101,45,62]; byte_text(&code[..]); } local(copy(capture)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            drop_value(ty, copy(capture), true);
+        }
+        capture = graph[capture].next_sibling;
+    }
+    { let code: [u8;3] = [125,125,10]; byte_text(&code[..]); }
+    true
+}
+
+
+fn flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64, slot: u64) -> i64 {
+    let emit = (*ctx).emit;
+    if nodes[node].kind == 39 {
+        return enum_match(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, expected, slot);
+    }
+    if nodes[node].kind == 2 {
+        if emit { { let code: [u8;2] = [123,10]; byte_text(&code[..]); } }
+        let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, node, expected, slot);
+        if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+        return ty;
+    }
+    let child = graph[node].first_child;
+    if nodes[node].kind == 27 {
+        let loop_ctx = Lowering { emit: copy(emit), function: (*ctx).function, result: (*ctx).result,
+            loop_result: copy(expected), loop_slot: slot, loop_node: copy(node), storage: (*ctx).storage, poll_body: (*ctx).poll_body };
+        if emit { { let code: [u8;9] = [102,111,114,40,59,59,41,123,10]; byte_text(&code[..]); } }
+        let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], &loop_ctx, child, 0, 0);
+        if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+        if ty < 0 { return ty; }
+        return types[node];
+    }
+    let yes = graph[child].next_sibling;
+    let no = graph[yes].next_sibling;
+    let condition = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), 3);
+    if condition != 3 { return -1; }
+    if emit { { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } temporary(child); { let code: [u8;3] = [41,123,10]; byte_text(&code[..]); } }
+    let left = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, yes, copy(expected), copy(slot));
+    if left < 0 { return left; }
+    if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+    if no == 0 { return left; }
+    if emit { { let code: [u8;7] = [101,108,115,101,32,123,10]; byte_text(&code[..]); } }
+    let right = flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, no,
+        if expected != 0 { expected } else { copy(left) }, slot);
+    if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+    if right < 0 || (left != 0 && right != 0 && left != right) { return -1; }
+    if left != 0 { return left; }
+    right
+}
+
+fn drop_visible(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], point: u64, boundary: u64, function: bool, storage: bool) {
+    let mut binding = graph[point].visible;
+    while binding != 0 {
+        if nodes[binding].start < nodes[boundary].start
+            && !(function && nodes[binding].kind == 3 && nodes[binding].parent == boundary) { break; }
+        let ty = types[binding];
+        if needs_cleanup(copy(ty), copy(storage)) {
+            drop_value(ty, copy(binding), true);
+        }
+        binding = graph[binding].visible;
+    }
+}
+
+pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, body: u64, expected: i64, slot: u64) -> i64 {
+    if nodes[body].kind != 2 { return -1; }
+    let emit = (*ctx).emit;
+    let mut statement = graph[body].first_child;
+    let regional = stack_region(&source[0..source.len()], &nodes[0..nodes.len()], copy(statement));
+    if regional {
+        if !enter_region(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(body), copy(emit), (*ctx).poll_body != 0) { return -1; }
+        statement = graph[statement].next_sibling;
+    }
+    let release_pages = free_pages(&source[0..source.len()], &nodes[0..nodes.len()], copy(statement));
+    if release_pages { statement = graph[statement].next_sibling; }
+    let mut result: i64 = 0;
+    let storage = (*ctx).storage;
+    if emit && storage {
+        if (*ctx).poll_body == 0 { { let code: [u8;7] = [115,105,122,101,95,116,32]; byte_text(&code[..]); } }
+        { let code: [u8;4] = [109,97,114,107]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;9] = [61,99,117,114,115,111,114,59,10]; byte_text(&code[..]); }
+    }
+    while statement != 0 {
+        let kind = nodes[statement].kind;
+        let child = graph[statement].first_child;
+        if kind == 50 {
+            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return -1; }
+        } else if kind == 77 {
+            if !lower_c(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],
+                &types[0..types.len()],copy(statement),copy(emit)){return -1;}
+        } else if kind == 51 {
+            if (*ctx).poll_body != 0 || !lower_asm(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &types[0..types.len()], copy(statement), if emit { 1 } else { 0 }) {
+                return -1;
+            }
+        } else if kind == 57 && (*ctx).function == body && types[statement] > 0 {
+            // The native prologue already initialized the frame binding.
+        } else if kind == 25 {
+            if (*ctx).poll_body == 0 { return -1; }
+            if emit {
+                { let code: [u8;9] = [116,97,115,107,45,62,112,99,61]; byte_text(&code[..]); } number(copy(statement)); { let code: [u8;19] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,99,97,115,101,32]; byte_text(&code[..]); } number(copy(statement)); { let code: [u8;3] = [58,59,10]; byte_text(&code[..]); }
+            }
+        } else if kind == 5 {
+            let annotation = if nodes[child].kind == 4 { copy(child) } else { 0 };
+            let value = if annotation == 0 { child } else { graph[annotation].next_sibling };
+            let want = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+            if want < 0 { return -1; }
+            let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(value), copy(want));
+            if ty <= 0 || (annotation != 0 && ty != want) { return -1; }
+            if emit {
+                if (*ctx).poll_body == 0 { c_type(copy(ty)); character(32); }
+                local(copy(statement)); character(61);
+                temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                if (*ctx).poll_body == 0 { consume(copy(ty), copy(statement), true); }
+            }
+            types[statement] = ty;
+        } else if kind == 47 {
+            if !tuple_bind(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(statement)) { return -1; }
+        } else if kind == 21 {
+            if nodes[statement].name_end - nodes[statement].name_start != 1 {
+                if !compound_assignment(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(statement)) { return -1; }
+                statement = graph[statement].next_sibling;
+                continue;
+            }
+            if nodes[child].kind == 18 {
+                let element = indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[0..types.len()], ctx, copy(child));
+                if element <= 0 || uses_pool(copy(element)) { return -1; }
+                let value = graph[child].next_sibling;
+                let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[0..types.len()], ctx, copy(value), copy(element));
+                if ty != element { return -1; }
+                if emit { { let code: [u8;2] = [42,112]; byte_text(&code[..]); } number(child); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                statement = graph[statement].next_sibling;
+                continue;
+            }
+            let indirect = nodes[child].kind == 14;
+            let name = if indirect { graph[child].first_child } else { copy(child) };
+            let binding = graph[name].binding;
+            let want = if indirect {
+                // Evaluate the pointer naming the assignment place before the RHS.
+                let address = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[0..types.len()], ctx, copy(name), 0);
+                scalar_referent(address)
+            } else {
+                if nodes[name].kind != 7 { return -1; }
+                types[binding]
+            };
+            if want <= 0 || uses_pool(copy(want)) { return -1; }
+            let value = graph[child].next_sibling;
+            let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(value), copy(want));
+            if ty != want { return -1; }
+            if emit {
+                // Evaluate the replacement before destroying the old value. A
+                // moved record has already been cleared by expression lowering.
+                if !indirect && want >= 3000000 && want < 4000000 {
+                    drop_value(copy(want), copy(binding), true);
+                }
+                if indirect { character(42); temporary(name); }
+                else {
+                            local(binding);
+                }
+                character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+        } else if kind == 22 {
+            if emit { { let code: [u8;9] = [102,111,114,40,59,59,41,123,10]; byte_text(&code[..]); } }
+            let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), 3);
+            if ty != 3 { return -1; }
+            if emit { { let code: [u8;4] = [105,102,40,33]; byte_text(&code[..]); } temporary(copy(child)); { let code: [u8;8] = [41,98,114,101,97,107,59,10]; byte_text(&code[..]); } }
+            let loop_ctx = Lowering { emit: copy(emit), function: (*ctx).function,
+                result: (*ctx).result, loop_result: 0, loop_slot: 0, loop_node: copy(statement), storage: (*ctx).storage, poll_body: (*ctx).poll_body };
+            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], &loop_ctx, graph[child].next_sibling, 0, 0) < 0 { return -1; }
+            if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+        } else if kind == 23 || kind == 24 {
+            if child != 0 {
+                let receiving = (*ctx).loop_slot;
+                if kind != 23 || receiving == 0 { return -1; }
+                let prior = types[receiving];
+                let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child),
+                    if (*ctx).loop_result == 0 { copy(prior) } else { (*ctx).loop_result });
+                if ty <= 0 || (prior != 0 && ty != prior) { return -1; }
+                types[receiving] = copy(ty);
+                if outcome(ctx, receiving, child, (*ctx).loop_result, ty) < 0 { return -1; }
+            }
+            if emit {
+                let jump = (*ctx).loop_node;
+                let target = if nodes[jump].kind == 22 { graph[graph[jump].first_child].next_sibling } else { graph[jump].first_child };
+                {
+                    drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                        copy(statement), copy(target), false, copy(storage));
+                }
+                if storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(copy(target)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                let force = forced_reclaim(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    copy(statement), copy(target));
+                if storage || force { reclaim_scope(force); }
+                unwind_regions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(statement), target);
+                if kind == 23 { { let code: [u8;7] = [98,114,101,97,107,59,10]; byte_text(&code[..]); } } else { { let code: [u8;10] = [99,111,110,116,105,110,117,101,59,10]; byte_text(&code[..]); } }
+            }
+        } else if kind == 6 || kind == 8 || kind == 10 {
+            if child == 0 {
+                if kind != 6 || (*ctx).result != 0 { return -1; }
+                if emit {
+                    if (*ctx).poll_body != 0 {
+                        drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                            copy(statement), (*ctx).function, true, copy(storage));
+                        { let code: [u8;13] = [114,101,116,117,114,110,32,116,114,117,101,59,10]; byte_text(&code[..]); }
+                    }
+                    else {
+                        let function = (*ctx).function;
+                        drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                            copy(statement), copy(function), true, copy(storage));
+                        unwind_regions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(statement), function);
+                        if (*ctx).function == 0 { { let code: [u8;19] = [103,111,116,111,32,109,97,105,110,95,99,108,101,97,110,117,112,59,10]; byte_text(&code[..]); } }
+                        else { { let code: [u8;8] = [114,101,116,117,114,110,59,10]; byte_text(&code[..]); } }
+                    }
+                }
+            } else if (nodes[child].kind == 2 || nodes[child].kind == 26 || nodes[child].kind == 27 || nodes[child].kind == 39)
+                && (kind == 8 || (kind == 10 && expected == 0 && slot == 0 && (*ctx).function != body)) {
+                if flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return -1; }
+            } else {
+                let want = if kind == 6 { (*ctx).result } else if kind == 10 { copy(expected) } else { 0 };
+                let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), copy(want));
+                if ty < 0 { return ty; }
+                if kind == 8 {
+                    if emit {
+                        if needs_cleanup(copy(ty), copy(storage)) {
+                            drop_value(ty, child, false);
+                        } else { consume(ty, child, false); }
+                    }
+                } else if ty != 0 {
+                    if kind == 10 { result = copy(ty); }
+                    if emit && (*ctx).poll_body == 0 && (kind == 6 || slot == 0) {
+                        let function = (*ctx).function;
+                        let mut root = if function == 0 || function == body { copy(body) } else { graph[function].first_child };
+                        while nodes[root].kind == 3 || nodes[root].kind == 4 { root = graph[root].next_sibling; }
+                        drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                            copy(statement), if function != 0 { function } else { copy(root) }, true, copy(storage));
+                        unwind_regions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(statement), copy(root));
+                        if storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(root); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                    }
+                    if (*ctx).poll_body != 0 && (kind == 6 || (body == (*ctx).poll_body && slot == 0)) {
+                        if want != ty || ty <= 0 { return -1; }
+                        if emit {
+                            drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                                copy(statement), (*ctx).function, true, copy(storage));
+                            if ty <= 9 {
+                                { let code: [u8;20] = [102,114,97,109,101,45,62,115,116,97,116,101,46,118,97,108,117,101,46,107]; byte_text(&code[..]); } number(unsigned(copy(ty)));
+                            } else {
+                                { let code: [u8;49] = [102,114,97,109,101,45,62,115,116,97,116,101,46,112,97,121,108,111,97,100,61,38,102,114,97,109,101,45,62,114,101,115,117,108,116,59,102,114,97,109,101,45,62,114,101,115,117,108,116]; byte_text(&code[..]); }
+                            }
+                            character(61); temporary(child); { let code: [u8;14] = [59,114,101,116,117,114,110,32,116,114,117,101,59,10]; byte_text(&code[..]); }
+                        }
+                    } else if outcome(ctx, if kind == 6 { 0 } else { copy(slot) }, child, want, ty) < 0 { return -1; }
+                }
+            }
+        } else { return -1; }
+        if emit && graph[statement].next_sibling == 0 {
+            if kind == 5 {
+                let ty = types[statement];
+                if needs_cleanup(copy(ty), copy(storage)) {
+                    drop_value(ty, copy(statement), true);
+                }
+            }
+            drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                copy(statement), copy(body), false, copy(storage));
+        }
+        statement = graph[statement].next_sibling;
+    }
+    if emit && storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+    if emit && (storage || regional || release_pages) { reclaim_scope(release_pages); }
+    if emit && regional { exit_region(body); }
+    result
+}
+
+pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], function: u64) -> bool {
+    let result = function_result(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+    let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
+    if ty < 0 || vector_type(copy(ty)) { return false; }
+    types[function] = ty;
+    let mut formal = graph[function].first_child;
+    if borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function)) {
+        let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], nodes[function].parent);
+        if record == 0 { return false; }
+        types[formal] = 4000000 + signed(record);
+        formal = graph[formal].next_sibling;
+    }
+    while nodes[formal].kind == 3 {
+        let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[formal].first_child);
+        if ty <= 0 || vector_type(copy(ty)) { return false; }
+        types[formal] = ty;
+        formal = graph[formal].next_sibling;
+    }
+    nodes[formal].kind == 2 || (nodes[formal].kind == 4 && nodes[graph[formal].next_sibling].kind == 2)
+}

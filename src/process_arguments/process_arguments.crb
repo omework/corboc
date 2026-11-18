@@ -1,0 +1,95 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, result_type, result_payload};
+use bootstrap::scalar::{is_integer, pointer_integer_type};
+use bootstrap::verify::{verify_expr, violation};
+
+pub fn argument_text_type() -> i64 { 2000138 }
+pub fn argument_list_type() -> i64 { 2000139 }
+
+pub fn shared_text_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+    if annotation == 0 || source[nodes[annotation].start] != 38 { return false; }
+    let referent = graph[annotation].first_child;
+    if referent == 0 || graph[referent].first_child != 0 { return false; }
+    let spelling: [u8; 3] = [115,116,114];
+    let name = &source[nodes[referent].name_start..nodes[referent].name_end];
+    if !name.content_eq(&spelling[..]) { return false; }
+    let mut at = nodes[annotation].start + 1;
+    while at < nodes[referent].start {
+        if source[at] > 32 { return false; }
+        at += 1;
+    }
+    true
+}
+
+pub fn argument_list_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+    let list = graph[annotation].first_child;
+    let element = graph[list].first_child;
+    let text = graph[element].first_child;
+    if text == 0 || graph[text].first_child != 0 || graph[element].next_sibling != 0
+        || source[nodes[annotation].start] != 38 || source[nodes[list].start] != 91
+        || source[nodes[element].start] != 38 { return false; }
+    let string: [u8; 3] = [115,116,114];
+    let name = &source[nodes[text].name_start..nodes[text].name_end];
+    if !name.content_eq(&string[..]) { return false; }
+    let mut cursor = nodes[annotation].start + 1;
+    while cursor < nodes[list].start {
+        if source[cursor] > 32 { return false; }
+        cursor = cursor + 1;
+    }
+    cursor = nodes[element].start + 1;
+    while cursor < nodes[text].start {
+        if source[cursor] > 32 { return false; }
+        cursor = cursor + 1;
+    }
+    true
+}
+
+pub fn is_process_arguments_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    let name = graph[node].first_child;
+    if nodes[node].kind != 15 || nodes[name].kind != 36 || graph[name].next_sibling != 0 { return false; }
+    let spelling: [u8; 21] = [114,117,110,116,105,109,101,58,58,112,114,111,99,101,115,115,95,97,114,103,115];
+    let actual = &source[nodes[name].start..nodes[name].end];
+    actual.content_eq(&spelling[..])
+}
+
+pub fn is_process_arguments_result(ty: i64) -> bool {
+    result_type(copy(ty)) && result_payload(copy(ty), true) == argument_list_type()
+        && result_payload(ty, false) > 3000000
+}
+
+pub fn read_argument_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], point: u64, destination: u64, expected: i64, mode: i64) -> i64 {
+    let base = graph[point].first_child;
+    if nodes[base].kind != 7 { return 0; }
+    let binding = graph[base].binding;
+    let ty = values[binding].ty;
+    if ty != argument_list_type() && ty != argument_text_type() { return 0; }
+    if values[binding].state != 1 { return 0 - violation(6, nodes[base].start); }
+    if mode >= 2 { return -9; }
+    let index = graph[base].next_sibling;
+    if nodes[point].kind == 18 && ty == argument_list_type() {
+        if nodes[index].kind == 46 { return -9; }
+        let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(index), 0, 0);
+        if checked < 0 { return checked; }
+        if !is_integer(checked) || (expected != 0 && expected != argument_text_type()) {
+            return 0 - violation(1, nodes[index].start);
+        }
+        return argument_text_type();
+    }
+    if nodes[point].kind != 16 || index != 0 { return -9; }
+    let len: [u8; 3] = [108,101,110];
+    let bytes: [u8; 8] = [97,115,95,98,121,116,101,115];
+    let member = &source[nodes[point].name_start..nodes[point].name_end];
+    if ty == argument_list_type() && member.content_eq(&len[..]) {
+        let result = pointer_integer_type();
+        if expected != 0 && expected != result { return 0 - violation(1, nodes[point].start); }
+        return result;
+    }
+    if ty == argument_text_type() && member.content_eq(&bytes[..]) && destination != 0 {
+        // Process argument storage lives independently of either descriptor.
+        values[destination] = CheckedValue { ty: 744, state: 1, mutable: false,
+            target: copy(destination), loan_parent: 0, origin_call: 0, exclusive: false };
+        return 744;
+    }
+    return -9;
+}

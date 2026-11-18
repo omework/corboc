@@ -1,0 +1,354 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, hex_digit};
+use bootstrap::verify::{violation, scalar_known_type};
+use bootstrap::constants::resolve_constant;
+
+pub fn verify_primitive(source: &[u8], start: u64, end: u64) -> i64 {
+    let spelling = &source[start..end];
+    let signed32: [u8; 3] = [105, 51, 50];
+    let signed64: [u8; 3] = [105, 54, 52];
+    let boolean: [u8; 4] = [98, 111, 111, 108];
+    if spelling.content_eq(&signed32[..]) { return 1; }
+    if spelling.content_eq(&signed64[..]) { return 2; }
+    if spelling.content_eq(&boolean[..]) { return 3; }
+    let unsigned_7: [u8; 3] = [117, 54, 52];
+    if spelling.content_eq(&unsigned_7[..]) { return 7; }
+    let unsigned_6: [u8; 3] = [117, 51, 50];
+    if spelling.content_eq(&unsigned_6[..]) { return 6; }
+    let unsigned_5: [u8; 3] = [117, 49, 54];
+    if spelling.content_eq(&unsigned_5[..]) { return 5; }
+    let unsigned_4: [u8; 2] = [117, 56];
+    if spelling.content_eq(&unsigned_4[..]) { return 4; }
+    let pointer: [u8; 5] = [117,115,105,122,101];
+    if spelling.content_eq(&pointer[..]) { return pointer_integer_type(); }
+    let float32: [u8; 3] = [102,51,50];
+    let float64: [u8; 3] = [102,54,52];
+    if spelling.content_eq(&float32[..]) { return 8; }
+    if spelling.content_eq(&float64[..]) { return 9; }
+    0
+}
+
+pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bool) -> i64 {
+    let first = (*node).start;
+    let end = (*node).end;
+    if source[first] == 116 || source[first] == 102 {
+        if negative || (expected != 0 && expected != 3) { return 0 - violation(1, first); }
+        return 3;
+    }
+    if source[first] == 34 { return -9; }
+    let hex = end - first >= 2 && source[first] == 48 && (source[first+1] == 120 || source[first+1] == 88);
+    if !hex {
+        let mut cursor = copy(first);
+        let mut dot = copy(end);
+        let mut significant = copy(end);
+        while cursor < end {
+            let byte = source[cursor];
+            if byte == 46 { dot = copy(cursor); }
+            if byte >= 49 && byte <= 57 && significant == end { significant = copy(cursor); }
+            cursor = cursor + 1;
+        }
+        if dot != end {
+            if expected != 0 && expected != 8 && expected != 9 { return 0 - violation(1, first); }
+            let ty: i64 = if expected == 8 { 8 } else { 9 };
+            if significant == end { return ty; }
+            // Only the decimal orders which can straddle a rounding
+            // boundary need a full decimal-to-binary conversion.
+            let upper: u64 = if ty == 8 { 38 } else { 308 };
+            let lower: u64 = if ty == 8 { 46 } else { 324 };
+            if significant < dot {
+                let order = dot - significant - 1;
+                if order > upper { return 0 - violation(1, first); }
+                if order == upper { return -9; }
+            } else {
+                let order = significant - dot;
+                if order > lower { return 0 - violation(1, first); }
+                if order == lower { return -9; }
+            }
+            return ty;
+        }
+    }
+    if expected == 8 || expected == 9 { return 0 - violation(1, first); }
+    let ty = if expected == 0 { 2 } else { copy(expected) };
+    if ty == 3 || (negative && ty >= 4) { return 0 - violation(1, first); }
+    let mut number: u64 = 0;
+    let mut cursor = copy(first);
+    let mut base: u64 = 10;
+    if end - first >= 2 && source[first] == 48 && (source[first + 1] == 120 || source[first + 1] == 88) {
+        cursor = cursor + 2;
+        base = 16;
+    }
+    let mut limit: u64 = 9223372036854775807;
+    if ty == 1 { limit = 2147483647; }
+    if ty == 4 { limit = 255; }
+    if ty == 5 { limit = 65535; }
+    if ty == 6 { limit = 4294967295; }
+    if ty == 7 { limit = 18446744073709551615; }
+    if negative { limit = limit + 1; }
+    while cursor < end {
+        if source[cursor] == 46 { return -9; }
+        let value = hex_digit(source[cursor]) as u64;
+        if value >= base || number > (limit - value) / base {
+            return 0 - violation(1, first);
+        }
+        number = number * base + value;
+        cursor = cursor + 1;
+    }
+    ty
+}
+
+
+// The sign and magnitude are separate so the complete u64 domain and the
+// minimum signed values can be checked without overflowing the verifier.
+pub struct IntegerAtom {
+    known: bool,
+    negative: bool,
+    magnitude: u64,
+}
+
+pub fn integer_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> IntegerAtom {
+    let mut node = expression;
+    while nodes[node].kind == 19 { node = graph[node].first_child; }
+    let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if constant != 0 { node = graph[graph[constant].first_child].next_sibling; }
+    let negative = nodes[node].kind == 12 && source[nodes[node].name_start] == 45;
+    if negative { node = graph[node].first_child; }
+    let unknown = IntegerAtom { known: false, negative: false, magnitude: 0 };
+    if nodes[node].kind != 9 { return unknown; }
+    let mut at = nodes[node].start;
+    let end = nodes[node].end;
+    let mut base: u64 = 10;
+    if end - at >= 2 && source[at] == 48 && (source[at + 1] == 120 || source[at + 1] == 88) {
+        at = at + 2;
+        base = 16;
+    }
+    let mut n: u64 = 0;
+    while at < end {
+        let digit = hex_digit(source[at]) as u64;
+        if digit >= base || n > (18446744073709551615 - digit) / base { return unknown; }
+        n = n * base + digit;
+        at = at + 1;
+    }
+    IntegerAtom { known: true, negative: negative && n != 0, magnitude: n }
+}
+
+pub fn is_integer(ty: i64) -> bool {
+    ty == 1 || ty == 2 || (ty >= 4 && ty <= 7)
+}
+
+pub fn integer_width(ty: i64) -> u64 {
+    if ty == 1 || ty == 6 { return 32; }
+    if ty == 4 { return 8; }
+    if ty == 5 { return 16; }
+    if ty == 2 || ty == 7 { return 64; }
+    0
+}
+
+fn signed_integer(ty: i64) -> bool {
+    ty == 1 || ty == 2
+}
+
+fn magnitude_limit(ty: i64, negative: bool) -> u64 {
+    if ty == 1 { return if negative { 2147483648 } else { 2147483647 }; }
+    if ty == 2 { return if negative { 9223372036854775808 } else { 9223372036854775807 }; }
+    if ty == 4 { return 255; }
+    if ty == 5 { return 65535; }
+    if ty == 6 { return 4294967295; }
+    18446744073709551615
+}
+
+pub fn is_float(ty: i64) -> bool {
+    ty == 8 || ty == 9
+}
+
+pub fn float_zero(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> bool {
+    let mut operand = expression;
+    while nodes[operand].kind == 19 || (nodes[operand].kind == 12 && source[nodes[operand].name_start] == 45) {
+        operand = graph[operand].first_child;
+    }
+    let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(operand));
+    if constant != 0 {
+        operand = graph[graph[constant].first_child].next_sibling;
+        if nodes[operand].kind == 12 { operand = graph[operand].first_child; }
+    }
+    if nodes[operand].kind != 9 { return false; }
+    let mut cursor = nodes[operand].start;
+    let mut dot = false;
+    while cursor < nodes[operand].end {
+        let byte = source[cursor];
+        if byte == 46 { dot = true; } else if byte != 48 { return false; }
+        cursor = cursor + 1;
+    }
+    dot
+}
+
+pub fn exact_numeric_cast(input: i64, output: i64) -> bool {
+    if is_float(copy(input)) { return is_float(copy(output)) && (input == output || output == 9); }
+    if !is_integer(copy(input)) { return false; }
+    let from_signed = signed_integer(copy(input));
+    if is_float(copy(output)) {
+        let precision: u64 = if output == 8 { 24 } else { 53 };
+        let extra: u64 = if from_signed { 1 } else { 0 };
+        return integer_width(input) - extra <= precision;
+    }
+    if !is_integer(copy(output)) { return false; }
+    let to_signed = signed_integer(copy(output));
+    if from_signed && !to_signed { return false; }
+    let extra: u64 = if !from_signed && to_signed { 1 } else { 0 };
+    integer_width(input) + extra <= integer_width(output)
+}
+
+// 1 = within range; 0 = outside range. Inputs have passed literal checking.
+pub fn check_constant_arithmetic(ty: i64, op: u8, left: &IntegerAtom, right: &IntegerAtom) -> bool {
+    let a = (*left).magnitude;
+    let b = (*right).magnitude;
+    let a_neg = (*left).negative;
+    let b_neg = (*right).negative;
+    if op == 43 || op == 45 {
+        let effective_neg = if op == 45 { !b_neg } else { b_neg };
+        if a_neg == effective_neg {
+            let limit = magnitude_limit(copy(ty), copy(a_neg));
+            if a > limit { return false; }
+            if a_neg && !signed_integer(ty) { return a == 0 && b == 0; }
+            return b <= limit - a;
+        }
+        if a == b { return true; }
+        let negative = if a > b { a_neg } else { effective_neg };
+        let difference = if a > b { a - b } else { b - a };
+        return (!negative || signed_integer(copy(ty))) && difference <= magnitude_limit(ty, negative);
+    }
+    if op == 37 { return b != 0; }
+    if op == 42 || op == 47 {
+        if b == 0 { return op == 42; }
+        if a == 0 { return true; }
+        let limit = magnitude_limit(ty, a_neg != b_neg);
+        if op == 42 { return a <= limit / b; }
+        return a / b <= limit;
+    }
+    true
+}
+
+pub fn check_constant_shift(ty: i64, amount: u64, left: &IntegerAtom) -> bool {
+    let limit = magnitude_limit(ty, (*left).negative);
+    (*left).magnitude <= (limit >> amount)
+}
+
+// Fold the operations for which the reference verifier preserves integer
+// constants. Signed bit operations use a 64-bit sign extension.
+fn fold_into(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64, output: &mut [u64]) {
+    let mut node = expression;
+    while nodes[node].kind == 19 { node = graph[node].first_child; }
+    if nodes[node].kind == 9 || nodes[node].kind == 7 || nodes[node].kind == 36 {
+        let literal = integer_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], node);
+        if literal.known {
+            output[0] = 1;
+            if literal.negative { output[1] = 1; } else { output[1] = 0; }
+            output[2] = literal.magnitude;
+        }
+        return;
+    }
+    let child = graph[node].first_child;
+    if nodes[node].kind == 12 && source[nodes[node].name_start] == 45 {
+        let mut operand: [u64; 3] = [0; 3];
+        fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], child, &mut operand[..]);
+        output[0] = operand[0];
+        if operand[2] != 0 && operand[1] == 0 { output[1] = 1; } else { output[1] = 0; }
+        output[2] = operand[2];
+        return;
+    }
+    if nodes[node].kind != 11 { return; }
+    let mark = nodes[node].name_start;
+    let op = source[mark];
+    let second = source[mark + 1];
+    let mut left: [u64; 3] = [0; 3];
+    fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child), &mut left[..]);
+    if left[0] == 0 { return; }
+    if op == 97 && second == 115 {
+        output[0] = left[0];
+        output[1] = left[1];
+        output[2] = left[2];
+        return;
+    }
+    let mut right: [u64; 3] = [0; 3];
+    fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[child].next_sibling, &mut right[..]);
+    if right[0] == 0 { return; }
+    let a = left[2];
+    let b = right[2];
+    let a_neg = left[1] != 0;
+    let b_neg = right[1] != 0;
+    if op == 43 || op == 45 {
+        let effective_neg = if op == 45 { !b_neg } else { b_neg };
+        if a_neg == effective_neg {
+            if a > 18446744073709551615 - b { return; }
+            output[0] = 1; if effective_neg && (a != 0 || b != 0) { output[1] = 1; } else { output[1] = 0; } output[2] = a + b; return;
+        }
+        if a >= b {
+            output[0] = 1; if a_neg && a != b { output[1] = 1; } else { output[1] = 0; } output[2] = a - b; return;
+        }
+        output[0] = 1; if effective_neg { output[1] = 1; } else { output[1] = 0; } output[2] = b - a; return;
+    }
+    if op == 42 {
+        if b != 0 && a > 18446744073709551615 / b { return; }
+        output[0] = 1; if a_neg != b_neg && a != 0 && b != 0 { output[1] = 1; } else { output[1] = 0; } output[2] = a * b; return;
+    }
+    if op == 47 || op == 37 {
+        if b == 0 { return; }
+        if op == 47 { output[0] = 1; if a_neg != b_neg && a >= b { output[1] = 1; } else { output[1] = 0; } output[2] = a / b; return; }
+        output[0] = 1; if a_neg && a % b != 0 { output[1] = 1; } else { output[1] = 0; } output[2] = a % b; return;
+    }
+    if (op == 60 || op == 62) && second == op && !b_neg && b < 64 {
+        if op == 60 {
+            if a > (18446744073709551615 >> b) { return; }
+            output[0] = 1; if a_neg { output[1] = 1; } else { output[1] = 0; } output[2] = a << b; return;
+        }
+        let truncated = a >> b;
+        let extra: u64 = if a_neg && (truncated << b) != a { 1 } else { 0 };
+        output[0] = 1; if a_neg { output[1] = 1; } else { output[1] = 0; } output[2] = truncated + extra; return;
+    }
+    if (op == 38 || op == 124 || op == 94) && !(second == op && op != 94) {
+        let l: u64 = if a_neg { 18446744073709551615 - a + 1 } else { a };
+        let r: u64 = if b_neg { 18446744073709551615 - b + 1 } else { b };
+        let negative = (op == 38 && a_neg && b_neg) || (op == 124 && (a_neg || b_neg)) || (op == 94 && a_neg != b_neg);
+        let mut bits: u64 = 0;
+        if op == 38 { bits = l & r; }
+        if op == 124 { bits = l | r; }
+        if op == 94 { bits = l ^ r; }
+        let magnitude: u64 = if negative { 18446744073709551615 - bits + 1 } else { bits };
+        output[0] = 1; if negative { output[1] = 1; } else { output[1] = 0; } output[2] = magnitude; return;
+    }
+}
+
+pub fn folded_integer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> IntegerAtom {
+    let mut output: [u64; 3] = [0; 3];
+    fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], expression, &mut output[..]);
+    IntegerAtom { known: output[0] != 0, negative: output[1] != 0, magnitude: output[2] }
+}
+
+
+#(if: target.pointer_width == "64")
+pub fn pointer_integer_type() -> i64 { 7 }
+#(endif)
+#(if: target.pointer_width == "32")
+pub fn pointer_integer_type() -> i64 { 6 }
+#(endif)
+
+pub fn verify_literal_hint(source: &[u8], literal: &AstNode) -> i64 {
+    let start = (*literal).start;
+    if source[start] < 48 || source[start] > 57 {
+        return if source[start] == 46 { 9 } else { 0 };
+    }
+    let mut at = start;
+    while at < (*literal).end {
+        if source[at] == 46 { return 9; }
+        at = at + 1;
+    }
+    return 2;
+}
+
+pub fn scalar_hint(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    left: u64, right: u64, expected: i64) -> i64 {
+    if expected != 0 { return expected; }
+    let l = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &values[0..values.len()], left);
+    if l != 0 { return l; }
+    scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &values[0..values.len()], right)
+}

@@ -1,0 +1,64 @@
+use bootstrap::constants::{resolve_constant, constant_type};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::scalar::{verify_primitive, verify_literal_hint};
+use bootstrap::calls::bootstrap_callee;
+
+pub fn scalar_known_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], operand: u64) -> i64 {
+    let mut node = operand;
+    while nodes[node].kind == 19 || nodes[node].kind == 12 {
+        node = graph[node].first_child;
+    }
+    let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if constant != 0 {
+        return constant_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], constant);
+    }
+    if nodes[node].kind == 7 {
+        let binding = graph[node].binding;
+        let known = values[binding].ty;
+        if known != 0 { return known; }
+        let annotation = graph[binding].type_node;
+        if annotation != 0 && graph[annotation].first_child == 0 {
+            return verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+        }
+    }
+    if nodes[node].kind == 11 {
+        let mark = nodes[node].name_start;
+        if source[mark] == 97 && source[mark+1] == 115 {
+            let to = graph[graph[node].first_child].next_sibling;
+            if graph[to].first_child == 0 {
+                return verify_primitive(&source[0..source.len()], nodes[to].name_start, nodes[to].name_end);
+            }
+        }
+        if (source[mark] == 60 || source[mark] == 62) && source[mark] == source[mark+1] {
+            return scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &values[0..values.len()], graph[node].first_child);
+        }
+    }
+    if nodes[node].kind == 11 {
+        let mark = nodes[node].name_start;
+        let op = source[mark];
+        if op == 43 || op == 45 || op == 42 || op == 47 || op == 37 || op == 38 || op == 124 || op == 94 {
+            let left = graph[node].first_child;
+            let known = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &values[0..values.len()], copy(left));
+            if known != 0 { return known; }
+            let right = graph[left].next_sibling;
+            let other = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &values[0..values.len()], right);
+            if other != 0 { return other; }
+            if nodes[left].kind == 9 { return verify_literal_hint(&source[0..source.len()], &nodes[left]); }
+        }
+    }
+    if nodes[node].kind == 15 {
+        let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+        if function != 0 {
+            let mut result = graph[function].first_child;
+            while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+            if nodes[result].kind == 4 && graph[result].first_child == 0 {
+                return verify_primitive(&source[0..source.len()], nodes[result].name_start, nodes[result].name_end);
+            }
+        }
+    }
+    if nodes[node].kind == 9 && (source[nodes[node].start] == 116 || source[nodes[node].start] == 102) { return 3; }
+    0
+}

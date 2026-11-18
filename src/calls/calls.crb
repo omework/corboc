@@ -1,0 +1,192 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::verify::violation;
+
+pub fn identity_aggregate(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    let parameter = graph[function].first_child;
+    if nodes[parameter].kind != 3 { return 0; }
+    let result = graph[parameter].next_sibling;
+    if nodes[result].kind != 4 || graph[result].first_child != 0 { return 0; }
+    let input = graph[parameter].first_child;
+    if graph[input].first_child != 0 { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], input);
+    if nodes[nominal].kind != 28 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(result)) != nominal { return 0; }
+    let block = graph[result].next_sibling;
+    let mut tail = graph[block].first_child;
+    while nodes[function].kind == 35 && (nodes[tail].kind == 25 || nodes[tail].kind == 8) {
+        if nodes[tail].kind == 8 && nodes[graph[tail].first_child].kind == 26 {
+            let effect = graph[tail].first_child;
+            let test = graph[effect].first_child;
+            let yes = graph[test].next_sibling;
+            let suspend = graph[yes].first_child;
+            let word: [u8; 4] = [116,114,117,101];
+            let literal = &source[nodes[test].start..nodes[test].end];
+            if nodes[test].kind != 9 || !literal.content_eq(&word[..]) || nodes[yes].kind != 2 || graph[yes].next_sibling != 0 || nodes[suspend].kind != 25
+                || graph[suspend].next_sibling != 0 { return 0; }
+        } else if nodes[tail].kind == 8 {
+            let call = graph[tail].first_child;
+            let callee = graph[call].first_child;
+            let argument = graph[callee].next_sibling;
+            let print_word: [u8; 5] = [112,114,105,110,116];
+            let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+            if nodes[call].kind != 15 || nodes[callee].kind != 7 || graph[callee].binding != 0
+                || !spelling.content_eq(&print_word[..]) || nodes[argument].kind != 9
+                || graph[argument].next_sibling != 0 { return 0; }
+            let start = nodes[argument].start;
+            let end = nodes[argument].end;
+            if start == end || end - start > 9 { return 0; }
+            let mut digit = start;
+            while digit < end {
+                if source[digit] < 48 || source[digit] > 57 { return 0; }
+                digit = digit + 1;
+            }
+        }
+        tail = graph[tail].next_sibling;
+    }
+    let name = graph[tail].first_child;
+    if nodes[block].kind != 2 || nodes[tail].kind != 10 || nodes[name].kind != 7
+        || graph[name].binding != parameter || graph[tail].next_sibling != 0 { return 0; }
+    nominal
+}
+
+pub fn same_type_spelling(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    left: u64, right: u64) -> bool {
+    if left == 0 || right == 0 { return left == right; }
+    let a = &source[nodes[left].name_start..nodes[left].name_end];
+    let b = &source[nodes[right].name_start..nodes[right].name_end];
+    if !a.content_eq(&b[0..b.len()]) { return false; }
+    same_type_spelling(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        graph[left].first_child, graph[right].first_child)
+        && same_type_spelling(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[left].next_sibling, graph[right].next_sibling)
+}
+
+pub fn bootstrap_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+    let callee = graph[call].first_child;
+    if nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
+    let name = &source[nodes[callee].name_start..nodes[callee].name_end];
+    let mut function = graph[0].first_child;
+    while function != 0 {
+        let spelling = &source[nodes[function].name_start..nodes[function].name_end];
+        if nodes[function].kind == 1 && spelling.content_eq(&name[0..name.len()]) { return function; }
+        function = graph[function].next_sibling;
+    }
+    0
+}
+
+pub fn spawned_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+    let callee = graph[call].first_child;
+    let task = graph[callee].next_sibling;
+    if nodes[call].kind != 15 || nodes[callee].kind != 36 || nodes[task].kind != 15
+        || graph[task].next_sibling != 0 { return 0; }
+    let word: [u8; 14] = [114,117,110,116,105,109,101,58,58,115,112,97,119,110];
+    let qualified = &source[nodes[callee].start..nodes[callee].end];
+    if !qualified.content_eq(&word[..]) { return 0; }
+    let name = graph[task].first_child;
+    if nodes[name].kind != 7 || graph[name].binding != 0 { return 0; }
+    let identifier = &source[nodes[name].name_start..nodes[name].name_end];
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        let declared = &source[nodes[item].name_start..nodes[item].name_end];
+        if nodes[item].kind == 35 && identifier.content_eq(&declared[0..declared.len()]) { return item; }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+pub fn joined_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+    if nodes[expression].kind != 16 { return 0; }
+    let name = &source[nodes[expression].name_start..nodes[expression].name_end];
+    let word: [u8; 4] = [106,111,105,110];
+    let receiver = graph[expression].first_child;
+    if !name.content_eq(&word[..]) || nodes[receiver].kind != 7 || graph[receiver].next_sibling != 0 { return 0; }
+    graph[receiver].binding
+}
+
+pub fn check_identity_move(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], call: u64) -> u64 {
+    let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call));
+    let nominal = identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function);
+    if nominal == 0 { return 0; }
+    let argument = graph[graph[call].first_child].next_sibling;
+    if nodes[argument].kind != 7 || graph[argument].next_sibling != 0 { return 0; }
+    let binding = graph[argument].binding;
+    if values[binding].ty != 300 || values[binding].state != 1 { return 0; }
+    let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], values[binding].origin_call);
+    if actual != nominal { return 0; }
+    binding
+}
+
+// The package linker has already resolved the type prefix.
+pub fn associated_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+    let callee = graph[call].first_child;
+    if nodes[callee].kind != 36 || graph[callee].first_child != 0 { return 0; }
+    let start = nodes[callee].start;
+    let separator = nodes[callee].name_end;
+    let end = nodes[callee].end;
+    if separator + 2 >= end || source[separator] != 58 || source[separator + 1] != 58 { return 0; }
+    let owner = &source[start..separator];
+    let name = &source[separator+2..end];
+    lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &owner[0..owner.len()], &name[0..name.len()], false)
+}
+
+pub fn lookup_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owner: &[u8], name: &[u8], receiver: bool) -> u64 {
+    let mut found: u64 = 0;
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 49 {
+            let spelling = &source[nodes[item].name_start..nodes[item].name_end];
+            if spelling.content_eq(&owner[0..owner.len()]) {
+                let mut method = graph[item].first_child;
+                while method != 0 {
+                    let spelling = &source[nodes[method].name_start..nodes[method].name_end];
+                    if nodes[method].kind != 76 && spelling.content_eq(&name[0..name.len()])
+                        && !destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(method)) {
+                        let has_receiver = borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(method))
+                            || value_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+                                &graph[0..graph.len()], copy(method));
+                        if found != 0 || has_receiver != receiver { return 0; }
+                        found = copy(method);
+                    }
+                    method = graph[method].next_sibling;
+                }
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    found
+}
+
+pub fn borrowed_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) -> bool {
+    let first = graph[method].first_child;
+    nodes[nodes[method].parent].kind == 49 && nodes[first].kind == 3
+        && graph[first].first_child == 0 && source[nodes[first].start] == 38
+}
+
+pub fn value_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) -> bool {
+    let first = graph[method].first_child;
+    if nodes[nodes[method].parent].kind != 49 || nodes[first].kind != 3 || graph[first].first_child == 0 {
+        return false;
+    }
+    let self_name: [u8; 4] = [115,101,108,102];
+    let spelling = &source[nodes[first].name_start..nodes[first].name_end];
+    spelling.content_eq(&self_name[..])
+}
+
+pub fn next_declaration(nodes: &[AstNode], graph: &[StaticNode], current: u64) -> u64 {
+    let sibling = graph[current].next_sibling;
+    if sibling != 0 { return sibling; }
+    let parent = nodes[current].parent;
+    if nodes[parent].kind == 49 { return graph[parent].next_sibling; }
+    0
+}
+
+pub fn destructor_method(source: &[u8], nodes: &[AstNode], method: u64) -> bool {
+    if nodes[nodes[method].parent].kind != 49 { return false; }
+    let drop_name: [u8; 4] = [100,114,111,112];
+    let name = &source[nodes[method].name_start..nodes[method].name_end];
+    name.content_eq(&drop_name[..])
+}

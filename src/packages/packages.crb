@@ -1,0 +1,116 @@
+use bootstrap::package_io::read_source;
+
+pub struct PackageFile {
+    end: u64,
+    module_start: u64,
+    module_end: u64,
+    entry: bool,
+    package: u64,
+    visible: u64,
+}
+
+pub struct PackageInput {
+    source_end: u64,
+    names_end: u64,
+    files_end: u64,
+    error: i32,
+}
+
+pub fn append(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
+    if bytes.len() > output.len() - cursor { return 0; }
+    let mut offset: usize = 0;
+    while offset < bytes.len() {
+        output[cursor + offset] = bytes[offset];
+        offset = offset + 1;
+    }
+    cursor + offset
+}
+
+fn name_byte(byte: u8) -> bool {
+    byte == 95 || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+        || (byte >= 48 && byte <= 57)
+}
+
+fn entry_length(name: &[u8]) -> usize {
+    let mut length: usize = 0;
+    while length < name.len() && name[length] != 0 { length = length + 1; }
+    length
+}
+
+fn walk(path: &[u8], module_start: usize, module_end: usize, source: &mut [u8],
+    names: &mut [u8], files: &mut [PackageFile], start_source: usize, start_names: usize,
+    start_files: usize, package: u64) -> PackageInput {
+    let mut directory_cache: [u32; 150] = [0; 150];
+    let directory = open_package_directory(&path[0..path.len()], &mut directory_cache);
+    if directory == 0 {
+        return PackageInput { source_end: start_source as u64, names_end: start_names as u64, files_end: start_files as u64, error: 11 };
+    }
+    let mut source_end = start_source;
+    let mut names_end = start_names;
+    let mut files_end = start_files;
+    let mut error: i32 = 0;
+    let mut entry: [u8; 256] = [0; 256];
+    let extension_bytes: [u8; 4] = [46, 99, 114, 98]; // .crb
+    let extension = &extension_bytes[..];
+    let entry_file: [u8; 8] = [109, 97, 105, 110, 46, 99, 114, 98]; // main.crb
+    while error == 0 {
+        let kind = read_package_directory(copy(directory), &mut directory_cache, &mut entry[..]);
+        if kind == 0 { break; }
+        if kind < 0 { error = 11; break; }
+        let length = entry_length(&entry[..]);
+        if length == 0 || entry[0] == 46 { continue; }
+        let mut next: [u8; 4096] = [0; 4096];
+        if path.len() + length >= 4096 { error = 11; break; }
+        let end = append(&mut next[..], 0, &path[0..path.len() - 1]);
+        next[end] = 47;
+        let full = append(&mut next[..], end + 1, &entry[..length]);
+        if kind == 4 {
+            let mut part: usize = 0;
+            while part < length && name_byte(entry[part]) { part = part + 1; }
+            if part != length { continue; }
+            let start = copy(names_end);
+            let width = module_end - module_start;
+            if width > names.len() - start { error = 4; break; }
+            let mut byte: usize = 0;
+            while byte < width {
+                let value = names[module_start + byte];
+                names[start + byte] = value;
+                byte = byte + 1;
+            }
+            let prefix = start + width;
+            if prefix == 0 || names.len() - prefix < 2 + length { error = 4; break; }
+            names[prefix] = 58;
+            names[prefix + 1] = 58;
+            let used = append(&mut names[0..names.len()], prefix + 2, &entry[..length]);
+            let nested = walk(&next[..full + 1], start, copy(used), &mut source[0..source.len()],
+                &mut names[0..names.len()], &mut files[0..files.len()], copy(source_end), copy(used), copy(files_end), copy(package));
+            source_end = nested.source_end as usize;
+            names_end = nested.names_end as usize;
+            files_end = nested.files_end as usize;
+            error = nested.error;
+        } else if kind == 8 && length > extension.len() {
+            let suffix_start = length - extension.len();
+            let name = &entry[..length];
+            let suffix = &name[suffix_start..length];
+            if !suffix.content_eq(&extension[0..extension.len()]) { continue; }
+            if files_end == files.len() || source_end == source.len() {
+                error = 4; break;
+            }
+            let base = copy(source_end);
+            let limit = source.len() - 1;
+            let (status, count) = read_source(&next[..full + 1], &mut source[base..limit]);
+            if status != 0 { error = status; break; }
+            let last = base + count;
+            source[last] = 10;
+            let entry = module_start == 0 && name.content_eq(&entry_file[..]);
+            files[files_end] = PackageFile { end: copy(last) as u64, module_start: copy(module_start) as u64,
+                module_end: copy(module_end) as u64, entry: entry, package: copy(package), visible: 0 };
+            source_end = last + 1;
+            files_end = files_end + 1;
+        } else if kind != 8 && kind != 10 {
+            error = 11;
+        }
+    }
+    close_package_directory(directory);
+    PackageInput { source_end: source_end as u64, names_end: names_end as u64, files_end: files_end as u64, error: error }
+}

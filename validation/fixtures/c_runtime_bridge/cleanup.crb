@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Item{value:i64}
+impl Item{fn drop(&mut self){print((*self).value);}}
+fn main(){
+ let mut pool=pool<Item>(1);let mut item=pool.new(Item{value:42});
+ @unchecked{@c(includes={"assert.h"}){
+  assert(${item}.destroy!=NULL);
+  corbo_allocation_drop(&${item});
+  assert(${item}.pool==NULL);
+ }}
+ drop(item);
+ let next=pool.new(Item{value:43});drop(next);
+}

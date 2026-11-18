@@ -1,0 +1,28 @@
+use std::io::{File, FileMode};
+
+// Paths supplied to this layer include their terminating zero.
+pub fn read_source(path: &[u8], buffer: &mut [u8]) -> (i32, usize) {
+    match File::open(path, FileMode::read_only()) {
+        Err(error) => { drop(error); return (1, 0); },
+        Ok(opened) => {
+            let mut file = opened;
+            let mut filled: usize = 0;
+            let mut chunk: [u8; 1024] = [0; 1024];
+            loop {
+                match file.read(&mut chunk[..]) {
+                    Err(error) => { drop(error); return (2, 0); },
+                    Ok(count) => {
+                        if count == 0 { return (0, filled); }
+                        if count > buffer.len() - filled { return (4, 0); }
+                        let mut offset: usize = 0;
+                        while offset < count {
+                            buffer[filled + offset] = chunk[offset];
+                            offset = offset + 1;
+                        }
+                        filled = filled + count;
+                    },
+                };
+            }
+        },
+    };
+}

@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Static Result/Option propagation and exact error-conversion lookup.
+use bootstrap::model::{AstNode,StaticNode,CheckedValue,result_type,result_payload};
+use bootstrap::results::{result_annotation,payload_type,scalar_result_payload};
+use bootstrap::scalar_options::{scalar_option_annotation,scalar_option,checked_option_payload,option_borrow,copy_option_borrow,record_borrow,slice_borrow,slice_borrow_type,option_allocation,allocation_kind,option_handle,nested_checked_option};
+use bootstrap::tasks::copy_task_summary;
+use bootstrap::places::inline_array;
+use bootstrap::calls::{borrowed_receiver,value_receiver};
+use bootstrap::lowering_types::unsigned;
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::verify::{verify_expr,violation};
+
+/// Selects one exact, static Outer::from(Inner)->Outer conversion; zero means absent or ambiguous.
+pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:i64,outer:i64)->u64 {
+    if inner==outer{return 0;}
+    if outer<3000000{return 0;}
+    let owner=unsigned(outer-3000000);let mut item=graph[0].first_child;let mut found:u64=0;
+    let from:[u8;4]=[102,114,111,109];
+    while item!=0 {
+        if nodes[item].kind==49 && nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(item))==owner {
+            let mut method=graph[item].first_child;
+            while method!=0 {
+                let spelling=&source[nodes[method].name_start..nodes[method].name_end];
+                if spelling.content_eq(&from[..]) && nodes[method].kind==1
+                    && !borrowed_receiver(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(method))
+                    && !value_receiver(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(method)) {
+                    let parameter=graph[method].first_child;let output=graph[parameter].next_sibling;
+                    if nodes[parameter].kind==3 && nodes[output].kind==4
+                        && payload_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[parameter].first_child)==inner
+                        && payload_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],output)==outer {
+                        if found!=0{return 0;}found=copy(method);
+                    }
+                }method=graph[method].next_sibling;
+            }
+        }item=graph[item].next_sibling;
+    }found
+}
+
+/// Checks the continuation payload and the enclosing error/None return boundary.
+pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
+    let mut function=nodes[node].parent;
+    while function!=0 && nodes[function].kind!=1 && nodes[function].kind!=35 && nodes[function].kind!=55 {function=nodes[function].parent;}
+    if function==0{return 0-violation(1,nodes[node].start);}
+    let mut output=graph[function].first_child;while nodes[output].kind==3{output=graph[output].next_sibling;}
+    let child=graph[node].first_child;
+    let ty=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(child),0,1);
+    if ty<0{return ty;}
+    let mut payload:i64=0;
+    if result_type(copy(ty)) {
+        let outer=result_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(output));
+        if !result_type(copy(outer)){return 0-violation(1,nodes[node].start);}
+        let inner_error=result_payload(copy(ty),false);let outer_error=result_payload(outer,false);
+        if inner_error!=outer_error && error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner_error,outer_error)==0{return 0-violation(8,nodes[node].start);}
+        payload=result_payload(copy(ty),true);
+    } else if scalar_option(copy(ty)) {
+        let outer=scalar_option_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],output);
+        if !scalar_option(outer){return 0-violation(1,nodes[node].start);}
+        payload=checked_option_payload(copy(ty));
+    }else{return 0-violation(1,nodes[node].start);}
+    let scalar=scalar_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
+        let nominal=unsigned(copy(payload)-3000000);if nodes[nominal].kind==29{310}else{300}
+    }else{copy(payload)};
+    let reference=option_borrow(copy(ty));
+    if record_borrow(copy(reference)){actual=734;}
+    if slice_borrow(copy(reference)){actual=slice_borrow_type(copy(reference));}
+    let resource=option_allocation(copy(ty));
+    if resource!=0{actual=allocation_kind(copy(resource));}
+    if inline_array(copy(payload)){actual=payload%100+400;}
+    if expected!=0 && expected!=actual{return 0-violation(1,nodes[node].start);}
+    if mode==2{return 0-violation(3,nodes[node].start);}
+    if reference!=0 {
+        copy_option_borrow(&mut values[0..values.len()],copy(child),copy(node),copy(actual),false);
+    }else if resource!=0 || nested_checked_option(copy(ty))!=0 {
+        copy_task_summary(&mut values[0..values.len()],copy(child),copy(node),copy(actual),false);
+    }else if option_handle(copy(ty))!=0 {
+        let handle=values[child].target;
+        copy_task_summary(&mut values[0..values.len()],handle,copy(node),copy(actual),false);
+    }else if inline_array(copy(payload)) {
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),exclusive:false};
+    }else if actual==300 || actual==310 {
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),exclusive:false};
+    }else {
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};
+    }actual
+}

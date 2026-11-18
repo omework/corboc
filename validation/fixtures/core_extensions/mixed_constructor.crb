@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct P{n:i64} struct C{data:&mut [u8]} impl C{fn new(p:&P,data:&mut [u8])->C{C{data:data}}} fn main(){let p=P{n:1};let mut bytes:[u8;2]=[0;2];let c=C::new(&p,&mut bytes[..]);drop(c);}

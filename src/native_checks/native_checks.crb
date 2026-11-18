@@ -1,0 +1,407 @@
+use bootstrap::calls::bootstrap_callee;
+use bootstrap::loans::{live_roots, loan_conflict};
+use bootstrap::places::{check_scalar_projection, slice_view};
+use bootstrap::scalar::pointer_integer_type;
+use bootstrap::verify::{violation, report_violation, address_requires_reference};
+use bootstrap::declarations::direct_place_root;
+use bootstrap::declarations::{nominal_declaration, verification_field};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+
+// addr is an unqualified primitive call with a single argument.
+pub fn address_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+    let callee = graph[expression].first_child;
+    if nodes[expression].kind != 15 || nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
+    let word: [u8; 4] = [97,100,100,114];
+    let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+    let argument = graph[callee].next_sibling;
+    if spelling.content_eq(&word[..]) && graph[argument].next_sibling == 0 { return argument; }
+    0
+}
+
+// Keep the backing place available until each assembly input is read.
+pub fn bind_asm_address(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64, initializer: u64, annotation: u64) -> i64 {
+    let argument = address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(initializer));
+    if argument == 0 || bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(initializer)) != 0 { return 0; }
+    if nodes[argument].kind == 9 {
+        address_requires_reference();
+        return 0 - violation(1, nodes[argument].start);
+    }
+    if graph[statement].mutable { return -9; }
+    if annotation != 0 {
+        let usize_name: [u8; 5] = [117,115,105,122,101];
+        let name = &source[nodes[annotation].start..nodes[annotation].end];
+        if !name.content_eq(&usize_name[..]) { return 0 - violation(1, nodes[initializer].start); }
+    }
+    if nodes[argument].kind == 7 {
+        let binding = graph[argument].binding;
+        let ty = values[binding].ty;
+        let target = values[binding].target;
+        let simple = ty == 0 && values[target].ty >= 1 && values[target].ty <= 9;
+        if !simple && (ty <= 20 || ty >= 60) { return 0 - violation(1, nodes[argument].start); }
+        if values[binding].state != 1 { return 0 - violation(6, nodes[argument].start); }
+        if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+            return 0 - violation(4, nodes[argument].start);
+        }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+            &graph[0..graph.len()], copy(binding), copy(argument), false);
+        if conflict != 0 { return 0 - violation(5, nodes[argument].start); }
+        values[statement] = CheckedValue { ty: pointer_integer_type(), state: 1, mutable: false,
+            target: target, loan_parent: binding, origin_call: 0, exclusive: false };
+        return 1;
+    }
+    if nodes[argument].kind != 13 { return -9; }
+    let place = graph[argument].first_child;
+    let local = graph[place].binding;
+    let mut element: i64 = 0;
+    let mut root: u64 = 0;
+    if nodes[place].kind == 7 && values[local].ty > 0 && values[local].ty <= 9 {
+        if values[local].state != 1 { return 0 - violation(6, nodes[place].start); }
+        if graph[argument].mutable && !values[local].mutable { return 0 - violation(5, nodes[place].start); }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+            copy(local), copy(place), graph[argument].mutable);
+        if conflict != 0 { return 0 - violation(5, nodes[place].start); }
+        element = values[local].ty;
+        root = local;
+    } else {
+        let (checked, parent) = check_scalar_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], place, graph[argument].mutable, true);
+        element = checked;
+        root = parent;
+    }
+    if element < 0 { return element; }
+    if element == 0 || root == 0 { return -9; }
+    values[statement] = CheckedValue { ty: pointer_integer_type(), state: 1, mutable: false,
+        target: root, loan_parent: 0, origin_call: 0, exclusive: false };
+    1
+}
+
+// The static tree identifies operand bindings but leaves instructions opaque.
+pub fn unsupported_register_class(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    let mut operand = graph[node].first_child;
+    while operand != 0 {
+        let mut start = nodes[operand].start - 2;
+        while start > nodes[node].start && source[start - 1] != 10 && source[start - 1] != 123 {
+            start = start - 1;
+        }
+        while start < nodes[operand].start && (source[start] == 32 || source[start] == 9) { start = start + 1; }
+        let move_word: [u8; 3] = [109,111,118];
+        if nodes[operand].start - start > 3 {
+            let mnemonic = &source[start..start+3];
+            if mnemonic.content_eq(&move_word[..]) {
+                let mut at = start + 3;
+                let mut input = false;
+                while at < nodes[operand].start - 2 {
+                    if source[at] == 44 { input = true; break; }
+                    at = at + 1;
+                }
+                if !has_register_class(&source[0..source.len()], start + 3, nodes[operand].start - 2,
+                    nodes[operand].end + 1, nodes[node].end - 1, input) { return true; }
+            }
+        }
+        operand = graph[operand].next_sibling;
+    }
+    false
+}
+
+pub fn check_asm(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], node: u64) -> i64 {
+    let start = nodes[node].start;
+    let mut operand = graph[node].first_child;
+    while operand != 0 {
+        let binding = graph[operand].binding;
+        if binding == 0 { return violation(1, nodes[operand].start); }
+        if values[binding].state != 1 { return violation(6, nodes[operand].start); }
+        let ty = values[binding].ty;
+        if ty < 1 || ty > 7 || ty == 3 { return 9; }
+        let mut first = nodes[operand].start - 2;
+        while first > start && source[first - 1] != 10 && source[first - 1] != 123 { first = first - 1; }
+        let mut at = copy(first);
+        let mut comma = false;
+        while at < nodes[operand].start {
+            if source[at] == 44 { comma = true; }
+            at = at + 1;
+        }
+        let move_word: [u8; 3] = [109,111,118];
+        while first < nodes[operand].start && (source[first] == 32 || source[first] == 9) {
+            first = first + 1;
+        }
+        if nodes[operand].start - first >= 3 {
+            let mnemonic = &source[first..first+3];
+            if !mnemonic.content_eq(&move_word[..]) { return 9; }
+            if !comma && !values[binding].mutable { return violation(5, nodes[operand].start); }
+            let target = values[binding].target;
+            if target != 0 {
+                if values[target].state != 1 || (slice_view(values[target].ty)
+                    && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(target))) {
+                    return violation(4, nodes[operand].start);
+                }
+                let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+                    &graph[0..graph.len()], target, copy(operand), false);
+                if conflict < 0 { return 9; }
+                if conflict > 0 { return violation(5, nodes[operand].start); }
+            }
+            if !valid_register(&source[0..source.len()], first + 3, nodes[operand].start - 2,
+                    nodes[operand].end + 1, nodes[node].end - 1, values[binding].ty, comma) {
+                return violation(8, nodes[operand].start);
+            }
+        } else { return 9; }
+        operand = graph[operand].next_sibling;
+    }
+    return 0;
+}
+
+#(if: target.arch == "aarch64")
+fn register_prefix(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> u8 {
+    let mut at = if input { before } else { after };
+    let limit = if input { operand_start } else { end };
+    if !input {
+        while at < limit && (source[at] == 32 || source[at] == 9) { at = at + 1; }
+        if at == limit || source[at] != 44 { return 0; }
+        at = at + 1;
+    }
+    while at < limit && (source[at] == 32 || source[at] == 9) { at = at + 1; }
+    if at == limit { return 0; }
+    let prefix = source[at];
+    if prefix >= 65 && prefix <= 90 { return prefix + 32; }
+    prefix
+}
+
+fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) -> bool {
+    let prefix = register_prefix(&source[0..source.len()], before, operand_start, after, end, input);
+    prefix == (if ty == 2 || ty == 7 { 120 } else { 119 })
+}
+
+fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> bool {
+    let prefix = register_prefix(&source[0..source.len()], before, operand_start, after, end, input);
+    prefix == 119 || prefix == 120
+}
+#(endif)
+#(if: target.arch == "x86_64" || target.arch == "x86" || target.arch == "arm" || target.arch == "riscv64")
+fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) -> bool {
+    true
+}
+
+fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> bool {
+    true
+}
+#(endif)
+
+fn address_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64, depth: u64) -> u64 {
+    if depth >= 64 || expression == 0 { return 0; }
+    let argument = address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(expression));
+    if argument != 0 && nodes[argument].kind == 13 {
+        return direct_place_root(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[argument].first_child);
+    }
+    let child = graph[expression].first_child;
+    if nodes[expression].kind == 19 {
+        return address_root(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], child, depth + 1);
+    }
+    if nodes[expression].kind == 11 {
+        let operator = source[nodes[expression].name_start];
+        if operator != 43 && operator != 45 { return 0; }
+        let left = address_root(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(child), copy(depth) + 1);
+        if left != 0 { return left; }
+        return address_root(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], graph[child].next_sibling, depth + 1);
+    }
+    if nodes[expression].kind != 15 { return 0; }
+    let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(expression));
+    let parameter = graph[function].first_child;
+    let output = graph[parameter].next_sibling;
+    let body = graph[output].next_sibling;
+    let tail = graph[body].first_child;
+    let value = graph[tail].first_child;
+    if function == 0 || nodes[parameter].kind != 3 || nodes[output].kind != 4 || nodes[body].kind != 2
+        || nodes[tail].kind != 10 || graph[tail].next_sibling != 0
+        || nodes[value].kind != 7 || graph[value].binding != parameter { return 0; }
+    return address_root(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[child].next_sibling, depth + 1);
+}
+
+pub fn tracked_address_conflict(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    call: u64, root: u64) -> bool {
+    if root == 0 || nodes[nodes[call].parent].kind != 8 { return false; }
+    let statement = nodes[call].parent;
+    let mut binding = graph[call].visible;
+    while binding != 0 {
+        let initializer = graph[binding].initializer;
+        if !graph[binding].mutable && graph[binding].scope == graph[statement].scope
+            && address_root(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                initializer, 0) == root {
+            let mut at = graph[statement].next_sibling;
+            while at != 0 && nodes[at].kind == 50 {
+                let body = graph[at].first_child;
+                let assembly = graph[body].first_child;
+                if nodes[assembly].kind != 51 || graph[assembly].next_sibling != 0 { break; }
+                let mut operand = graph[assembly].first_child;
+                while operand != 0 {
+                    if graph[operand].binding == binding { return true; }
+                    operand = graph[operand].next_sibling;
+                }
+                at = graph[at].next_sibling;
+            }
+        }
+        binding = graph[binding].visible;
+    }
+    false
+}
+
+pub fn destructor_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], expression: u64) -> u64 {
+    let child = graph[expression].first_child;
+    if nodes[expression].kind == 19 {
+        return destructor_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &values[0..values.len()], child);
+    }
+    if nodes[expression].kind == 14 && nodes[child].kind == 7 {
+        let binding = graph[child].binding;
+        if values[binding].ty == 90 && values[binding].state == 1 {
+            return values[binding].origin_call;
+        }
+    }
+    if nodes[expression].kind == 17 {
+        let nominal = destructor_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &values[0..values.len()], child);
+        if nominal == 0 { return 0; }
+        let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], nominal, expression);
+        if field == 0 { return 0; }
+        let annotation = graph[field].first_child;
+        if graph[annotation].first_child != 0 { return 0; }
+        return nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    }
+    0
+}
+
+// Stop at a callable boundary. A closure declared lexically inside unchecked
+// cannot execute an address operation on behalf of that block after it exits.
+fn unchecked_ancestor(nodes: &[AstNode], expression: u64) -> u64 {
+    let mut node = nodes[expression].parent;
+    while node != 0 {
+        let kind = nodes[node].kind;
+        if kind == 50 { return node; }
+        if kind == 1 || kind == 35 || kind == 55 { return 0; }
+        node = nodes[node].parent;
+    }
+    0
+}
+
+fn in_address_block(nodes: &[AstNode], expression: u64, boundary: u64) -> bool {
+    let mut node = nodes[expression].parent;
+    while node != 0 {
+        if node == boundary { return true; }
+        let kind = nodes[node].kind;
+        if kind == 1 || kind == 35 || kind == 55 { return false; }
+        node = nodes[node].parent;
+    }
+    false
+}
+
+fn mark_raw_binding(nodes: &[AstNode], graph: &[StaticNode], marks: &mut [u64],
+    binding: u64, boundary: u64, origin: u64) -> bool {
+    if binding == 0 || !in_address_block(&nodes[0..nodes.len()], copy(binding), copy(boundary)) { return false; }
+    // A binding is marked too, so subsequent uses can be visited without
+    // rescanning each binding's users as part of a graph traversal.
+    marks[binding] = copy(origin);
+    let mut node = binding + 1;
+    let end = nodes[boundary].end;
+    while node < nodes.len() as u64 && nodes[node].start < end {
+        if graph[node].binding == binding && (nodes[node].kind == 7 || nodes[node].kind == 52 || nodes[node].kind == 57) {
+            marks[node] = copy(origin);
+        }
+        node = node + 1;
+    }
+    true
+}
+
+pub fn check_raw_addresses(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i32 {
+    let discard: [u8; 4] = [100,114,111,112]; // drop
+    let replicate: [u8; 4] = [99,111,112,121]; // copy
+    let complete: [u8; 24] = [114,117,110,116,105,109,101,58,58,99,111,109,112,108,101,116,101,95,115,111,99,107,101,116];
+    let mut marks: [u64; 524289] = [0; 524289];
+    let mut visited: [u64; 524289] = [0; 524289];
+    let mut site: u64 = 1;
+    while site < nodes.len() as u64 {
+        if address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(site)) == 0
+            || bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(site)) != 0 {
+            site = site + 1;
+            continue;
+        }
+        let boundary = unchecked_ancestor(&nodes[0..nodes.len()], copy(site));
+        if boundary == 0 { return report_violation(1, nodes[site].start); }
+        marks[site] = copy(site);
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let mut use_node = boundary + 1;
+            while use_node < nodes.len() as u64 && nodes[use_node].start < nodes[boundary].end {
+                if marks[use_node] != site || visited[use_node] == site || (graph[use_node].declaration && nodes[use_node].kind != 57) {
+                    use_node = use_node + 1;
+                    continue;
+                }
+                visited[use_node] = copy(site);
+                changed = true;
+                let parent = nodes[use_node].parent;
+                let kind = nodes[parent].kind;
+                let offset = nodes[parent].start;
+                if parent == boundary || kind == 1 || kind == 6 || kind == 35 || kind == 55
+                    || kind == 38 || kind == 25 || kind == 23 {
+                    return report_violation(4, offset);
+                }
+                if nodes[use_node].kind == 57 {
+                    if !mark_raw_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], &mut marks[..],
+                        copy(use_node), copy(boundary), copy(site)) { return report_violation(4, offset); }
+                } else if kind == 5 || kind == 21 {
+                    let place = if kind == 5 { copy(parent) } else {
+                        direct_place_root(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[parent].first_child)
+                    };
+                    if !mark_raw_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], &mut marks[..],
+                        place, copy(boundary), copy(site)) { return report_violation(4, offset); }
+                } else if kind == 47 {
+                    let mut name = graph[parent].first_child;
+                    while name != 0 {
+                        if nodes[name].kind == 48 && !mark_raw_binding(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                            &mut marks[..], copy(name), copy(boundary), copy(site)) { return report_violation(4, offset); }
+                        name = graph[name].next_sibling;
+                    }
+                } else if kind == 15 {
+                    let callee = graph[parent].first_child;
+                    let word = &source[nodes[callee].start..nodes[callee].end];
+                    let primitive = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(parent)) == 0 && graph[callee].binding == 0;
+                    if primitive && word.content_eq(&replicate[..]) { marks[parent] = copy(site); }
+                    else if !(primitive && (word.content_eq(&discard[..]) || word.content_eq(&complete[..]))) {
+                        return report_violation(4, offset);
+                    }
+                } else if kind == 16 { return report_violation(4, offset); }
+                else if kind != 8 && kind != 51 {
+                    if kind == 39 && graph[parent].first_child == use_node {
+                        let mut arm = graph[use_node].next_sibling;
+                        while arm != 0 {
+                            let pattern = graph[arm].first_child;
+                            let mut name = copy(pattern);
+                            while name < nodes.len() as u64 && nodes[name].start < nodes[pattern].end {
+                                if graph[name].declaration && !mark_raw_binding(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                                    &mut marks[..], copy(name), copy(boundary), copy(site)) { return report_violation(4, offset); }
+                                name = name + 1;
+                            }
+                            arm = graph[arm].next_sibling;
+                        }
+                    }
+                    marks[parent] = copy(site);
+                }
+                use_node = use_node + 1;
+            }
+        }
+        site = site + 1;
+    }
+    0
+}

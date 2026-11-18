@@ -1,0 +1,222 @@
+// The build driver is single threaded. These wrappers keep the POSIX ABI
+// and raw C strings at the boundary with the host.
+#(if: target.os == "macos" && target.arch == "aarch64")
+    pub fn executable_path(buffer: &mut [u8]) -> bool {
+        if buffer.len() < 4096 { return false; }
+        let mut unresolved: [u8; 4096] = [0; 4096];
+        let mut resolved: usize = 0;
+        @unchecked {
+            let raw = addr(&unresolved[0]);
+            let path = addr(&buffer[0]);
+            @asm {
+                sub sp, sp, #16
+                mov w9, #4096
+                str w9, [sp]
+                mov x0, ${raw}
+                mov x1, sp
+                bl __NSGetExecutablePath
+                cbnz w0, 1f
+                mov x0, ${raw}
+                mov x1, ${path}
+                bl _realpath
+                mov ${resolved}, x0
+                1:
+                add sp, sp, #16
+            }
+        }
+        resolved != 0
+    }
+
+    pub fn accessible(path: &[u8]) -> bool {
+        let mut status: i32 = -1;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov x0, ${address}
+                mov w1, #5
+                bl _access
+                mov ${status}, w0
+            }
+        }
+        status == 0
+    }
+
+    pub fn make_workspace(path: &mut [u8]) -> bool {
+        let mut result: usize = 0;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov x0, ${address}
+                bl _mkdtemp
+                mov ${result}, x0
+            }
+        }
+        result != 0
+    }
+
+    pub fn redirect_stdout(path: &[u8]) -> i32 {
+        let mut saved: i32 = -1;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                sub sp, sp, #16
+                mov x0, #0
+                bl _fflush
+                cbnz w0, 4f
+                mov w0, #1
+                bl _dup
+                tbnz w0, #31, 4f
+                str w0, [sp]
+                mov x0, ${address}
+                mov w1, #384
+                bl _creat
+                tbnz w0, #31, 3f
+                str w0, [sp, #4]
+                mov w1, #1
+                bl _dup2
+                str w0, [sp, #8]
+                ldr w0, [sp, #4]
+                bl _close
+                ldr w9, [sp, #8]
+                tbnz w9, #31, 3f
+                ldr w9, [sp]
+                mov ${saved}, w9
+                b 4f
+                3:
+                ldr w0, [sp]
+                bl _close
+                4:
+                add sp, sp, #16
+            }
+        }
+        saved
+    }
+
+    pub fn restore_stdout(saved: i32) -> bool {
+        let mut status: i32 = -1;
+        @unchecked {
+            @asm {
+                sub sp, sp, #16
+                mov x0, #0
+                bl _fflush
+                str w0, [sp]
+                mov w0, ${saved}
+                mov w1, #1
+                bl _dup2
+                str w0, [sp, #4]
+                mov w0, ${saved}
+                bl _close
+                ldp w9, w10, [sp]
+                orr w9, w9, w10, asr #31
+                mov ${status}, w9
+                add sp, sp, #16
+            }
+        }
+        status == 0
+    }
+
+    pub fn diagnostic(message: &[u8]) {
+        let size = message.len();
+        @unchecked {
+            let address = addr(&message[0]);
+            @asm {
+                mov w0, #2
+                mov x1, ${address}
+                mov x2, ${size}
+                bl _write
+            }
+        }
+    }
+
+    pub fn publish(from: &[u8], to: &[u8]) -> bool {
+        let mut status: i32 = -1;
+        @unchecked {
+            let source = addr(&from[0]);
+            let destination = addr(&to[0]);
+            @asm {
+                mov x0, ${source}
+                mov x1, ${destination}
+                bl _rename
+                mov ${status}, w0
+            }
+        }
+        status == 0
+    }
+
+    pub fn clean(directory: &[u8], c_file: &[u8], binary: &[u8]) {
+        @unchecked {
+            let folder = addr(&directory[0]);
+            let source = addr(&c_file[0]);
+            let generated = addr(&binary[0]);
+            @asm {
+                mov x0, ${source}
+                bl _unlink
+                mov x0, ${generated}
+                bl _unlink
+                mov x0, ${folder}
+                bl _rmdir
+            }
+        }
+    }
+
+    // argv holds separate arguments and is terminated by NULL.
+    pub fn run_command(command: &[u8], first: &[u8], second: &[u8], third: &[u8],
+        fourth: &[u8], fifth: &[u8], sixth: &[u8]) -> i32 {
+        let mut status: i32 = 127;
+        @unchecked {
+            let program = addr(&command[0]);
+            let argument1 = addr(&first[0]);
+            let argument2 = addr(&second[0]);
+            let argument3 = addr(&third[0]);
+            let argument4 = addr(&fourth[0]);
+            let argument5 = addr(&fifth[0]);
+            let argument6 = addr(&sixth[0]);
+            @asm {
+                sub sp, sp, #80
+                mov x9, ${program}
+                mov x10, ${argument1}
+                stp x9, x10, [sp]
+                mov x9, ${argument2}
+                mov x10, ${argument3}
+                stp x9, x10, [sp, #16]
+                mov x9, ${argument4}
+                mov x10, ${argument5}
+                stp x9, x10, [sp, #32]
+                mov x9, ${argument6}
+                stp x9, xzr, [sp, #48]
+                bl __NSGetEnviron
+                ldr x5, [x0]
+                add x0, sp, #64
+                mov x1, ${program}
+                mov x2, #0
+                mov x3, #0
+                mov x4, sp
+                bl _posix_spawnp
+                cbnz w0, 3f
+                1:
+                ldr w0, [sp, #64]
+                add x1, sp, #68
+                mov w2, #0
+                bl _waitpid
+                tbz w0, #31, 2f
+                bl ___error
+                ldr w9, [x0]
+                cmp w9, #4
+                b.eq 1b
+                b 3f
+                2:
+                ldr w9, [sp, #68]
+                and w10, w9, #127
+                lsr w9, w9, #8
+                and w9, w9, #255
+                cbz w10, 4f
+                add w9, w10, #128
+                4:
+                mov ${status}, w9
+                3:
+                add sp, sp, #80
+            }
+        }
+        status
+    }
+#(endif)

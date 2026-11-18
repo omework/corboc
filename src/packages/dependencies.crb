@@ -1,0 +1,272 @@
+use bootstrap::package_io::read_source;
+use bootstrap::model::hex_digit;
+
+struct PackageNode {
+    name_start: u64,
+    name_end: u64,
+    source_end: u64,
+    revision_end: u64,
+    visible: u64,
+    active: bool,
+}
+
+fn same_text(left: &[u8], right: &[u8]) -> bool {
+    left.content_eq(&right[0..right.len()])
+}
+
+fn valid_package_name(name: &[u8]) -> bool {
+    let std_name: [u8; 3] = [115,116,100];
+    let runtime_name: [u8; 7] = [114,117,110,116,105,109,101];
+    !name.content_eq(&std_name[..]) && !name.content_eq(&runtime_name[..])
+}
+
+fn inside(path: &[u8], boundary: &[u8]) -> bool {
+    if boundary.len() == 0 { return true; }
+    if path.len() < boundary.len() { return false; }
+    let prefix = &path[0..boundary.len()];
+    if !prefix.content_eq(&boundary[0..boundary.len()]) { return false; }
+    path.len() == boundary.len() || path[boundary.len()] == 47
+}
+
+#(if: target.family == "unix")
+fn absolute_path(path: &[u8]) -> bool { path[0] == 47 }
+#(endif)
+
+#(if: target.family == "windows")
+fn absolute_path(path: &[u8]) -> bool {
+    path[0] == 47 || path[0] == 92 || (path.len() >= 3 && path[1] == 58 && (path[2] == 47 || path[2] == 92))
+}
+#(endif)
+
+// Paths handed to the OS include a final zero. Graph identities exclude it.
+fn resolve_path(root: &[u8], path: &[u8], output: &mut [u8]) -> usize {
+    let mut joined: [u8; 4096] = [0; 4096];
+    if path.len() == 0 || path.len() >= 4096 { return 0; }
+    let mut start: usize = 0;
+    if !absolute_path(&path[0..path.len()]) && root.len() != 0 {
+        if root.len() + path.len() + 1 >= 4096 { return 0; }
+        let separator = append(&mut joined[..], 0, &root[0..root.len()]);
+        joined[separator] = 47;
+        start = separator + 1;
+    }
+    let end = append(&mut joined[..], start, &path[0..path.len()]);
+    if !canonical(&joined[..end + 1], &mut output[0..output.len()]) { return 0; }
+    entry_length(&output[0..output.len()])
+}
+
+fn is_git_url(source: &[u8]) -> bool {
+    let mut at: usize = 0;
+    while at < source.len() {
+        if source[at] == 58 { return true; }
+        at = at + 1;
+    }
+    false
+}
+
+fn normalize_revision(revision: &[u8], output: &mut [u8]) -> bool {
+    if revision.len() != 40 && revision.len() != 64 { return false; }
+    let mut at: usize = 0;
+    while at < revision.len() {
+        let byte = revision[at];
+        if hex_digit(copy(byte)) >= 16 { return false; }
+        output[at] = if byte >= 65 && byte <= 70 { byte + 32 } else { byte };
+        at = at + 1;
+    }
+    true
+}
+
+// Positions indexes source bytes, qualified-name bytes, files and packages.
+// The identity of a package is a canonical local path or a Git URL and pin.
+fn load(input: &[u8], revision: &[u8], expected: &[u8], boundary: &[u8],
+    source: &mut [u8], names: &mut [u8], files: &mut [PackageFile], positions: &mut [u64],
+    packages: &mut [PackageNode], identities: &mut [u8]) -> (i32, u64) {
+    let mut index: u64 = 0;
+    while index < positions[3] {
+        let base = index * 4160;
+        let saved_source = &identities[base..base + packages[index].source_end];
+        let saved_rev = &identities[base + 4096..base + 4096 + packages[index].revision_end];
+        if input.content_eq(&saved_source[0..saved_source.len()]) && revision.content_eq(&saved_rev[0..saved_rev.len()]) {
+            if packages[index].active { return (16, 0); }
+            let name = &names[packages[index].name_start..packages[index].name_end];
+            if !expected.content_eq(&name[0..name.len()]) { return (17, 0); }
+            return (0, index);
+        }
+        index = index + 1;
+    }
+
+    if revision.len() == 0 {
+        return load_directory(&input[0..input.len()], &input[0..input.len()], revision, expected, boundary,
+            &mut source[0..source.len()], &mut names[0..names.len()], &mut files[0..files.len()],
+            &mut positions[0..positions.len()], &mut packages[0..packages.len()], &mut identities[0..identities.len()]);
+    }
+
+    let mut folder: [u8; 4096] = [0; 4096];
+    let end = checkout_path(&mut folder[..]);
+    if end == 0 { return (19, 0); }
+    let mut url: [u8; 4096] = [0; 4096];
+    let mut pin: [u8; 65] = [0; 65];
+    let url_end = append(&mut url[..], 0, &input[0..input.len()]);
+    let pin_end = append(&mut pin[..], 0, &revision[0..revision.len()]);
+    let fetched = git_checkout(&folder[..end + 1], &url[..url_end + 1], &pin[..pin_end + 1]);
+    let mut checkout: [u8; 4096] = [0; 4096];
+    let empty: [u8; 0] = [];
+    let path_end: usize = if fetched { resolve_path(&empty[..], &folder[..end], &mut checkout[..]) } else { 0 };
+    if path_end == 0 {
+        discard_checkout(&folder[..end + 1]);
+        return (19, 0);
+    }
+    let (status, package) = load_directory(&checkout[..path_end], input, revision, expected, &checkout[..path_end],
+        &mut source[0..source.len()], &mut names[0..names.len()], &mut files[0..files.len()],
+        &mut positions[0..positions.len()], &mut packages[0..packages.len()], &mut identities[0..identities.len()]);
+    discard_checkout(&folder[..end + 1]);
+    return (status, package);
+}
+
+fn load_directory(root: &[u8], input: &[u8], revision: &[u8], expected: &[u8], boundary: &[u8],
+    source: &mut [u8], names: &mut [u8], files: &mut [PackageFile], positions: &mut [u64],
+    packages: &mut [PackageNode], identities: &mut [u8]) -> (i32, u64) {
+    let id = positions[3];
+    if id == packages.len() as u64 { return (4, 0); }
+    let manifest_file: [u8; 12] = [112,97,99,107,97,103,101,46,116,111,109,108]; // package.toml
+    let src: [u8; 3] = [115,114,99];
+    let mut path: [u8; 4096] = [0; 4096];
+    let manifest_end = resolve_path(&root[0..root.len()], &manifest_file[..], &mut path[..]);
+    if manifest_end == 0 { return (11, 0); }
+    if !inside(&path[..manifest_end], &boundary[0..boundary.len()]) { return (20, 0); }
+    let mut manifest: [u8; 65536] = [0; 65536];
+    let (status, count) = read_source(&path[..manifest_end + 1], &mut manifest[..]);
+    if status != 0 { return (11, 0); }
+    let contents = &manifest[..count];
+    let parsed = read_manifest(&contents[0..contents.len()]);
+    if !parsed.valid { return (12, 0); }
+    let name = &contents[parsed.name_start..parsed.name_end];
+    if !valid_package_name(&name[0..name.len()]) { return (12, 0); }
+    if expected.len() != 0 && !expected.content_eq(&name[0..name.len()]) { return (17, 0); }
+
+    let mut before: u64 = 0;
+    while before < id {
+        let other = &names[packages[before].name_start..packages[before].name_end];
+        if name.content_eq(&other[0..other.len()]) { return (17, 0); }
+        before = before + 1;
+    }
+    let name_start = positions[1];
+    let name_end = append(&mut names[0..names.len()], copy(name_start) as usize, &name[0..name.len()]);
+    if name_end == 0 { return (4, 0); }
+    let base = id * 4160;
+    let source_end = append(&mut identities[base..base + 4096], 0, input);
+    let revision_end = append(&mut identities[base + 4096..base + 4160], 0, revision);
+    let self_mask: u64 = 1 << copy(id);
+    packages[id] = PackageNode { name_start: copy(name_start), name_end: copy(name_end) as u64,
+        source_end: source_end as u64, revision_end: revision_end as u64, visible: copy(self_mask), active: true };
+    positions[3] = id + 1;
+
+    let dir_end = resolve_path(&root[0..root.len()], &src[..], &mut path[..]);
+    if dir_end == 0 { return (11, 0); }
+    if !inside(&path[..dir_end], &boundary[0..boundary.len()]) { return (20, 0); }
+    let first_file = positions[2];
+    let scanned = walk(&path[..dir_end + 1], name_start as usize, copy(name_end), &mut source[0..source.len()],
+        &mut names[0..names.len()], &mut files[0..files.len()], positions[0] as usize,
+        name_end, copy(first_file) as usize, copy(id));
+    if scanned.error != 0 { return (scanned.error, 0); }
+    if id == 0 && scanned.files_end == first_file { return (11, 0); }
+    positions[0] = scanned.source_end;
+    positions[1] = scanned.names_end;
+    positions[2] = scanned.files_end;
+
+    let mut line = parsed.dependencies_start;
+    let limit = parsed.dependencies_end;
+    let mut visible = self_mask;
+    while line < limit {
+        let end = line_end(&manifest[..count], copy(line));
+        let at = horizontal(&manifest[..count], line, copy(end));
+        if at < end && manifest[at] != 35 {
+            let entry = read_dependency(&manifest[..count], at, copy(end));
+            if !entry.valid { return (12, 0); }
+            let dependency = &contents[entry.name_start..entry.name_end];
+            if !valid_package_name(&dependency[0..dependency.len()]) || name.content_eq(&dependency[0..dependency.len()]) {
+                return (12, 0);
+            }
+            let (code, child) = load_dependency(&root[0..root.len()], &manifest[..count], &entry, &boundary[0..boundary.len()],
+                &mut source[0..source.len()], &mut names[0..names.len()], &mut files[0..files.len()],
+                &mut positions[0..positions.len()], &mut packages[0..packages.len()], &mut identities[0..identities.len()]);
+            if code != 0 { return (code, 0); }
+            let mask: u64 = 1 << child;
+            if (visible & copy(mask)) != 0 { return (12, 0); }
+            visible = visible | mask;
+        }
+        line = end + 1;
+    }
+    let name_start = packages[id].name_start;
+    let name_end = packages[id].name_end;
+    let source_end = packages[id].source_end;
+    let revision_end = packages[id].revision_end;
+    packages[id] = PackageNode { name_start: name_start, name_end: name_end,
+        source_end: source_end, revision_end: revision_end, visible: visible, active: false };
+    return (0, id);
+}
+
+fn load_dependency(root: &[u8], manifest: &[u8], entry: &Dependency, boundary: &[u8],
+    source: &mut [u8], names: &mut [u8], files: &mut [PackageFile], positions: &mut [u64],
+    packages: &mut [PackageNode], identities: &mut [u8]) -> (i32, u64) {
+    let spelling = &manifest[(*entry).source_start..(*entry).source_end];
+    let expected = &manifest[(*entry).name_start..(*entry).name_end];
+    let rev = &manifest[(*entry).revision_start..(*entry).revision_end];
+    let mut normalized: [u8; 65] = [0; 65];
+    let mut identity: [u8; 4096] = [0; 4096];
+    let rev_end = rev.len();
+    let mut identity_end: usize = 0;
+    if rev_end != 0 && !normalize_revision(&rev[0..rev.len()], &mut normalized[..]) { return (18, 0); }
+    if rev_end != 0 && is_git_url(&spelling[0..spelling.len()]) {
+        if spelling.len() >= 4096 { return (4, 0); }
+        identity_end = append(&mut identity[..], 0, spelling);
+    } else {
+        identity_end = resolve_path(root, spelling, &mut identity[..]);
+        if identity_end == 0 { return (11, 0); }
+        if !inside(&identity[..identity_end], &boundary[0..boundary.len()]) { return (20, 0); }
+    }
+    load(&identity[..identity_end], &normalized[..rev_end], expected, boundary,
+        &mut source[0..source.len()], &mut names[0..names.len()], &mut files[0..files.len()],
+        &mut positions[0..positions.len()], &mut packages[0..packages.len()], &mut identities[0..identities.len()])
+}
+
+pub fn read_package(root: &[u8], stdlib: &[u8], source: &mut [u8], names: &mut [u8], files: &mut [PackageFile]) -> PackageInput {
+    let mut positions: [u64; 4] = [0; 4];
+    let mut packages = [PackageNode { name_start: 0, name_end: 0, source_end: 0, revision_end: 0, visible: 0, active: false }; 64];
+    let mut identities: [u8; 266240] = [0; 266240];
+    let mut canonical_root: [u8; 4096] = [0; 4096];
+    let empty: [u8; 0] = [];
+    let root_end = resolve_path(&empty[..], root, &mut canonical_root[..]);
+    if root_end == 0 { return PackageInput { source_end: 0, names_end: 0, files_end: 0, error: 11 }; }
+    let (status, root_id) = load(&canonical_root[..root_end], &empty[..], &empty[..], &empty[..],
+        &mut source[0..source.len()], &mut names[0..names.len()], &mut files[0..files.len()],
+        &mut positions[..], &mut packages[..], &mut identities[..]);
+    drop(root_id);
+    if status != 0 { return PackageInput { source_end: 0, names_end: 0, files_end: 0, error: status }; }
+
+    let mut file: u64 = 0;
+    while file < positions[2] {
+        let owner = files[file].package;
+        let end = files[file].end;
+        let module_start = files[file].module_start;
+        let module_end = files[file].module_end;
+        let entry = files[file].entry;
+        files[file] = PackageFile { end: end, module_start: module_start,
+            module_end: module_end, entry: entry, package: copy(owner), visible: packages[owner].visible };
+        file = file + 1;
+    }
+    if stdlib.len() == 0 {
+        return PackageInput { source_end: positions[0], names_end: positions[1], files_end: positions[2], error: 0 };
+    }
+    if stdlib.len() >= 4096 {
+        return PackageInput { source_end: 0, names_end: 0, files_end: 0, error: 11 };
+    }
+    let mut path: [u8; 4096] = [0; 4096];
+    let used = append(&mut path[..], 0, stdlib);
+    let std_start = positions[1] as usize;
+    let std_name: [u8; 3] = [115,116,100];
+    let std_end = append(&mut names[0..names.len()], copy(std_start), &std_name[..]);
+    if std_end == 0 { return PackageInput { source_end: 0, names_end: 0, files_end: 0, error: 4 }; }
+    walk(&path[..used + 1], std_start, copy(std_end), &mut source[0..source.len()],
+        &mut names[0..names.len()], &mut files[0..files.len()], positions[0] as usize, std_end,
+        positions[2] as usize, 64)
+}

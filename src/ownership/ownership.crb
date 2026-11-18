@@ -1,0 +1,535 @@
+use bootstrap::value_dependencies::owned_fields_survive;
+use bootstrap::value_dependencies::{live_owned_fields};
+use bootstrap::vector_storage::vector_pool_nominal;
+use bootstrap::places::inline_vector_shape;
+use bootstrap::tasks::{scalar_handle_type, task_value, copy_task_summary};
+use bootstrap::task_vectors::owned_handle_vector;
+use bootstrap::verify::{verify_expr, violation, private_layout_violation};
+use bootstrap::declarations::{nominal_declaration, private_socket_field, same_field, verification_field, layout_visible};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::loans::loan_conflict;
+use bootstrap::places::{check_array_literal, literal_length, scalar_array_type};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::stored::{record_loan_field, stored_loan_array};
+
+fn has_nominal_default(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    annotation: u64, depth: u64, access: u64) -> bool {
+    if depth >= 64 || graph[annotation].first_child != 0 { return false; }
+    if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 0 { return true; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    if nodes[nominal].kind != 28 || !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(access)) { return false; }
+    let mut field = graph[nominal].first_child;
+    while field != 0 {
+        if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) { return false; }
+        if !has_nominal_default(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[field].first_child, depth + 1, copy(access)) { return false; }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+pub fn nominal_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    nominal: u64, expression: u64) -> u64 {
+    let name = &source[nodes[expression].name_start..nodes[expression].name_end];
+    let mut variant = graph[nominal].first_child;
+    while variant != 0 {
+        let spelling = &source[nodes[variant].name_start..nodes[variant].name_end];
+        if name.content_eq(&spelling[0..spelling.len()]) { return variant; }
+        variant = graph[variant].next_sibling;
+    }
+    0
+}
+
+pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    initializer: u64, destination: u64) -> i64 {
+    let start = nodes[initializer].start;
+    let receiver = graph[initializer].first_child;
+    if nodes[receiver].kind != 7 { return -9; }
+    let pool = graph[receiver].binding;
+    let pool_type = values[pool].ty;
+    if (pool_type > 2000 && pool_type < 2020) || (pool_type >= 2200 && pool_type <= 2227) || (pool_type >= 8501 && pool_type <= 8509) || (pool_type >= 2601 && pool_type <= 2608) {
+        if values[pool].state != 1 || !values[pool].mutable { return 0 - violation(4, start); }
+        let argument = graph[receiver].next_sibling;
+        if argument != 0 || nodes[initializer].name_end - nodes[initializer].name_start != 3 { return -9; }
+        let method: [u8; 3] = [110,101,119];
+        let spelling = &source[nodes[initializer].name_start..nodes[initializer].name_end];
+        if !spelling.content_eq(&method[..]) { return -9; }
+        let ty = pool_type + 100;
+        values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: 0, exclusive: false };
+        return ty;
+    }
+    if pool_type < 93 || pool_type >= 200 { return -9; }
+    if values[pool].state != 1 { return 0 - violation(4, start); }
+    if !values[pool].mutable { return 0 - violation(5, start); }
+    let method_start = nodes[initializer].name_start;
+    let method_end = nodes[initializer].name_end;
+    if method_end - method_start != 3 || source[method_start] != 110
+        || source[method_start + 1] != 101 || source[method_start + 2] != 119 { return -9; }
+    let supplied = graph[receiver].next_sibling;
+    let mut argument = copy(supplied);
+    if pool_type == 99 && nodes[supplied].kind == 2 {
+        let tail = graph[supplied].first_child;
+        if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return -9; }
+        argument = graph[tail].first_child;
+    }
+    if pool_type == 93 {
+        if argument != 0 || nodes[graph[pool].initializer].kind != 66 { return -9; }
+        let vector = graph[graph[graph[pool].initializer].first_child].first_child;
+        let shape = inline_vector_shape(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], vector);
+        if shape == 0 { return -9; }
+        values[destination] = CheckedValue { ty: 294, state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: shape, exclusive: false };
+        return 294;
+    }
+    if pool_type >= 94 && pool_type <= 98 {
+        if argument != 0 { return -9; }
+        let ty = pool_type + 201;
+        values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: 0, exclusive: false };
+        return ty;
+    }
+    if pool_type == 99 {
+        let borrowed = values[pool].target;
+        let root = if borrowed == 0 || borrowed == pool { copy(pool) } else { borrowed };
+        if values[root].state != 1 { return 0 - violation(4, start); }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+            &graph[0..graph.len()], copy(pool), copy(initializer), true);
+        if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+        let fields = nodes[argument].kind == 31;
+        if argument != 0 && !fields && nodes[argument].kind != 37 && nodes[argument].kind != 74 && nodes[argument].kind != 7 && nodes[argument].kind != 17 { return -9; }
+        if !fields && graph[argument].next_sibling != 0 { return -9; }
+        let pool_expression = graph[pool].initializer;
+        let mut parameter: u64 = 0;
+        if values[pool].origin_call != 0 {
+            parameter = values[pool].origin_call;
+        } else if nodes[pool_expression].kind == 66 {
+            parameter = graph[graph[pool_expression].first_child].first_child;
+        } else if nodes[pool].kind == 3 {
+            let reference = graph[pool].first_child;
+            let pool_type = graph[reference].first_child;
+            parameter = graph[pool_type].first_child;
+        } else { return -9; }
+        let declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(parameter));
+        if declaration == 0 { return -9; }
+        if nodes[declaration].kind == 29 {
+            let target = graph[argument].first_child;
+            if (nodes[argument].kind != 37 && nodes[argument].kind != 17) || nodes[target].kind != 7 { return -9; }
+            let actual_type = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(target));
+            if actual_type != declaration { return 0 - violation(1, start); }
+            let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], declaration, copy(argument));
+            if variant == 0 { return 0 - violation(1, start); }
+            let ty = check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(argument),
+                graph[target].next_sibling, copy(destination), variant, false);
+            if ty < 0 { return ty; }
+            values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
+                loan_parent: 0, origin_call: argument, exclusive: false };
+            return 301;
+        }
+        if nodes[argument].kind == 7 {
+            let origin = graph[argument].binding;
+            if values[origin].ty != 300 || values[origin].state != 1 { return 0 - violation(6, start); }
+            let constructor = values[origin].origin_call;
+            let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constructor));
+            if actual != declaration { return 0 - violation(1, start); }
+            if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(origin)) {
+                return 0 - violation(4, start);
+            }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+                copy(origin), copy(initializer), true);
+            if conflict > 0 { return 0 - violation(5, start); }
+            if conflict < 0 { return -9; }
+            values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
+                loan_parent: 0, origin_call: copy(constructor), exclusive: false };
+            let mutable = values[origin].mutable;
+            let target = values[origin].target;
+            values[origin] = CheckedValue { ty: 300, state: 2, mutable: mutable, target: target,
+                loan_parent: 0, origin_call: constructor, exclusive: false };
+            return 301;
+        }
+        if nodes[argument].kind == 37 {
+            let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(argument));
+            if actual != declaration { return 0 - violation(1, start); }
+        }
+        if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
+            return 0 - private_layout_violation(start);
+        }
+        let mut constructor = if fields { copy(initializer) } else { copy(argument) };
+        if argument == 0 || (!fields && graph[argument].first_child == 0) {
+            let mut field = graph[declaration].first_child;
+            while field != 0 {
+                if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) {
+                    return 0 - violation(1, start);
+                }
+                let annotation = graph[field].first_child;
+                if !has_nominal_default(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], annotation, 0, copy(initializer)) { return -9; }
+                field = graph[field].next_sibling;
+            }
+            constructor = copy(parameter);
+        } else {
+            let ty = check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(constructor),
+                if fields { argument } else { graph[argument].first_child }, copy(destination), declaration, true);
+            if ty < 0 { return ty; }
+        }
+        values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
+            loan_parent: 0, origin_call: constructor, exclusive: false };
+        return 301;
+    }
+    let element = pool_type - 100;
+    if element < 1 || element > 7 { return -9; }
+    let borrowed = values[pool].target;
+    let root = if borrowed == 0 || borrowed == pool { copy(pool) } else { copy(borrowed) };
+    if values[root].state != 1 { return 0 - violation(4, start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        pool, copy(initializer), true);
+    if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+    if argument != 0 {
+        if graph[argument].next_sibling != 0 { return (0 - violation(1, start)); }
+        let type_name = graph[argument].first_child;
+        if (nodes[argument].kind == 17 || nodes[argument].kind == 37)
+            && nodes[type_name].kind == 7 && graph[type_name].binding == 0 {
+            let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], type_name);
+            if nodes[nominal].kind == 29 { return 0 - violation(1, nodes[argument].start); }
+        }
+        let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], argument, copy(element), 1);
+        if ty < 0 { return ty; }
+        if ty != element { return (0 - violation(1, start)); }
+    }
+    values[destination] = CheckedValue { ty: element + 200, state: 1, mutable: false,
+        target: root, loan_parent: 0, origin_call: 0, exclusive: false };
+    return element + 200;
+}
+
+// Keep ownership edges at the constructor fields. Moving the aggregate
+// transfers its constructor identity together with those edges.
+pub fn plain_structure(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], nominal: u64, depth: u64) -> bool {
+    if nodes[nominal].kind != 28 || depth > 64 { return false; }
+    let mut field = graph[nominal].first_child;
+    while field != 0 {
+        let ty = graph[field].first_child;
+        let (array, length) = scalar_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(ty));
+        drop(length);
+        if array < 0 { return false; }
+        if array > 0 {
+            field = graph[field].next_sibling;
+            continue;
+        }
+        if graph[ty].first_child != 0 { return false; }
+        if verify_primitive(&source[0..source.len()], nodes[ty].name_start, nodes[ty].name_end) == 0 {
+            let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty);
+            if !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], nested, depth+1) { return false; }
+        }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+pub fn check_owned_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], initializer: u64, destination: u64) -> i64 {
+    let mut declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(initializer));
+    let base = graph[initializer].first_child;
+    if nodes[base].kind == 7 {
+        declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(base));
+    }
+    if nodes[declaration].kind == 29 {
+        let base = graph[initializer].first_child;
+        if nodes[base].kind != 7 { return -9; }
+        let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(base));
+        if actual != declaration { return 0 - violation(1, nodes[initializer].start); }
+        let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(declaration), copy(initializer));
+        if variant == 0 { return 0 - violation(1, nodes[initializer].start); }
+        let ty = check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], initializer,
+            graph[base].next_sibling, copy(destination), variant, false);
+        if ty < 0 { return ty; }
+        let pool = values[destination].target;
+        let constructor = values[destination].origin_call;
+        values[destination] = CheckedValue { ty: 310, state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: constructor, exclusive: false };
+        return 310;
+    }
+    if declaration == 0 || nodes[declaration].kind != 28 { return -9; }
+    return check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(initializer),
+        graph[initializer].first_child, destination, declaration, false);
+}
+
+fn array_owned_value(graph: &[StaticNode], values: &[CheckedValue], node: u64) -> bool {
+    let ty = values[node].ty;
+    if (ty >= 1 && ty <= 9) || (ty >= 201 && ty <= 207) { return true; }
+    if ty != 300 && ty != 470 { return false; }
+    let mut child = graph[values[node].origin_call].first_child;
+    while child != 0 {
+        if !array_owned_value(&graph[0..graph.len()], &values[0..values.len()], copy(child)) {
+            return false;
+        }
+        child = graph[child].next_sibling;
+    }
+    return true;
+}
+
+fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], literal: u64, annotation: u64, destination: u64) -> i64 {
+    if nodes[literal].kind != 44 || source[nodes[annotation].start] != 91 { return 0; }
+    let element = graph[annotation].first_child;
+    let length = graph[element].next_sibling;
+    if length == 0 || graph[element].first_child != 0 { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], element);
+    if nodes[nominal].kind != 28 { return 0; }
+    let (known, expected) = literal_length(&source[0..source.len()], &nodes[0..nodes.len()], length);
+    if !known { return -9; }
+    let mut member = graph[literal].first_child;
+    let mut count: u64 = 0;
+    while member != 0 {
+        if nodes[member].kind != 37 { return -9; }
+        if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(member)) != nominal { return 0 - violation(1, nodes[member].start); }
+        let checked = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], copy(member), copy(member));
+        if checked < 0 { return checked; }
+        if !array_owned_value(&graph[0..graph.len()], &values[0..values.len()], copy(member)) { return -9; }
+        count = count + 1;
+        member = graph[member].next_sibling;
+    }
+    if count != expected { return 0 - violation(1, nodes[literal].start); }
+    values[destination] = CheckedValue { ty: 470, state: 1, mutable: false, target: count,
+        loan_parent: 0, origin_call: literal, exclusive: false };
+    return 470;
+}
+
+pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], initializer: u64, first_field: u64, destination: u64, declaration: u64, defaults: bool) -> i64 {
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
+        return 0 - private_layout_violation(nodes[initializer].start);
+    }
+    let mut field: u64 = 0;
+    let mut given = copy(first_field);
+    let mut first_pool: u64 = 0;
+    while given != 0 {
+        let mut prior = copy(first_field);
+        while prior != given {
+            if same_field(&source[0..source.len()], &nodes[0..nodes.len()], copy(prior), copy(given)) {
+                return 0 - violation(1, nodes[given].start);
+            }
+            prior = graph[prior].next_sibling;
+        }
+        field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(declaration), copy(given));
+        if field == 0 { return 0 - violation(1, nodes[given].start); }
+        let annotation = graph[field].first_child;
+        let expression = graph[given].first_child;
+        let element = graph[annotation].first_child;
+        let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(annotation));
+        if handle != 0 {
+            let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(expression), copy(handle), 1);
+            if ty < 0 { return ty; }
+            if ty != handle { return 0 - violation(1, nodes[given].start); }
+            copy_task_summary(&mut values[0..values.len()], expression, copy(given), ty, false);
+        } else if nodes[expression].kind == 44 || nodes[expression].kind == 45 {
+            let nominal = check_nominal_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(expression), copy(annotation), copy(given));
+            if nominal < 0 { return nominal; }
+            if nominal != 0 {
+                given = graph[given].next_sibling;
+                continue;
+            }
+            let (ty, length) = check_array_literal(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(annotation));
+            if ty < 0 { return ty; }
+            values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: length, exclusive: false };
+        } else if source[nodes[annotation].start] == 38 {
+            let ty = record_loan_field(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(given),
+                copy(annotation), copy(destination));
+            if ty < 0 { return ty; }
+        } else if element != 0 {
+            if nodes[annotation].name_end - nodes[annotation].name_start != 1
+                || source[nodes[annotation].name_start] != 65 || graph[element].next_sibling != 0 { return -9; }
+            let task_vector = owned_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], annotation);
+            if task_vector != 0 {
+                let owner = graph[expression].binding;
+                if nodes[expression].kind != 7 || values[owner].ty != task_vector {
+                    return 0 - violation(1, nodes[given].start);
+                }
+                if values[owner].state != 1 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
+                    return 0 - violation(4, nodes[given].start);
+                }
+                let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+                    copy(owner), copy(expression), true);
+                if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[expression].start) }; }
+                copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), copy(task_vector), false);
+                let pool = values[owner].target;
+                values[owner] = CheckedValue { ty: task_vector, state: 2, mutable: false, target: copy(pool),
+                    loan_parent: 0, origin_call: 0, exclusive: false };
+                if first_pool == 0 { first_pool = pool; }
+                given = graph[given].next_sibling;
+                continue;
+            }
+            if graph[element].first_child != 0 {
+                let vector: [u8;6] = [86,101,99,116,111,114];
+                let spelling = &source[nodes[element].name_start..nodes[element].name_end];
+                let item = graph[element].first_child;
+                let owner = graph[expression].binding;
+                if !spelling.content_eq(&vector[..]) || graph[item].next_sibling != 0
+                    || nodes[expression].kind != 7 || values[owner].ty != 296 { return -9; }
+                let pool = values[owner].target;
+                let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], item);
+                if nominal == 0 || nominal != vector_pool_nominal(&source[0..source.len()],
+                    &nodes[0..nodes.len()], &graph[0..graph.len()], copy(pool)) { return 0 - violation(1, nodes[given].start); }
+                if values[owner].state != 1 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
+                    return 0 - violation(4, nodes[given].start);
+                }
+                let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+                    copy(owner), copy(expression), true);
+                if conflict > 0 { return 0 - violation(5, nodes[expression].start); }
+                if conflict < 0 { return -9; }
+                copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), 296, false);
+                let chain = values[owner].origin_call;
+                values[owner] = CheckedValue { ty: 296, state: 2, mutable: false, target: copy(pool),
+                    loan_parent: 0, origin_call: chain, exclusive: false };
+                if first_pool == 0 { first_pool = pool; }
+                given = graph[given].next_sibling;
+                continue;
+            }
+            let primitive = verify_primitive(&source[0..source.len()], nodes[element].name_start, nodes[element].name_end);
+            let expected_nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(element));
+            if primitive == 0 && expected_nominal == 0 { return -9; }
+            let expected = if expected_nominal == 0 { primitive + 200 } else { 301 };
+            if nodes[expression].kind == 7 {
+                let owner = graph[expression].binding;
+                if owner == 0 || values[owner].state != 1 {
+                    return 0 - violation(6, nodes[expression].start);
+                }
+                if values[owner].ty != expected { return 0 - violation(1, nodes[given].start); }
+                if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
+                    return 0 - violation(4, nodes[expression].start);
+                }
+                let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+                    &graph[0..graph.len()], copy(owner), copy(expression), true);
+                if conflict > 0 { return 0 - violation(5, nodes[expression].start); }
+                if conflict < 0 { return -9; }
+                let ty = values[owner].ty;
+                let pool = values[owner].target;
+                let constructor = values[owner].origin_call;
+                let mutable = values[owner].mutable;
+                values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
+                    target: copy(pool), loan_parent: 0, origin_call: copy(constructor), exclusive: false };
+                values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
+                    target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+            } else if nodes[expression].kind == 16 {
+                let ty = check_pool_new(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut values[0..values.len()], expression, copy(given));
+                if ty < 0 { return ty; }
+                if ty != expected { return 0 - violation(1, nodes[given].start); }
+            } else {
+                return -9;
+            }
+
+            if expected_nominal != 0 {
+                let pool = values[given].target;
+                let pool_node = graph[pool].initializer;
+                let parameter = graph[graph[pool_node].first_child].first_child;
+                let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], parameter);
+                if actual != expected_nominal { return 0 - violation(1, nodes[given].start); }
+            }
+        } else if nodes[expression].kind == 37 {
+            let declared=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+            let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
+            if declared==0 || declared!=actual{return 0-violation(1,nodes[given].start);}
+            let ty = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(given));
+            if ty < 0 { return ty; }
+        } else if (nodes[expression].kind == 15 || nodes[expression].kind == 38)
+            && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(annotation)) != 0 {
+            let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(annotation));
+            if graph[annotation].first_child != 0 || (nodes[nominal].kind != 28 && nodes[nominal].kind != 29) { return -9; }
+            let expected: i64 = if nodes[nominal].kind == 29 { 310 } else { 300 };
+            let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(expression), copy(expected), 1);
+            if checked < 0 { return checked; }
+            if checked != expected || nominal_declaration(&source[0..source.len()],
+                &nodes[0..nodes.len()], &graph[0..graph.len()], values[expression].origin_call) != nominal {
+                return 0 - violation(1, nodes[expression].start);
+            }
+            if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()],
+                copy(expression), graph[destination].scope) { return 0 - violation(4, nodes[expression].start); }
+            copy_task_summary(&mut values[0..values.len()], expression, copy(given), expected, false);
+        } else if nodes[expression].kind == 7 && (values[graph[expression].binding].ty == 300
+            || values[graph[expression].binding].ty == 310) {
+            let owner = graph[expression].binding;
+            if values[owner].state != 1 { return 0 - violation(6, nodes[expression].start); }
+            if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
+                return 0 - violation(4, nodes[expression].start);
+            }
+            let constructor = values[owner].origin_call;
+            let declared=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
+            let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(constructor));
+            if declared==0 || declared!=actual{return 0-violation(1,nodes[given].start);}
+            let ty = values[owner].ty;
+            let pool = values[owner].target;
+            let mutable = values[owner].mutable;
+            let dependency = values[owner].loan_parent;
+            values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
+                target: copy(pool), loan_parent: dependency, origin_call: copy(constructor), exclusive: false };
+            values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
+                target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+        } else {
+            let expected = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+            if expected == 0 { return -9; }
+            let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], expression, expected, 1);
+            if ty < 0 { return ty; }
+            if ty == 0 { return 0 - violation(1, nodes[given].start); }
+            values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: 0, exclusive: false };
+        }
+        if first_pool == 0 && values[given].ty >= 200 && values[given].ty != 734 && values[given].ty != 752
+            && !task_value(values[given].ty) && !stored_loan_array(values[given].ty) { first_pool = values[given].target; }
+        given = graph[given].next_sibling;
+    }
+    field = graph[declaration].first_child;
+    while field != 0 {
+        given = copy(first_field);
+        while given != 0 {
+            if same_field(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(given)) { break; }
+            given = graph[given].next_sibling;
+        }
+        if given == 0 {
+            if !defaults { return 0 - violation(1, nodes[initializer].start); }
+            if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) {
+                return 0 - violation(1, nodes[initializer].start);
+            }
+            let annotation = graph[field].first_child;
+            if !has_nominal_default(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], annotation, 0, copy(initializer)) { return -9; }
+        }
+        field = graph[field].next_sibling;
+    }
+    values[destination] = CheckedValue { ty: 300, state: 1, mutable: false,
+        target: first_pool, loan_parent: 0, origin_call: initializer, exclusive: false };
+    300
+}

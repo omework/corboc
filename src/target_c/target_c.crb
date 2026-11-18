@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Compiler output transport and native runtime assembly. Implementation: the runtime revision pinned by corbo.lock.
+use bootstrap::runtime_sources::{base_runtime, task_runtime, c_runtime_header};
+
+#(if: target.os == "macos" && target.arch == "aarch64")
+    pub fn character(byte: i32) {
+        @unchecked {
+            @asm {
+                mov w0, ${byte}
+                bl _putchar
+            }
+        }
+    }
+#(endif)
+#(if: target.os == "macos" && target.arch == "x86_64")
+    pub fn character(byte: i32) {
+        @unchecked {
+            @asm {
+                mov edi, ${byte}
+                call _putchar
+            }
+        }
+    }
+#(endif)
+#(if: target.os == "linux" && target.arch == "x86_64")
+    pub fn character(byte: i32) {
+        @unchecked {
+            @asm {
+                mov edi, ${byte}
+                call putchar
+            }
+        }
+    }
+#(endif)
+#(if: target.os == "windows" && target.arch == "x86_64")
+    pub fn character(byte: i32) {
+        @unchecked {
+            @asm {
+                mov ecx, ${byte}
+                call putchar
+            }
+        }
+    }
+#(endif)
+#(if: target.os == "windows" && target.arch == "aarch64")
+    pub fn character(byte: i32) {
+        @unchecked {
+            @asm {
+                mov w0, ${byte}
+                bl putchar
+            }
+        }
+    }
+#(endif)
+
+pub fn byte_text(text: &[u8]) {
+    let mut offset: usize = 0;
+    while offset < text.len() {
+        character(text[offset] as i32);
+        offset = offset + 1;
+    }
+}
+
+pub fn emit_runtime() { c_runtime_header(); base_runtime(); }
+
+pub fn emit_task_runtime() { task_runtime(); }

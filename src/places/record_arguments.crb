@@ -1,0 +1,364 @@
+use bootstrap::regional_calls::region_signature;
+use bootstrap::declarations::{layout_visible, verification_field};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, constructor_arguments, constructor_field_value};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::calls::lookup_record_method;
+use bootstrap::loans::{borrow_mutable, live_roots, loan_conflict};
+use bootstrap::verify::violation;
+use bootstrap::scalar_options::scalar_reference_annotation;
+use bootstrap::value_dependencies::{live_owned_fields, scope_contains};
+use bootstrap::task_vectors::record_with_handle_vector;
+
+// A shared reference field adds a dependency on its target without giving
+// the record exclusive access to that target.
+pub fn record_with_shared_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> bool {
+    if nodes[record].kind != 28 { return false; }
+    let mut field = graph[record].first_child;
+    let mut shared = false;
+    while field != 0 {
+        let annotation = graph[field].first_child;
+        let ty = scalar_reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(annotation));
+        if ty >= 21 && ty <= 27 { shared = true; }
+        else if graph[annotation].first_child != 0
+            || verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
+            return false;
+        }
+        field = graph[field].next_sibling;
+    }
+    shared
+}
+
+pub fn record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, shared_only: bool) -> u64 {
+    if annotation == 0 || source[nodes[annotation].start] != 38 { return 0; }
+    let name = graph[annotation].first_child;
+    if name == 0 || graph[name].first_child != 0
+        || (shared_only && borrow_mutable(&source[nodes[annotation].start..nodes[name].start])) { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(name));
+    if nodes[nominal].kind==29 {return name;}
+    if !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0, true)
+        && !record_with_shared_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal))
+        && !record_with_record_loans(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0)
+        && !record_with_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal))
+        && record_pool_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal) == 0 {
+        return 0;
+    }
+    name
+}
+
+fn record_with_record_loans(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) -> bool {
+    if nodes[record].kind != 28 || depth >= 64 { return false; }
+    let mut field = graph[record].first_child;
+    let mut loans = false;
+    while field != 0 {
+        let annotation = graph[field].first_child;
+        let target = graph[annotation].first_child;
+        let (slice, slice_element, slice_exclusive) = slice_parameter(&source[0..source.len()],
+            &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
+        if slice != 0 {
+            loans = true;
+        } else if source[nodes[annotation].start] == 38 && target != 0 && graph[target].first_child == 0 {
+            let declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(target));
+            if nodes[declaration].kind != 28
+                && verify_primitive(&source[0..source.len()], nodes[target].name_start, nodes[target].name_end) == 0 {
+                return false;
+            }
+            loans = true;
+        } else if target != 0 { return false; }
+        else if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
+            let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], annotation);
+            if record_with_record_loans(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(nested), copy(depth) + 1) { loans = true; }
+            else if !value_record(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], nested, 0, true) { return false; }
+        }
+        field = graph[field].next_sibling;
+    }
+    loans
+}
+
+pub fn shared_record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+    record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, true)
+}
+
+pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], input: u64, annotation: u64, exclusive: bool, capture: bool) -> i64 {
+    let expected = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    let mut from: u64 = 0;
+    let mut target: u64 = 0;
+    let mut parent: u64 = 0;
+    let mut shape: u64 = 0;
+    if nodes[input].kind == 7 {
+        from = graph[input].binding;
+        if values[from].ty != 734 || values[from].exclusive != exclusive { return 0 - violation(1, nodes[input].start); }
+        if values[from].state != 1 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(from)) {
+            return 0 - violation(4, nodes[input].start);
+        }
+        target = values[from].target;
+        parent = copy(from);
+        shape = values[from].origin_call;
+    } else if nodes[input].kind == 13 && graph[input].mutable == exclusive {
+        let place = graph[input].first_child;
+        let (ty, binding, declaration) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], place);
+        if ty < 0 { return ty; }
+        if ty != 300 && ty != 310 { return 0 - violation(1, nodes[input].start); }
+        from = binding;
+        shape = declaration;
+        if values[from].ty == 300
+            && !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(from)) {
+            return 0 - violation(4, nodes[input].start);
+        }
+        let reborrow = values[from].ty == 734;
+        target = if reborrow { values[from].target } else { copy(from) };
+        if reborrow { parent = copy(from); }
+        if exclusive && !(if reborrow { values[from].exclusive } else { values[from].mutable }) {
+            return 0 - violation(5, nodes[input].start);
+        }
+    } else { return 0 - violation(1, nodes[input].start); }
+    if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(shape)) != expected {
+        return 0 - violation(1, nodes[input].start);
+    }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(from), copy(input), copy(exclusive));
+    if conflict < 0 { return -9; }
+    if conflict > 0 { return 0 - violation(5, nodes[input].start); }
+    if capture && nodes[input].kind == 7 {
+        parent = values[from].loan_parent;
+        let mutable = values[from].mutable;
+        values[from] = CheckedValue { ty: 734, state: 2, mutable: mutable, target: copy(target),
+            loan_parent: copy(parent), origin_call: copy(shape), exclusive: copy(exclusive) };
+    }
+    values[input] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: shape, exclusive: exclusive };
+    734
+}
+
+pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], call: u64) -> u64 {
+    let receiver = graph[call].first_child;
+    if nodes[receiver].kind != 7 { return 0; }
+    let binding = graph[receiver].binding;
+    if values[binding].ty != 300 && values[binding].ty != 734 { return 0; }
+    let shape = values[binding].origin_call;
+    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], shape);
+    if nodes[record].kind != 28 { return 0; }
+    let owner = &source[nodes[record].name_start..nodes[record].name_end];
+    let member = &source[nodes[call].name_start..nodes[call].name_end];
+    lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &owner[0..owner.len()], &member[0..member.len()], true)
+}
+
+pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], receiver: u64, parameter: u64) -> i64 {
+    let binding = graph[receiver].binding;
+    let by_reference = values[binding].ty == 734;
+    if values[binding].state != 1
+        || (by_reference && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding))) {
+        return 0 - violation(6, nodes[receiver].start);
+    }
+    let exclusive = borrow_mutable(&source[nodes[parameter].start..nodes[parameter].name_start]);
+    let writable = if by_reference { values[binding].exclusive } else { values[binding].mutable };
+    if exclusive && !writable { return 0 - violation(5, nodes[receiver].start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(binding), copy(receiver), copy(exclusive));
+    if conflict < 0 { return -9; }
+    if conflict > 0 { return 0 - violation(5, nodes[receiver].start); }
+    let target = if by_reference { values[binding].target } else { copy(binding) };
+    let parent = if by_reference { copy(binding) } else { 0 };
+    let shape = values[binding].origin_call;
+    values[receiver] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: shape, exclusive: exclusive };
+    1
+}
+
+pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], destination: u64, initializer: u64) -> i64 {
+    let place = graph[initializer].first_child;
+    let projected = graph[place].first_child;
+    if nodes[place].kind == 14 && nodes[projected].kind == 17 {
+        return reborrow_record_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], destination, initializer, projected);
+    }
+    if nodes[place].kind != 17 { return 0; }
+    let (ty, root, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(place));
+    if ty < 0 { return ty; }
+    if ty != 300 { return 0; }
+    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(shape));
+    if !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), 0, true)
+        && !record_with_record_loans(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, 0) {
+        return -9;
+    }
+    let exclusive = graph[initializer].mutable;
+    let reference = values[root].ty == 734;
+    let writable = if reference { values[root].exclusive } else { values[root].mutable };
+    if exclusive && !writable { return 0 - violation(5, nodes[place].start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(root), copy(place), copy(exclusive));
+    if conflict < 0 { return -9; }
+    if conflict > 0 { return 0 - violation(5, nodes[place].start); }
+    let target = if reference { values[root].target } else { copy(root) };
+    values[destination] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
+        loan_parent: if reference { root } else { 0 }, origin_call: shape, exclusive: exclusive };
+    1
+}
+
+fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], destination: u64, initializer: u64, projection: u64) -> i64 {
+    let (ty, holder, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], graph[projection].first_child);
+    if ty < 0 { return ty; }
+    if ty != 300 { return 0; }
+    let declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], shape);
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        copy(declaration), copy(projection));
+    let annotation = graph[field].first_child;
+    let target = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        copy(annotation), false);
+    if target == 0 { return 0; }
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], declaration, copy(projection)) { return -9; }
+    let reference = values[holder].ty == 734;
+    let exclusive = graph[initializer].mutable;
+    if exclusive && (!borrow_mutable(&source[nodes[annotation].start..nodes[target].start])
+        || !(if reference { values[holder].exclusive } else { values[holder].mutable })) {
+        return 0 - violation(5, nodes[projection].start);
+    }
+    let aggregate = if reference { values[holder].target } else { copy(holder) };
+    let mut root = copy(aggregate);
+    if nodes[aggregate].kind != 3 {
+        let constructor = values[aggregate].origin_call;
+        if nodes[constructor].kind != 37 { return -9; }
+        let selected = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], constructor, field);
+        let parent = values[aggregate].loan_parent;
+        let member = if constructor_arguments(values[parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], parent, selected)
+        } else if parent != 0 { parent } else { selected };
+        if values[member].ty != 734 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(member)) {
+            return 0 - violation(4, nodes[projection].start);
+        }
+        root = values[member].target;
+    }
+    if !scope_contains(&graph[0..graph.len()], graph[root].scope, graph[destination].scope) {
+        return 0 - violation(4, nodes[projection].start);
+    }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(holder), copy(projection), copy(exclusive));
+    if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[projection].start) }; }
+    values[destination] = CheckedValue { ty: 734, state: 1, mutable: false, target: root,
+        loan_parent: holder, origin_call: target, exclusive: exclusive };
+    1
+}
+
+// A record with one mutable pool field has a unique symbolic pool root.
+// Its field node represents that root inside a callable.
+pub fn record_pool_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> u64 {
+    record_pool_field_at(source, nodes, graph, record, 0)
+}
+
+fn record_pool_field_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) -> u64 {
+    if nodes[record].kind != 28 || depth >= 64 { return 0; }
+    let mut field = graph[record].first_child;
+    let mut pool: u64 = 0;
+    while field != 0 {
+        let annotation = graph[field].first_child;
+        let ty = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(annotation), true);
+        if ty == 99 || (ty >= 101 && ty <= 107) {
+            if pool != 0 { return 0; }
+            pool = copy(field);
+        } else if source[nodes[annotation].start] == 38 {
+            let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[annotation].first_child);
+            let inner = record_pool_field_at(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nested, depth + 1);
+            if inner == 0 || pool != 0 { return 0; }
+            pool = inner;
+        } else if graph[annotation].first_child != 0
+            || verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
+            return 0;
+        }
+        field = graph[field].next_sibling;
+    }
+    pool
+}
+
+pub fn record_pool_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], entry: u64, field: u64) -> u64 {
+    record_pool_root_at(source, nodes, graph, values, entry, field, 0)
+}
+
+fn record_pool_root_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], entry: u64, field: u64, depth: u64) -> u64 {
+    if entry == 0 || depth >= 64 { return 0; }
+    if nodes[entry].kind == 3 {
+        let annotation = graph[entry].first_child;
+        return if annotation == 0 { nodes[entry].parent } else { annotation };
+    }
+    if values[entry].ty == 734 {
+        return record_pool_root_at(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &values[0..values.len()], values[entry].target, field, depth + 1);
+    }
+    let built = values[entry].origin_call;
+    if nodes[built].kind != 37 { return 0; }
+    let layout = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(built));
+    let parent = values[entry].loan_parent;
+    let mut member = graph[built].first_child;
+    let mut root: u64 = 0;
+    while member != 0 {
+        let actual = if constructor_arguments(values[parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], copy(parent), copy(member))
+        } else if parent != 0 { copy(parent) } else { copy(member) };
+        if layout == nodes[field].parent && graph[member].field_name == graph[field].field_name { return values[actual].target; }
+        if values[actual].ty == 734 {
+            let nested = record_pool_root_at(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &values[0..values.len()], actual, copy(field), depth + 1);
+            if nested != 0 {
+                if root != 0 && root != nested { return 0; }
+                root = nested;
+            }
+        }
+        member = graph[member].next_sibling;
+    }
+    root
+}
+
+pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], destination: u64, expression: u64) -> i64 {
+    if nodes[expression].kind != 13 || !graph[expression].mutable { return 0; }
+    let deref = graph[expression].first_child;
+    let field = graph[deref].first_child;
+    if nodes[deref].kind != 14 || nodes[field].kind != 17 { return 0; }
+    let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], graph[field].first_child);
+    if ty < 0 { return ty; }
+    if ty != 300 || values[binding].ty != 734 { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], shape);
+    let declaration = record_pool_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal));
+    if declaration == 0 || declaration != verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(nominal), copy(field)) { return 0; }
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(field)) { return -9; }
+    if !values[binding].exclusive { return 0 - violation(5, nodes[field].start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(binding), copy(field), true);
+    if conflict != 0 { return if conflict > 0 { 0 - violation(5, nodes[field].start) } else { -9 }; }
+    let original = values[binding].target;
+    let root = record_pool_root(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &values[0..values.len()], copy(original), copy(declaration));
+    if root == 0 { return -9; }
+    let annotation = graph[declaration].first_child;
+    let borrowed = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation), true);
+    let shape = if borrowed == 99 { graph[graph[annotation].first_child].first_child } else { 0 };
+    if nodes[original].kind == 3 {
+        values[root] = CheckedValue { ty: copy(borrowed), state: 1, mutable: true, target: original,
+            loan_parent: 0, origin_call: copy(shape), exclusive: true };
+    }
+    values[destination] = CheckedValue { ty: borrowed, state: 1, mutable: true, target: root,
+        loan_parent: binding, origin_call: shape, exclusive: true };
+    return 1;
+}

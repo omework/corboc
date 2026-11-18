@@ -1,0 +1,86 @@
+use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
+use bootstrap::loans::{loan_conflict_after, live_roots};
+use bootstrap::places::check_scalar_projection;
+use bootstrap::nested_loans::nested_loan;
+use bootstrap::check_flow::LoopEdge;
+use bootstrap::scalar::{integer_width, is_integer, is_float, folded_integer, float_zero};
+
+fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], values: &mut [CheckedValue], edges: &mut [LoopEdge], statement: u64) -> i64 {
+    let place = graph[statement].first_child;
+    let right = graph[place].next_sibling;
+    let kind = nodes[place].kind;
+    let start = nodes[statement].start;
+    let operator = source[nodes[statement].name_start];
+    let shift = operator == 60 || operator == 62;
+    let bitwise = operator == 38 || operator == 124 || operator == 94;
+    let mut binding: u64 = 0;
+    let mut ty: i64 = 0;
+    if kind == 17 || kind == 18 {
+        let (element, base) = check_scalar_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], copy(place), true, false);
+        if element <= 0 { return if element == 0 { -9 } else { element }; }
+        ty = element;
+        binding = base;
+    } else if kind == 7 || kind == 14 {
+        let mut name = copy(place);
+        while nodes[name].kind == 14 { name = graph[name].first_child; }
+        if nodes[name].kind != 7 { return -9; }
+        binding = graph[name].binding;
+        if binding == 0 { return 0 - violation(1, start); }
+        if values[binding].state != 1 { return 0 - violation(6, start); }
+        let writable = if kind == 7 { values[binding].mutable }
+            else if nested_loan(values[binding].ty) { values[binding].ty >= 1930 }
+            else { values[binding].exclusive };
+        if !writable { return 0 - violation(5, start); }
+        ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(place), 0, 0);
+        if ty < 0 { return ty; }
+    } else { return 0 - violation(1, start); }
+    if ty < 1 || ty > 9 || ty == 3 || ((shift || bitwise) && !is_integer(copy(ty))) {
+        return 0 - violation(1, start);
+    }
+
+    // A reservation on the statement permits reads of the prepared place.
+    // Mutations and moves consult it through the ordinary loan checks.
+    let selector = if values[place].state == 6 { values[place].origin_call } else { 0 };
+    let selector_kind = if values[place].state == 6 { values[place].loan_parent } else { 0 };
+    values[statement] = CheckedValue { ty: 0, state: 5, mutable: false,
+        target: copy(binding), loan_parent: selector_kind, origin_call: selector, exclusive: false };
+    let expected = if shift { 0 } else { copy(ty) };
+    let mut operand: i64 = 0;
+    if nodes[right].kind == 2 {
+        let (status, outcome) = check_block_with_destination(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[0..values.len()],
+            &mut edges[0..edges.len()], copy(right), 0 - expected - 1, true, 0);
+        operand = if status == 0 && outcome >= 5 { outcome - 4 } else if status != 0 { 0 - status } else { -9 };
+    } else {
+        operand = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(right), expected, 0);
+    }
+    values[statement] = CheckedValue { ty: 0, state: 0, mutable: false,
+        target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+    if operand < 0 { return operand; }
+    if values[binding].state != 1 { return 0 - violation(6, start); }
+    if values[binding].target != 0 && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+        return 0 - violation(4, start);
+    }
+    let conflict = loan_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        binding, copy(statement), true, nodes[statement].end);
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+
+    let count = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(right));
+    if shift {
+        if !is_integer(operand) || (count.known && (count.negative || count.magnitude >= integer_width(copy(ty)))) {
+            return 0 - violation(1, start);
+        }
+    } else if operand != ty { return 0 - violation(1, start); }
+    if operator == 47 || operator == 37 {
+        if (count.known && count.magnitude == 0) || (is_float(copy(ty))
+            && float_zero(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], right)) {
+            return 0 - violation(1, start);
+        }
+    }
+    0
+}

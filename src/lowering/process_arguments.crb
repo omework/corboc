@@ -1,0 +1,58 @@
+use bootstrap::model::{AstNode, StaticNode, result_payload};
+use bootstrap::lowering_annotations::word;
+use bootstrap::lowering_types::{declaration, local, nominal_type, number, temporary, unsigned};
+use bootstrap::lowering_text::string_bytes;
+use bootstrap::process_arguments::argument_text_type;
+use bootstrap::target_c::{byte_text, character};
+
+fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64, emit: bool) -> i64 {
+    let ty = argument_text_type();
+    if expected != 0 && expected != ty { return -1; }
+    let length = string_bytes(&source[0..source.len()], (*literal).start, (*literal).end, false);
+    if length < 0 { return -1; }
+    if emit {
+        // Static storage lets the text descriptor cross a function or scope boundary.
+        { let code: [u8; 26] = [115,116,97,116,105,99,32,99,111,110,115,116,32,117,105,110,116,56,95,116,32,116,101,120,116,95]; byte_text(&code[..]); }
+        number(copy(node));
+        { let code: [u8; 4] = [91,93,61,123]; byte_text(&code[..]); }
+        drop(string_bytes(&source[0..source.len()], (*literal).start, (*literal).end, true));
+        { let code: [u8; 4] = [48,125,59,10]; byte_text(&code[..]); }
+        declaration(ty, copy(node));
+        { let code: [u8; 7] = [61,123,116,101,120,116,95]; byte_text(&code[..]); }
+        number(node); character(44); number(unsigned(length));
+        { let code: [u8; 3] = [125,59,10]; byte_text(&code[..]); }
+    }
+    argument_text_type()
+}
+
+fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    ctx: &Lowering, node: u64) -> i64 {
+    let receiver = graph[node].first_child;
+    let name: [u8; 8] = [97,115,95,98,121,116,101,115];
+    if graph[receiver].next_sibling != 0 || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..]) { return -1; }
+    if (*ctx).emit {
+        let binding = graph[receiver].binding;
+        declaration(2000004, node); { let code: [u8; 12] = [61,123,40,117,105,110,116,56,95,116,42,41]; byte_text(&code[..]); }
+        local(copy(binding)); { let code: [u8; 6] = [46,100,97,116,97,44]; byte_text(&code[..]); }
+        local(binding); { let code: [u8; 7] = [46,108,101,110,125,59,10]; byte_text(&code[..]); }
+    }
+    2000004
+}
+
+fn lower_process_arguments(nodes: &[AstNode], graph: &[StaticNode], ctx: &Lowering, node: u64, ty: i64) -> i64 {
+    let error = nominal_type(result_payload(copy(ty), false));
+    let invalid = graph[error].first_child;
+    let unavailable = graph[invalid].next_sibling;
+    if nodes[error].kind != 29 || invalid == 0 || unavailable == 0
+        || graph[unavailable].next_sibling != 0 || graph[invalid].first_child != 0
+        || graph[unavailable].first_child != 0 { return -1; }
+    if (*ctx).emit {
+        declaration(copy(ty), copy(node)); { let code: [u8; 6] = [61,123,48,125,59,10]; byte_text(&code[..]); }
+        temporary(copy(node)); { let code: [u8; 38] = [46,108,105,118,101,61,116,114,117,101,59,10,105,102,40,99,114,117,115,116,95,97,114,103,115,95,115,116,97,116,117,115,61,61,48,41,123,10]; byte_text(&code[..]); }
+        temporary(copy(node)); { let code: [u8; 10] = [46,111,107,61,116,114,117,101,59,10]; byte_text(&code[..]); }
+        temporary(copy(node)); { let code: [u8; 71] = [46,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,61,40,122,49,51,57,41,123,40,122,49,51,56,42,41,99,114,117,115,116,95,97,114,103,115,46,100,97,116,97,44,99,114,117,115,116,95,97,114,103,115,46,108,101,110,125,59,10,125,101,108,115,101,123,10]; byte_text(&code[..]); }
+        temporary(node); { let code: [u8; 40] = [46,112,97,121,108,111,97,100,46,101,114,114,111,114,46,116,97,103,61,99,114,117,115,116,95,97,114,103,115,95,115,116,97,116,117,115,61,61,49,63]; byte_text(&code[..]); }
+        number(invalid); character(58); number(unavailable); { let code: [u8; 4] = [59,10,125,10]; byte_text(&code[..]); }
+    }
+    ty
+}

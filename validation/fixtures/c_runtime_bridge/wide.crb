@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Item{byte:u8,number:i64}
+fn main(){
+ let mut array:[Item;2]=[Item{byte:1,number:2},Item{byte:3,number:4}];
+ let mut large:[u8;5000]=[0;5000];
+ @unchecked{@c(includes={"assert.h"}){
+  assert(sizeof(Corbo_Item)==16);
+  assert(offsetof(Corbo_Item,f_number)==8);
+  ${array}.items[1].f_number=14;
+  ${large}.items[4999]=25;
+ }}
+ print(array[1].number);print(large[4999]);
+}

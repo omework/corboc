@@ -1,0 +1,2367 @@
+use bootstrap::calls::{bootstrap_callee, identity_aggregate, spawned_function, joined_binding};
+use bootstrap::vector_storage::{vector_owned_string, vector_scalar_struct};
+use bootstrap::model::{AstNode, StaticNode, hex_digit};
+use bootstrap::ownership::nominal_variant;
+use bootstrap::verify::regional_function;
+
+use bootstrap::target_c::{character, byte_text, emit_runtime, emit_task_runtime};
+
+fn number(value: u64) {
+    if value >= 10 { number(value / 10); }
+    let digit = value % 10;
+    let mut index: u64 = 0;
+    let mut byte: i32 = 48;
+    while index < digit { index = index + 1; byte = byte + 1; }
+    character(byte);
+}
+
+fn spelling(source: &[u8], start: u64, end: u64) {
+    let mut cursor = start;
+    while cursor < end {
+        character(source[cursor] as i32);
+        cursor = cursor + 1;
+    }
+}
+
+// Emit only positive, bounded decimal constants in this backend.
+// Restrict this lowering to i64 pools so the generated payload representation
+// and printf format match the verified type.
+fn i64_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> bool {
+    let ty = graph[graph[pool].first_child].first_child;
+    let name = &source[nodes[ty].name_start..nodes[ty].name_end];
+    let expected: [u8; 3] = [105, 54, 52];
+    name.content_eq(&expected[..])
+}
+
+fn nominal_pool_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+    let ty = graph[graph[pool].first_child].first_child;
+    nominal_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty)
+}
+
+fn nominal_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> u64 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if (nodes[item].kind == 28 || nodes[item].kind == 29) && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
+            copy(item), copy(ty)) { return item; }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+fn vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> bool {
+    let ty = graph[graph[pool].first_child].first_child;
+    let word: [u8; 6] = [86,101,99,116,111,114];
+    let string: [u8; 6] = [83,116,114,105,110,103];
+    matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(ty), &word[..])
+        || matches_word(&source[0..source.len()], &nodes[0..nodes.len()], ty, &string[..])
+}
+
+fn vector_width(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+    let ty = graph[graph[pool].first_child].first_child;
+    let element = graph[ty].first_child;
+    let narrow: [u8; 2] = [117,56];
+    if vector_owned_string(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(ty)) { return 16; }
+    let nominal = vector_scalar_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty);
+    if nominal != 0 { return 8 * pool_width(&graph[0..graph.len()], nominal); }
+    if (element == 0 && vector_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], pool)) || matches_word(&source[0..source.len()], &nodes[0..nodes.len()], element, &narrow[..]) { return 1; }
+    8
+}
+
+fn text_unit(source: &[u8], start: u64) -> u64 {
+    let mut cursor = copy(start);
+    let mut value: u64 = 0;
+    while cursor < start + 4 {
+        value = value * 16 + hex_digit(source[cursor]) as u64;
+        cursor = cursor + 1;
+    }
+    value
+}
+
+// The scanner has already validated all escape sequences. Decode to UTF-8
+// bytes, keeping embedded NUL in the same length-delimited payload.
+fn text_payload(source: &[u8], start: u64, end: u64, emit: bool) -> u64 {
+    let mut at = start + 1;
+    let mut len: u64 = 0;
+    while at + 1 < end {
+        let mut value = source[at] as u64;
+        let mut unicode = false;
+        at = at + 1;
+        if value == 92 {
+            value = source[at] as u64;
+            at = at + 1;
+            if value == 117 {
+                unicode = true;
+                value = text_unit(&source[0..source.len()], copy(at));
+                at = at + 4;
+                if value >= 55296 && value <= 56319 {
+                    let low = text_unit(&source[0..source.len()], at + 2);
+                    value = 65536 + (value - 55296) * 1024 + (low - 56320);
+                    at = at + 6;
+                }
+            } else {
+                if value == 98 { value = 8; }
+                if value == 102 { value = 12; }
+                if value == 110 { value = 10; }
+                if value == 114 { value = 13; }
+                if value == 116 { value = 9; }
+            }
+        }
+        let mut count: u64 = 1;
+        let mut prefix: u64 = 0;
+        if unicode && value > 127 {
+            count = 2; prefix = 192;
+            if value > 2047 { count = 3; prefix = 224; }
+            if value > 65535 { count = 4; prefix = 240; }
+        }
+        let mut shift = (count - 1) * 6;
+        let mut first = true;
+        loop {
+            if emit {
+                let byte = if first { copy(prefix) + (copy(value) >> copy(shift)) } else { 128 + ((copy(value) >> copy(shift)) & 63) };
+                number(byte); character(44);
+            }
+            if shift == 0 { break; }
+            first = false;
+            shift = shift - 6;
+        }
+        len = len + count;
+    }
+    len
+}
+
+fn text_growth(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+    if nodes[node].kind == 16 {
+        let arg = graph[graph[node].first_child].next_sibling;
+        let push: [u8; 8] = [112,117,115,104,95,115,116,114];
+        if nodes[arg].kind == 9 && source[nodes[arg].start] == 34
+            && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &push[..]) {
+            return text_payload(&source[0..source.len()], nodes[arg].start, nodes[arg].end, false);
+        }
+    }
+    if nodes[node].kind == 26 {
+        let yes = graph[graph[node].first_child].next_sibling;
+        let no = graph[yes].next_sibling;
+        let left = text_growth(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], yes);
+        if no == 0 { return left; }
+        let right = text_growth(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], no);
+        return if left > right { left } else { right };
+    }
+    let mut total: u64 = 0;
+    let mut child = graph[node].first_child;
+    while child != 0 {
+        total = total + text_growth(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(child));
+        child = graph[child].next_sibling;
+    }
+    total
+}
+
+fn region_annotation(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+    let region: [u8; 12] = [115,116,97,99,107,95,114,101,103,105,111,110];
+    nodes[node].kind == 58 && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], node, &region[..])
+}
+
+pub fn datastack_property(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], word: &[u8]) -> u64 {
+    let header = graph[0].first_child;
+    let datastack: [u8; 9] = [100,97,116,97,115,116,97,99,107];
+    if nodes[header].kind != 58 || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()],
+        copy(header), &datastack[..]) { return 0; }
+    let mut property = graph[header].first_child;
+    while property != 0 {
+        if matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(property),
+            &word[0..word.len()]) { return property; }
+        property = graph[property].next_sibling;
+    }
+    0
+}
+
+fn size_multiplier(source: &[u8], nodes: &[AstNode], property: u64) -> u64 {
+    let unit = source[nodes[property].end - 1];
+    if unit == 75 { return 1024; }
+    if unit == 77 { return 1048576; }
+    if unit == 71 { return 1073741824; }
+    0
+}
+
+pub fn emit_size(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], property: u64) {
+    let count = graph[property].first_child;
+    spelling(&source[0..source.len()], nodes[count].start, nodes[count].end);
+    let times: [u8; 4] = [85,76,76,42];
+    byte_text(&times[..]);
+    number(size_multiplier(&source[0..source.len()], &nodes[0..nodes.len()], property));
+}
+
+fn decimal(source: &[u8], start: u64, end: u64) -> bool {
+    if end <= start || end - start > 9 { return false; }
+    if source[start] < 49 || source[start] > 57 { return false; }
+    let mut cursor = start + 1;
+    while cursor < end {
+        if source[cursor] < 48 || source[cursor] > 57 { return false; }
+        cursor = cursor + 1;
+    }
+    true
+}
+
+// C decimal literals must not accidentally be emitted as octal.
+fn decimal_value(source: &[u8], start: u64, end: u64) -> bool {
+    (end - start == 1 && source[start] == 48)
+        || decimal(&source[0..source.len()], start, end)
+}
+
+fn integer_literal(nodes: &[AstNode], graph: &[StaticNode], source: &[u8], expr: u64) -> bool {
+    if nodes[expr].kind == 9 { return true; }
+    nodes[expr].kind == 12 && source[nodes[expr].name_start] == 45
+        && nodes[graph[expr].first_child].kind == 9
+}
+
+fn emit_signed_integer(source: &[u8], start: u64, end: u64, negative: bool, emit: bool) -> bool {
+    let mut cursor = copy(start);
+    let mut base: u64 = 10;
+    let mut limit: u64 = 9223372036854775807;
+    if negative { limit = limit + 1; }
+    if end - start >= 2 && source[start] == 48 && (source[start + 1] == 120 || source[start + 1] == 88) {
+        base = 16;
+        cursor = cursor + 2;
+    }
+    if cursor == end { return false; }
+    let mut value: u64 = 0;
+    while cursor < end {
+        let digit = hex_digit(source[cursor]) as u64;
+        if digit >= base || value > (limit - digit) / base { return false; }
+        value = value * base + digit;
+        cursor = cursor + 1;
+    }
+    if emit {
+        if value == 9223372036854775808 {
+            let minimum: [u8; 9] = [76,76,79,78,71,95,77,73,78];
+            byte_text(&minimum[..]);
+        } else {
+            if negative { character(45); }
+            number(value); character(76); character(76);
+        }
+    }
+    true
+}
+
+// The verifier supplies the binding links. A zero means no active owner.
+struct Owner {
+    slot: u64,
+    pool: u64,
+    constructor: u64,
+    region: bool,
+}
+
+fn same_name(source: &[u8], nodes: &[AstNode], left: u64, right: u64) -> bool {
+    let a = &source[nodes[left].name_start..nodes[left].name_end];
+    let b = &source[nodes[right].name_start..nodes[right].name_end];
+    a.content_eq(&b[0..b.len()])
+}
+
+fn matches_word(source: &[u8], nodes: &[AstNode], node: u64, word: &[u8]) -> bool {
+    let name = &source[nodes[node].name_start..nodes[node].name_end];
+    name.content_eq(&word[0..word.len()])
+}
+
+// Check the destructor signature separately from its statement sequence.
+fn destructor_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], implementation: u64) -> u64 {
+    let method = graph[implementation].first_child;
+    let receiver = graph[method].first_child;
+    let mut body = graph[receiver].next_sibling;
+    if nodes[body].kind == 4 {
+        let unit: [u8; 4] = [86, 111, 105, 100];
+        if !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(body), &unit[..])
+            || graph[body].first_child != 0 { return 0; }
+        body = graph[body].next_sibling;
+    }
+    if nodes[method].kind != 1 || graph[method].next_sibling != 0
+        || nodes[receiver].kind != 3 || graph[receiver].first_child != 0
+        || nodes[body].kind != 2 || graph[body].next_sibling != 0 { return 0; }
+    let drop_word: [u8; 4] = [100, 114, 111, 112];
+    let self_word: [u8; 4] = [115, 101, 108, 102];
+    if !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], method, &drop_word[..])
+        || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(receiver), &self_word[..]) { return 0; }
+    let mut cursor = nodes[receiver].start;
+    if source[cursor] != 38 { return 0; }
+    cursor = cursor + 1;
+    while source[cursor] == 32 { cursor = cursor + 1; }
+    if nodes[receiver].name_start - cursor < 4 || source[cursor] != 109
+        || source[cursor + 1] != 117 || source[cursor + 2] != 116 { return 0; }
+    receiver
+}
+
+fn declared_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    nominal: u64, projection: u64) -> u64 {
+    let mut field = graph[nominal].first_child;
+    while field != 0 {
+        if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(projection)) {
+            return field;
+        }
+        field = graph[field].next_sibling;
+    }
+    0
+}
+
+fn receiver_path(nodes: &[AstNode], graph: &[StaticNode], receiver: u64, projection: u64) -> bool {
+    if nodes[projection].kind != 17 { return false; }
+    let base = graph[projection].first_child;
+    if nodes[base].kind == 17 {
+        return receiver_path(&nodes[0..nodes.len()], &graph[0..graph.len()], receiver, base);
+    }
+    let deref = graph[base].first_child;
+    let name = graph[deref].first_child;
+    nodes[base].kind == 19 && nodes[deref].kind == 14 && nodes[name].kind == 7
+        && graph[name].binding == receiver
+}
+
+fn projection_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    nominal: u64, base: u64) -> u64 {
+    if nodes[base].kind != 17 { return nominal; }
+    let parent = projection_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        nominal, graph[base].first_child);
+    if parent == 0 { return 0; }
+    let field = declared_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], parent, base);
+    if field == 0 { return 0; }
+    let annotation = graph[field].first_child;
+    if graph[annotation].first_child != 0 { return 0; }
+    nominal_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation)
+}
+
+fn inline_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    initializer: u64, projection: u64) -> u64 {
+    let base = graph[projection].first_child;
+    let object = if nodes[base].kind == 17 {
+        let outer = inline_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(initializer), base);
+        if outer == 0 { return 0; }
+        let child = graph[outer].first_child;
+        if nodes[child].kind != 37 { return 0; }
+        child
+    } else { initializer };
+    if object == 0 { return 0; }
+    declared_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], object, projection)
+}
+
+fn destructor_field_kind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    declaration: u64, projection: u64) -> i64 {
+    let mut field = graph[declaration].first_child;
+    while field != 0 {
+        if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(projection)) {
+            let annotation = graph[field].first_child;
+            if graph[annotation].first_child != 0 { return 0; }
+            let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+            let i32_word: [u8; 3] = [105,51,50];
+            let i64_word: [u8; 3] = [105,54,52];
+            let boolean: [u8; 4] = [98,111,111,108];
+            let u8_word: [u8; 2] = [117,56];
+            let u16_word: [u8; 3] = [117,49,54];
+            let u32_word: [u8; 3] = [117,51,50];
+            if name.content_eq(&boolean[..]) { return 3; }
+            if name.content_eq(&i32_word[..]) || name.content_eq(&i64_word[..])
+                || name.content_eq(&u8_word[..]) || name.content_eq(&u16_word[..])
+                || name.content_eq(&u32_word[..]) { return 2; }
+            return 0;
+        }
+        field = graph[field].next_sibling;
+    }
+    0
+}
+
+fn field_position(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    nominal: u64, projection: u64) -> u64 {
+    let mut field = graph[nominal].first_child;
+    let mut index: u64 = 0;
+    while field != 0 {
+        if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(projection)) {
+            return index;
+        }
+        field = graph[field].next_sibling;
+        index = index + 1;
+    }
+    index
+}
+
+fn pool_width(graph: &[StaticNode], nominal: u64) -> u64 {
+    if nominal == 0 { return 1; }
+    let mut field = graph[nominal].first_child;
+    let mut width: u64 = 0;
+    while field != 0 {
+        width = width + 1;
+        field = graph[field].next_sibling;
+    }
+    if width == 0 { return 1; }
+    width
+}
+
+fn payload_width(nodes: &[AstNode], graph: &[StaticNode], nominal: u64) -> u64 {
+    if nodes[nominal].kind != 29 { return pool_width(&graph[0..graph.len()], nominal); }
+    let mut width: u64 = 1;
+    let mut variant = graph[nominal].first_child;
+    while variant != 0 {
+        let fields = pool_width(&graph[0..graph.len()], copy(variant));
+        if fields > width { width = fields; }
+        variant = graph[variant].next_sibling;
+    }
+    width
+}
+
+fn enum_offset(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    nominal: u64, expression: u64) -> u64 {
+    let mut variant = graph[nominal].first_child;
+    let mut index: u64 = 0;
+    while variant != 0 {
+        if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(variant), copy(expression)) {
+            return index;
+        }
+        index = index + 1;
+        variant = graph[variant].next_sibling;
+    }
+    index
+}
+
+fn slot_field(pool: u64, slot: u64, width: u64, index: u64) {
+    character(118); number(pool); character(91); character(115);
+    number(slot); character(42); number(width); character(43); number(index);
+    character(93);
+}
+
+fn local_destructor_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, block: u64) -> bool {
+    let pool = graph[binding].first_child;
+    nodes[binding].parent == block && nodes[pool].kind == 66
+        && mutable_local(&source[0..source.len()], &nodes[0..nodes.len()], binding)
+        && i64_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], pool)
+}
+
+fn local_destructor_slot(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    binding: u64, block: u64) -> bool {
+    let constructor = graph[binding].first_child;
+    let receiver = graph[constructor].first_child;
+    let new_word: [u8; 3] = [110,101,119];
+    nodes[binding].parent == block && nodes[constructor].kind == 16
+        && nodes[receiver].kind == 7 && graph[receiver].next_sibling != 0
+        && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], constructor, &new_word[..])
+        && local_destructor_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[receiver].binding, block)
+}
+
+fn destructor_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    context: &Destructor, expr: u64, condition: bool, emit: bool) -> bool {
+    let start = nodes[expr].start;
+    let end = nodes[expr].end;
+    let kind = nodes[expr].kind;
+    if kind == 19 {
+        return destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, graph[expr].first_child, condition, emit);
+    }
+    if kind == 7 && (!condition || (*context).receiver == 0) {
+        let binding = graph[expr].binding;
+        if binding == 0 || binding == (*context).receiver
+            || nodes[graph[binding].first_child].kind == 66 || nodes[graph[binding].first_child].kind == 16
+            || (nodes[binding].kind != 3 && nodes[binding].kind != 5) { return false; }
+        if emit { character(120); number(binding); }
+        return true;
+    }
+    if !condition && kind == 14 && (*context).receiver != 0 {
+        let binding = graph[graph[expr].first_child].binding;
+        if !local_destructor_slot(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(binding), nodes[binding].parent) { return false; }
+        if emit { character(42); character(121); number(binding); }
+        return true;
+    }
+    if !condition && kind == 15 {
+        let callee = graph[expr].first_child;
+        let arg = graph[callee].next_sibling;
+        let word: [u8; 4] = [99,111,112,121];
+        if graph[callee].binding != 0 || nodes[arg].kind != 7 || graph[arg].next_sibling != 0
+            || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], callee, &word[..]) { return false; }
+        return destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, arg, false, emit);
+    }
+    if condition && kind == 12 && source[nodes[expr].name_start] == 33 {
+        if emit { character(33); character(40); }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, graph[expr].first_child, true, copy(emit)) { return false; }
+        if emit { character(41); }
+        return true;
+    }
+    if !condition && kind == 11 {
+        let start = nodes[expr].name_start;
+        let operator = source[start];
+        if nodes[expr].name_end - start != 1
+            || (operator != 43 && operator != 45 && operator != 42 && operator != 47 && operator != 37) { return false; }
+        let left = graph[expr].first_child;
+        let right = graph[left].next_sibling;
+        if (operator == 47 || operator == 37)
+            && (nodes[right].kind != 9 || !decimal(&source[0..source.len()], nodes[right].start, nodes[right].end)) {
+            return false;
+        }
+        if (*context).receiver != 0 && ((nodes[left].kind != 9 && nodes[left].kind != 17)
+            || (nodes[right].kind != 9 && nodes[right].kind != 17)) { return false; }
+        if emit {
+            let operation: [u8; 8] = [110,117,109,101,114,105,99,40];
+            byte_text(&operation[..]); number(operator as u64); character(44);
+        }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, copy(left), false, copy(emit)) { return false; }
+        if emit { character(44); }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, graph[left].next_sibling, false, copy(emit)) { return false; }
+        if emit { character(41); }
+        return true;
+    }
+    if condition && kind == 11 {
+        let start = nodes[expr].name_start;
+        let end = nodes[expr].name_end;
+        let first = source[start];
+        let second = source[start + 1];
+        let logical = end - start == 2 && first == second && (first == 38 || first == 124);
+        if !logical && !((end - start == 1 && (first == 60 || first == 62)) ||
+            (end - start == 2 && second == 61 && (first == 60 || first == 62 || first == 61 || first == 33))) {
+            return false;
+        }
+        let left = graph[expr].first_child;
+        if emit { character(40); }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, copy(left), copy(logical), copy(emit)) { return false; }
+        if emit { spelling(&source[0..source.len()], start, end); }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            context, graph[left].next_sibling, logical, copy(emit)) { return false; }
+        if emit { character(41); }
+        return true;
+    }
+    if !condition && kind == 12 && source[nodes[expr].name_start] == 45 {
+        let child = graph[expr].first_child;
+        if nodes[child].kind != 9 { return false; }
+        return emit_signed_integer(&source[0..source.len()], nodes[child].start, nodes[child].end, true, emit);
+    }
+    if kind == 9 {
+        if condition || source[start] == 116 || source[start] == 102 {
+            let word = &source[start..end];
+            let yes: [u8; 4] = [116,114,117,101];
+            let no: [u8; 5] = [102,97,108,115,101];
+            let truth = word.content_eq(&yes[..]);
+            if !truth && !word.content_eq(&no[..]) { return false; }
+            if emit { character(if truth { 49 } else { 48 }); }
+            return true;
+        }
+        return emit_signed_integer(&source[0..source.len()], start, end, false, emit);
+    }
+    if condition || !receiver_path(&nodes[0..nodes.len()], &graph[0..graph.len()], (*context).receiver, copy(expr)) { return false; }
+    let base = graph[expr].first_child;
+    let nominal = projection_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        (*context).nominal, copy(base));
+    if nominal == 0 || destructor_field_kind(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        nominal, copy(expr)) == 0 { return false; }
+    if (*context).slot != 0 && nodes[base].kind != 17 {
+        if emit {
+            let width = pool_width(&graph[0..graph.len()], (*context).nominal);
+            let index = field_position(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                (*context).nominal, expr);
+            slot_field((*context).pool, (*context).slot, width, index);
+        }
+    } else if (*context).constructor != 0 {
+        let mut initializer = (*context).constructor;
+        if (*context).slot != 0 && nodes[initializer].kind != 37 {
+            initializer = graph[graph[initializer].first_child].next_sibling;
+        }
+        let field = inline_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            initializer, expr);
+        if field == 0 {
+            if (*context).slot == 0 { return false; }
+            if emit { character(48); character(76); character(76); }
+        } else {
+            if !integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()], &source[0..source.len()],
+                graph[field].first_child) { return false; }
+            if emit { character(42); character(102); number(field); }
+        }
+    } else if emit {
+        character(48); character(76); character(76);
+    }
+    true
+}
+
+struct Destructor {
+    receiver: u64,
+    nominal: u64,
+    constructor: u64,
+    slot: u64,
+    pool: u64,
+}
+
+fn destructor_move(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> bool {
+    let mut value = expression;
+    while nodes[value].kind == 19 { value = graph[value].first_child; }
+    if nodes[value].kind == 11 {
+        let left = graph[value].first_child;
+        return destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(left))
+            && destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[left].next_sibling);
+    }
+    if nodes[value].kind != 7 { return true; }
+    let binding = graph[value].binding;
+    if binding == 0 { return false; }
+    let mut parent = nodes[value].parent;
+    while parent != 0 && parent != graph[binding].scope {
+        if nodes[parent].kind == 22 { return false; }
+        parent = nodes[parent].parent;
+    }
+    let mut use_node: u64 = 1;
+    while use_node < nodes.len() as u64 {
+        if nodes[use_node].kind == 7 && graph[use_node].binding == binding
+            && nodes[use_node].start > nodes[value].start { return false; }
+        use_node = use_node + 1;
+    }
+    true
+}
+
+fn scalar_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+    let word: [u8; 3] = [105,54,52];
+    nodes[annotation].kind == 4 && graph[annotation].first_child == 0
+        && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], annotation, &word[..])
+}
+
+fn mutable_local(source: &[u8], nodes: &[AstNode], binding: u64) -> bool {
+    if nodes[binding].kind != 5 { return false; }
+    let end = nodes[binding].name_start;
+    let mut word = nodes[binding].start + 3;
+    while word < end && (source[word] == 32 || source[word] == 9 || source[word] == 10 || source[word] == 13) {
+        word = word + 1;
+    }
+    end - word >= 4 && source[word] == 109 && source[word + 1] == 117 && source[word + 2] == 116
+}
+
+fn plain_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], callee: u64) -> u64 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 1 && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
+            copy(item), copy(callee)) {
+            let main: [u8; 4] = [109,97,105,110];
+            if !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(item), &main[..]) {
+                return item;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+fn print_kind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    context: &Destructor, expression: u64) -> i64 {
+    if nodes[expression].kind == 17 && receiver_path(&nodes[0..nodes.len()], &graph[0..graph.len()],
+        (*context).receiver, copy(expression)) {
+        let nominal = projection_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            (*context).nominal, graph[expression].first_child);
+        if nominal == 0 { return 0; }
+        return destructor_field_kind(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            nominal, expression);
+    }
+    if nodes[expression].kind == 9 {
+        let byte = source[nodes[expression].start];
+        if byte == 116 || byte == 102 { return 3; }
+    }
+    2
+}
+
+fn print_begin(kind: i64) {
+    let prefix: [u8; 15] = [112,114,105,110,116,102,40,34,37,115,92,110,34,44,40];
+    let integer: [u8; 16] = [112,114,105,110,116,102,40,34,37,108,108,100,92,110,34,44];
+    if kind == 3 { byte_text(&prefix[..]); } else { byte_text(&integer[..]); }
+}
+
+fn print_end(kind: i64) {
+    if kind == 3 {
+        let format: [u8; 16] = [41,63,34,116,114,117,101,34,58,34,102,97,108,115,101,34];
+        byte_text(&format[..]);
+    }
+    character(41); character(59); character(10);
+}
+
+fn destructor_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    context: &Destructor, block: u64, looping: bool, emit: bool) -> bool {
+    let mut statement = graph[block].first_child;
+    while statement != 0 {
+        let child = graph[statement].first_child;
+        let kind = nodes[statement].kind;
+        if kind == 6 && child == 0 {
+            if emit {
+                if (*context).receiver == 0 {
+                    let stop: [u8; 8] = [114,101,116,117,114,110,59,10];
+                    byte_text(&stop[..]);
+                } else {
+                    let jump: [u8; 6] = [103,111,116,111,32,100];
+                    byte_text(&jump[..]);
+                    number(if (*context).constructor == 0 { (*context).nominal } else { (*context).constructor }); character(59); character(10);
+                }
+            }
+        } else if (kind == 23 || kind == 24) && looping && child == 0 {
+            if emit {
+                let stop: [u8; 7] = [98,114,101,97,107,59,10];
+                let restart: [u8; 10] = [99,111,110,116,105,110,117,101,59,10];
+                if kind == 23 { byte_text(&stop[..]); } else { byte_text(&restart[..]); }
+            }
+        } else if kind == 22 {
+            let condition = graph[statement].first_child;
+            let body = graph[condition].next_sibling;
+            if nodes[body].kind != 2 { return false; }
+            if emit {
+                let loop_word: [u8; 6] = [119,104,105,108,101,40];
+                byte_text(&loop_word[..]);
+            }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                context, condition, true, copy(emit)) { return false; }
+            if emit { character(41); character(123); character(10); }
+            if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                context, body, true, copy(emit)) { return false; }
+            if emit { character(125); character(10); }
+        } else if (kind == 8 || kind == 10) && nodes[child].kind == 2 {
+            if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                context, child, copy(looping), copy(emit)) { return false; }
+        } else if kind == 21 && nodes[child].kind == 7 {
+            let binding = graph[child].binding;
+            let operator = nodes[statement].name_start;
+            if nodes[statement].name_end - operator != 1 || source[operator] != 61
+                || !mutable_local(&source[0..source.len()], &nodes[0..nodes.len()], copy(binding)) { return false; }
+            let value = graph[child].next_sibling;
+            if emit { character(120); number(binding); character(61); }
+            if !destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(value))
+                || !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    context, value, false, copy(emit)) { return false; }
+            if emit { character(59); character(10); }
+        } else if kind == 5 && (*context).receiver != 0 && nodes[child].kind == 66 {
+            if !local_destructor_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(statement), copy(block)) { return false; }
+            let capacity = graph[graph[child].first_child].next_sibling;
+            if !decimal(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end) { return false; }
+            if emit {
+                let prefix: [u8; 20] = [108,111,110,103,32,108,111,110,103,32,42,100,97,116,97,95,112,111,111,108];
+                byte_text(&prefix[..]); number(copy(statement)); character(61);
+                let reserve: [u8; 43] = [112,117,115,104,40,115,105,122,101,111,102,40,108,111,110,103,32,108,111,110,103,41,44,95,65,108,105,103,110,111,102,40,108,111,110,103,32,108,111,110,103,41,44];
+                byte_text(&reserve[..]);
+                spelling(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end);
+                let tail: [u8; 9] = [41,59,10,40,118,111,105,100,41];
+                byte_text(&tail[..]); let name: [u8; 9] = [100,97,116,97,95,112,111,111,108]; byte_text(&name[..]); number(copy(statement)); character(59); character(10);
+            }
+        } else if kind == 5 && (*context).receiver != 0 && nodes[child].kind == 16 {
+            if !local_destructor_slot(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(statement), copy(block)) { return false; }
+            let receiver = graph[child].first_child;
+            let pool = graph[receiver].binding;
+            let value = graph[receiver].next_sibling;
+            if graph[value].next_sibling != 0 { return false; }
+            let mut offset: u64 = 0;
+            let mut previous = graph[block].first_child;
+            while previous != statement {
+                let initializer = graph[previous].first_child;
+                if nodes[previous].kind == 5 && nodes[initializer].kind == 16
+                    && graph[graph[initializer].first_child].binding == pool { offset = offset + 1; }
+                previous = graph[previous].next_sibling;
+            }
+            if emit {
+                let prefix: [u8; 12] = [108,111,110,103,32,108,111,110,103,32,42,121];
+                byte_text(&prefix[..]); number(copy(statement));
+                let cell: [u8; 11] = [61,38,100,97,116,97,95,112,111,111,108];
+                byte_text(&cell[..]); number(copy(pool)); character(91); number(copy(offset));
+                character(93); character(59); character(10); character(42);
+                character(121); number(copy(statement)); character(61);
+            }
+            let capacity = graph[graph[graph[pool].first_child].first_child].next_sibling;
+            let mut limit: u64 = 0;
+            let mut digit = nodes[capacity].start;
+            while digit < nodes[capacity].end {
+                limit = limit * 10 + (source[digit] as u64 - 48);
+                digit = digit + 1;
+            }
+            if offset >= limit { return false; }
+            if !destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(value))
+                || !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    context, value, false, copy(emit)) { return false; }
+            if emit { character(59); character(10); }
+        } else if kind == 5 {
+            let initializer = if nodes[child].kind == 4 {
+                if !scalar_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) { return false; }
+                graph[child].next_sibling
+            } else { child };
+            if emit {
+                let local: [u8; 11] = [108,111,110,103,32,108,111,110,103,32,120];
+                byte_text(&local[..]); number(copy(statement)); character(61);
+            }
+            if !destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(initializer))
+                || !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    context, initializer, false, copy(emit)) { return false; }
+            if emit {
+                character(59); character(10);
+                let used: [u8; 7] = [40,118,111,105,100,41,120];
+                byte_text(&used[..]); number(copy(statement)); character(59); character(10);
+            }
+        } else if kind == 8 && nodes[child].kind == 15 {
+            let callee = graph[child].first_child;
+            let arg = graph[callee].next_sibling;
+            let word: [u8; 5] = [112,114,105,110,116];
+            if graph[callee].binding != 0 { return false; }
+            let printing = matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(callee), &word[..]);
+            let format = if printing {
+                print_kind(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], context, copy(arg))
+            } else { 2 };
+            if printing {
+                if arg == 0 || graph[arg].next_sibling != 0 { return false; }
+                if emit { print_begin(copy(format)); }
+            } else {
+                let function = plain_function(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], callee);
+                if function == 0 { return false; }
+                let mut parameter = graph[function].first_child;
+                let mut actual = copy(arg);
+                while nodes[parameter].kind == 3 {
+                    if actual == 0 { return false; }
+                    actual = graph[actual].next_sibling;
+                    parameter = graph[parameter].next_sibling;
+                }
+                if actual != 0 { return false; }
+                if emit { character(104); number(function); character(40); }
+            }
+            let mut actual = arg;
+            while actual != 0 {
+                if (!printing && !destructor_move(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(actual)))
+                    || !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        context, copy(actual), false, copy(emit)) { return false; }
+                actual = graph[actual].next_sibling;
+                if emit && actual != 0 { character(44); }
+            }
+            if emit { print_end(format); }
+        } else if (kind == 8 || kind == 10) && nodes[child].kind == 26 {
+            let condition = graph[child].first_child;
+            let yes = graph[condition].next_sibling;
+            let no = graph[yes].next_sibling;
+            if nodes[yes].kind != 2 || (no != 0 && nodes[no].kind != 2) { return false; }
+            if emit { character(105); character(102); character(40); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                context, condition, true, copy(emit)) { return false; }
+            if emit { character(41); character(123); character(10); }
+            if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                context, yes, copy(looping), copy(emit)) { return false; }
+            if no != 0 {
+                if emit {
+                    let otherwise: [u8; 7] = [125,101,108,115,101,123,10];
+                    byte_text(&otherwise[..]);
+                }
+                if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    context, no, copy(looping), copy(emit)) { return false; }
+            }
+            if emit { character(125); character(10); }
+        } else { return false; }
+        statement = graph[statement].next_sibling;
+    }
+    true
+}
+
+fn emit_destructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    constructor: u64, nominal: u64, slot: u64, pool: u64, emit: bool) -> bool {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 49 && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
+            copy(item), copy(nominal)) {
+            let receiver = destructor_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(item));
+            if receiver == 0 { return false; }
+            let mut body = graph[receiver].next_sibling;
+            if nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            let context = Destructor { receiver: receiver, nominal: copy(nominal),
+                constructor: copy(constructor), slot: copy(slot), pool: copy(pool) };
+            if emit {
+                character(123); character(10);
+                let local_label: [u8; 11] = [95,95,108,97,98,101,108,95,95,32,100];
+                byte_text(&local_label[..]);
+                number(if constructor == 0 { copy(nominal) } else { copy(constructor) }); character(59); character(10);
+                let mark: [u8; 25] = [115,105,122,101,95,116,32,100,114,111,112,95,109,97,114,107,61,99,117,114,115,111,114,59,10];
+                byte_text(&mark[..]);
+                // Keep a target for early return from the current destructor only.
+                let jump: [u8; 11] = [105,102,40,48,41,103,111,116,111,32,100];
+                byte_text(&jump[..]); number(if constructor == 0 { copy(nominal) } else { copy(constructor) }); character(59); character(10);
+            }
+            if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &context, body, false, copy(emit)) { return false; }
+            if emit {
+                character(100); number(if constructor == 0 { copy(nominal) } else { copy(constructor) }); character(58); character(59); character(10);
+                let reset: [u8; 18] = [99,117,114,115,111,114,61,100,114,111,112,95,109,97,114,107,59,10];
+                byte_text(&reset[..]);
+                character(125); character(10);
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    true
+}
+
+fn cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners: &mut [Owner], binding: u64, clear: bool, emit: bool) -> bool {
+    cleanup_order(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[0..owners.len()], binding, clear, false, emit)
+}
+
+fn cleanup_order(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners: &mut [Owner],
+    binding: u64, clear: bool, forward: bool, emit: bool) -> bool {
+    let slot = owners[binding].slot;
+    let constructor = owners[binding].constructor;
+    if constructor != 0 {
+        let pool = owners[binding].pool;
+        let nominal = if pool == 0 {
+            nominal_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constructor))
+        } else {
+            nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[pool].first_child)
+        };
+        if !emit_destructor(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(constructor), copy(nominal), copy(slot), pool, copy(emit)) { return false; }
+        let initializer = if nodes[constructor].kind == 37 { copy(constructor) } else {
+            graph[graph[constructor].first_child].next_sibling
+        };
+        let layout = if nodes[nominal].kind == 29 {
+            nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(nominal), copy(initializer))
+        } else { copy(nominal) };
+        let first_field = if nodes[nominal].kind == 29 {
+            graph[graph[initializer].first_child].next_sibling
+        } else if initializer == 0 || nodes[initializer].kind == 31 { initializer } else {
+            graph[initializer].first_child
+        };
+        if !cleanup_children(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[0..owners.len()], first_field, graph[layout].first_child, copy(clear), forward, copy(emit)) { return false; }
+    }
+    let pool = owners[binding].pool;
+    if emit && owners[binding].region {
+        let release: [u8; 13] = [114, 101, 103, 105, 111, 110, 95, 100, 114, 111, 112, 40, 114];
+        byte_text(&release[..]);
+        number(copy(slot)); character(41); character(59); character(10);
+    }
+    if emit && slot != 0 {
+        // pPOOL[sSLOT]=0;
+        character(112); number(pool); character(91); character(115); number(slot);
+        character(93); character(61); character(48); character(59); character(10);
+    }
+    if clear { owners[binding] = Owner { slot: 0, pool: 0, constructor: 0, region: false }; }
+    true
+}
+
+fn default_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    field: u64, depth: u64, emit: bool) -> bool {
+    if depth >= 64 { return false; }
+    let annotation = graph[field].first_child;
+    if graph[annotation].first_child != 0 { return true; }
+    let nominal = nominal_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    if nominal == 0 { return true; }
+    if nodes[nominal].kind != 28 { return false; }
+    if !emit_destructor(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        0, copy(nominal), 0, 0, copy(emit)) { return false; }
+    default_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        graph[nominal].first_child, depth + 1, emit)
+}
+
+fn default_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    field: u64, depth: u64, emit: bool) -> bool {
+    if field == 0 { return true; }
+    default_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        graph[field].next_sibling, copy(depth), copy(emit))
+        && default_cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            field, depth, emit)
+}
+
+fn cleanup_children(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], first_field: u64, declaration: u64, clear: bool, forward: bool, emit: bool) -> bool {
+    if declaration == 0 { return true; }
+    let next = graph[declaration].next_sibling;
+    if !forward && !cleanup_children(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[0..owners.len()], copy(first_field), copy(next), copy(clear), copy(forward), copy(emit)) { return false; }
+    let mut field = copy(first_field);
+    while field != 0 && !same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(declaration)) {
+        field = graph[field].next_sibling;
+    }
+    if field != 0 {
+        if !cleanup_order(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[0..owners.len()], field, copy(clear), copy(forward), copy(emit)) { return false; }
+    } else if !default_cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        declaration, 0, copy(emit)) { return false; }
+    !forward || cleanup_children(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[0..owners.len()], first_field, next, clear, forward, emit)
+}
+
+fn transfer_owner(owners: &mut [Owner], original: u64, destination: u64) -> bool {
+    let slot = owners[original].slot;
+    let constructor = owners[original].constructor;
+    if slot == 0 && constructor == 0 { return false; }
+    let pool = owners[original].pool;
+    let region = owners[original].region;
+    owners[destination] = Owner { slot: slot, pool: pool, constructor: constructor, region: region };
+    owners[original] = Owner { slot: 0, pool: 0, constructor: 0, region: false };
+    true
+}
+
+fn emit_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], target: u64, call: u64, emit: bool) -> bool {
+    let callee = graph[call].first_child;
+    let function = plain_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(callee));
+    let input = regional_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+    if input == 0 { return false; }
+    let scalar = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+    let mut parameter = graph[function].first_child;
+    let mut arg = graph[callee].next_sibling;
+    let mut pool: u64 = 0;
+    if emit {
+        let prefix: [u8; 9] = [82,101,103,105,111,110,32,42,114];
+        byte_text(&prefix[..]); number(copy(target)); character(61); character(104); number(function); character(40);
+    }
+    while nodes[parameter].kind == 3 {
+        if arg == 0 { return false; }
+        if parameter == input {
+            pool = graph[graph[arg].first_child].binding;
+            if pool == 0 || owners[pool].pool != pool { return false; }
+            if emit {
+                character(110); number(copy(pool)); character(44);
+                character(112); number(copy(pool)); character(44);
+                character(118); number(copy(pool));
+            }
+        } else if nodes[arg].kind == 9 && source[nodes[arg].start] == 116 {
+            if emit { character(49); }
+        } else if nodes[arg].kind == 9 && source[nodes[arg].start] == 102 {
+            if emit { character(48); }
+        } else if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &scalar, copy(arg), false, copy(emit)) { return false; }
+        parameter = graph[parameter].next_sibling;
+        arg = graph[arg].next_sibling;
+        if emit && arg != 0 { character(44); }
+    }
+    if pool == 0 || arg != 0 { return false; }
+    owners[target] = Owner { slot: copy(target), pool: copy(pool), constructor: 0, region: true };
+    if emit {
+        character(41); character(59); character(10);
+        let slot: [u8; 8] = [115,105,122,101,95,116,32,115];
+        byte_text(&slot[..]); number(copy(target)); character(61); character(114);
+        number(target); character(45); character(118); number(pool); character(59); character(10);
+    }
+    true
+}
+
+fn emit_region_result(owners: &mut [Owner], destination: u64, binding: u64, emit: bool) -> bool {
+    if !owners[binding].region || owners[binding].slot == 0 { return false; }
+    if emit {
+        character(113); number(destination); character(61); character(114);
+        number(owners[binding].slot); character(59); character(10);
+    }
+    owners[binding] = Owner { slot: 0, pool: 0, constructor: 0, region: false };
+    true
+}
+
+fn dedicated_region(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], allocation: u64) -> bool {
+    let mut parent = nodes[allocation].parent;
+    while parent != 0 && nodes[parent].kind != 1 {
+        if nodes[parent].kind == 22 || nodes[parent].kind == 27 {
+            // An annotated loop bounds and manages its own regions. A
+            // retained allocation in a loop without that budget may coexist
+            // with every previous iteration.
+            return nodes[graph[graph[parent].first_child].first_child].kind != 58
+                && nodes[graph[graph[graph[parent].first_child].next_sibling].first_child].kind != 58;
+        }
+        if nodes[parent].kind == 2 && region_annotation(&source[0..source.len()],
+            &nodes[0..nodes.len()], graph[parent].first_child) { return false; }
+        parent = nodes[parent].parent;
+    }
+    if parent == 0 { return false; }
+    let name = &source[nodes[parent].name_start..nodes[parent].name_end];
+    let mut candidate: u64 = 1;
+    while candidate < nodes.len() as u64 {
+        if nodes[candidate].kind == 15 && nodes[candidate].start >= nodes[parent].start
+            && nodes[candidate].end <= nodes[parent].end {
+            let callee = graph[candidate].first_child;
+            let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+            if graph[callee].binding == 0 && name.content_eq(&spelling[0..spelling.len()]) { return true; }
+        }
+        candidate = candidate + 1;
+    }
+    false
+}
+
+fn named_object(nodes: &[AstNode], expression: u64, declaration: u64) -> bool {
+    declaration != 0 && nodes[declaration].kind == 28 && nodes[expression].kind == 7
+}
+
+fn emit_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], statement: u64, expr: u64, emit: bool) -> bool {
+    if nodes[expr].kind == 16 {
+        let receiver = graph[expr].first_child;
+        let pool = graph[receiver].binding;
+        if pool == 0 || owners[pool].pool != pool { return false; }
+        let arg = graph[receiver].next_sibling;
+        if nodes[pool].kind == 3 || vector_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[pool].first_child) {
+            if arg != 0 || (nodes[statement].kind != 5 && nodes[statement].kind != 10 && nodes[statement].kind != 6) { return false; }
+            owners[statement] = Owner { slot: copy(statement), pool: copy(pool), constructor: 0, region: true };
+            if emit {
+                let slot: [u8; 8] = [115,105,122,101,95,116,32,115];
+                byte_text(&slot[..]);
+                number(copy(statement));
+                let take: [u8; 7] = [
+                    61, 116, 97, 107, 101, 40, 112,
+                ];
+                byte_text(&take[..]);
+                number(copy(pool)); character(44); character(110); number(copy(pool));
+                character(41); character(59); character(10);
+                let descriptor: [u8; 9] = [82, 101, 103, 105, 111, 110, 32, 42, 114];
+                byte_text(&descriptor[..]);
+                number(copy(statement));
+                character(61); character(38); character(118); number(copy(pool));
+                character(91); character(115); number(copy(statement)); character(93);
+                character(59); character(10);
+                let make: [u8; 12] = [114, 101, 103, 105, 111, 110, 95, 110, 101, 119, 40, 114];
+                byte_text(&make[..]);
+                number(copy(statement));
+                character(44);
+                number(vector_width(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    graph[pool].first_child));
+                character(44);
+                let pool_expression = graph[pool].first_child;
+                if vector_owned_string(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    graph[graph[pool_expression].first_child].first_child) {
+                    character(49);
+                } else { character(48); }
+                character(44);
+                if dedicated_region(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(expr)) { character(49); } else { character(48); }
+                character(41); character(59); character(10);
+            }
+            return true;
+        }
+
+        let declaration = nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], graph[pool].first_child);
+        let mut layout = copy(declaration);
+        let sum = nodes[declaration].kind == 29;
+        if sum {
+            layout = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(declaration), copy(arg));
+            if layout == 0 { return false; }
+        }
+        let mut adopted: u64 = 0;
+        if named_object(&nodes[0..nodes.len()], copy(arg), copy(declaration)) {
+            let original = graph[arg].binding;
+            adopted = owners[original].constructor;
+            if adopted == 0 || owners[original].slot != 0 || nodes[adopted].kind != 37 { return false; }
+            owners[original] = Owner { slot: 0, pool: 0, constructor: 0, region: false };
+        }
+        let named = declaration != 0;
+        owners[statement] = Owner { slot: copy(statement), pool: copy(pool),
+            constructor: if adopted != 0 { copy(adopted) } else if named { copy(expr) } else { 0 }, region: false };
+        if emit {
+            let prefix: [u8; 8] = [115,105,122,101,95,116,32,115];
+            byte_text(&prefix[..]); number(copy(statement)); character(61);
+            let take: [u8; 6] = [116, 97, 107, 101, 40, 112];
+            byte_text(&take[..]); number(copy(pool));
+            if sum {
+                let offset = enum_offset(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(declaration), copy(arg));
+                character(43); number(offset); character(42); character(110); number(copy(pool));
+            }
+            character(44); character(110); number(copy(pool));
+            character(41); character(59); character(10);
+        }
+        if sum && emit {
+            let offset = enum_offset(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(declaration), copy(arg));
+            character(115); number(copy(statement)); character(43); character(61);
+            number(offset); character(42); character(110); number(copy(pool)); character(59); character(10);
+        }
+        let width = payload_width(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration));
+        if named {
+            // Zero the slot before evaluating explicit fields in source order.
+            let mut index: u64 = 0;
+            let mut field = graph[layout].first_child;
+            while field != 0 {
+                if emit {
+                    slot_field(copy(pool), copy(statement), copy(width), copy(index));
+                    character(61); character(48); character(59); character(10);
+                }
+                index = index + 1;
+                field = graph[field].next_sibling;
+            }
+            if adopted != 0 {
+                let mut adopted_field = graph[adopted].first_child;
+                while adopted_field != 0 {
+                    let value = graph[adopted_field].first_child;
+                    if emit && integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()], &source[0..source.len()], value) {
+                        let index = field_position(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(layout), copy(adopted_field));
+                        slot_field(copy(pool), copy(statement), copy(width), index);
+                        character(61); character(42); character(102); number(copy(adopted_field)); character(59); character(10);
+                    }
+                    adopted_field = graph[adopted_field].next_sibling;
+                }
+                return true;
+            }
+            field = if sum { graph[graph[arg].first_child].next_sibling } else if arg == 0 || nodes[arg].kind == 31 { copy(arg) } else { graph[arg].first_child };
+            while field != 0 {
+                let value = graph[field].first_child;
+                let index = field_position(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(layout), copy(field));
+                if integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()], &source[0..source.len()], copy(value)) {
+                    let context = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+                    if emit {
+                        slot_field(copy(pool), copy(statement), copy(width), index);
+                        character(61);
+                    }
+                    if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &context, value, false, copy(emit)) { return false; }
+                    if emit { character(59); character(10); }
+                } else if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], copy(field), value, copy(emit)) { return false; }
+                field = graph[field].next_sibling;
+            }
+        } else {
+            let scalar = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+            if emit { slot_field(pool, statement, 1, 0); character(61); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, arg, false, copy(emit)) { return false; }
+            if emit { character(59); character(10); }
+        }
+    } else if nodes[statement].kind == 31 && integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()],
+        &source[0..source.len()], copy(expr)) {
+        if emit {
+            let declaration: [u8; 12] = [108,111,110,103,32,108,111,110,103,32,42,102];
+            byte_text(&declaration[..]); number(copy(statement));
+            // =push(sizeof(long long),_Alignof(long long),1);
+            let reserve_field: [u8; 48] = [61,112,117,115,104,40,115,105,122,101,111,102,40,108,111,110,103,32,108,111,110,103,41,44,95,65,108,105,103,110,111,102,40,108,111,110,103,32,108,111,110,103,41,44,49,41,59,10];
+            byte_text(&reserve_field[..]);
+            character(42); character(102); number(statement); character(61);
+        }
+        let context = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &context, expr, false, copy(emit)) { return false; }
+        if emit { character(59); character(10); }
+        return true;
+    } else if nodes[expr].kind == 7 {
+        let original = graph[expr].binding;
+        return transfer_owner(&mut owners[0..owners.len()], original, statement);
+    } else if nodes[expr].kind == 37 {
+        let mut field = graph[expr].first_child;
+        while field != 0 {
+            if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(field), graph[field].first_child, copy(emit)) {
+                return false;
+            }
+            field = graph[field].next_sibling;
+        }
+        owners[statement] = Owner { slot: 0, pool: 0, constructor: expr, region: false };
+    } else { return false; }
+    true
+}
+
+// Each scope drops its live owners in reverse declaration order. A move
+// clears the original owner while retaining its pool slot.
+fn emit_vector_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    argument: u64, nominal: u64, slot: u64, emit: bool) -> bool {
+    if emit {
+        let push: [u8; 17] = [114,101,103,105,111,110,95,112,117,115,104,95,114,111,119,40,114];
+        byte_text(&push[..]); number(slot); character(44);
+        let row: [u8; 20] = [40,99,111,110,115,116,32,108,111,110,103,32,108,111,110,103,91,93,41,123];
+        byte_text(&row[..]);
+    }
+    let mut declaration = graph[nominal].first_child;
+    while declaration != 0 {
+        let mut field = graph[argument].first_child;
+        while field != 0 && !same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(declaration)) {
+            field = graph[field].next_sibling;
+        }
+        let value = graph[field].first_child;
+        if field == 0 || nodes[value].kind != 9
+            || !decimal_value(&source[0..source.len()], nodes[value].start, nodes[value].end) { return false; }
+        if emit {
+            spelling(&source[0..source.len()], nodes[value].start, nodes[value].end);
+            character(44);
+        }
+        declaration = graph[declaration].next_sibling;
+    }
+    if emit { character(125); character(41); character(59); character(10); }
+    true
+}
+
+fn branch_preserves_owners(nodes: &[AstNode], graph: &[StaticNode], arm: u64) -> bool {
+    let mut node = graph[arm].first_child;
+    while node != 0 {
+        let kind = nodes[node].kind;
+        let child = graph[node].first_child;
+        if kind == 57 || kind == 6 || kind == 23 || kind == 24 { return false; }
+        if kind == 5 && nodes[child].kind != 9 && nodes[child].kind != 4 { return false; }
+        if kind == 8 || kind == 10 {
+            if nodes[child].kind != 16 && !(nodes[child].kind == 15
+                && graph[graph[graph[child].first_child].next_sibling].binding == 0) { return false; }
+        }
+        node = graph[node].next_sibling;
+    }
+    true
+}
+
+// Pool storage can own inline fields allocated on the same datastack.
+fn storage_escapes(nodes: &[AstNode], graph: &[StaticNode], owners: &[Owner],
+    binding: u64, block: u64) -> bool {
+    let constructor = owners[binding].constructor;
+    if constructor == 0 { return false; }
+    if owners[binding].slot == 0
+        && nodes[constructor].start >= nodes[block].start && nodes[constructor].end <= nodes[block].end { return true; }
+    let mut field = graph[constructor].first_child;
+    if nodes[constructor].kind == 16 {
+        field = graph[field].next_sibling;
+        if nodes[field].kind == 37 || nodes[field].kind == 74 { field = graph[field].first_child; }
+    }
+    while field != 0 {
+        if storage_escapes(&nodes[0..nodes.len()], &graph[0..graph.len()], &owners[0..owners.len()],
+            copy(field), copy(block)) { return true; }
+        field = graph[field].next_sibling;
+    }
+    false
+}
+
+fn inside_loop(nodes: &[AstNode], block: u64) -> bool {
+    let mut parent = nodes[block].parent;
+    while parent != 0 && nodes[parent].kind != 1 {
+        if nodes[parent].kind == 22 || nodes[parent].kind == 27 { return true; }
+        parent = nodes[parent].parent;
+    }
+    false
+}
+
+
+// A lowered call site initializes a concrete frame. Scalar capture leaves
+// keep their field identities when the worker reconstructs the owner tree.
+fn task_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    object: u64, phase: u64, emit: bool) -> bool {
+    if nodes[object].kind != 37 { return false; }
+    let mut field = graph[object].first_child;
+    while field != 0 {
+        let value = graph[field].first_child;
+        if nodes[value].kind == 37 {
+            if !task_capture(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                value, copy(phase), copy(emit)) { return false; }
+        } else {
+            if !integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()], &source[0..source.len()], value) { return false; }
+            if emit {
+                if phase == 0 {
+                    { let code: [u8; 11] = [108,111,110,103,32,108,111,110,103,32,99]; byte_text(&code[..]); }
+                    number(copy(field)); character(59); character(10);
+                } else if phase == 1 {
+                    { let code: [u8; 12] = [108,111,110,103,32,108,111,110,103,32,42,102]; byte_text(&code[..]); }
+                    number(copy(field));
+                    { let code: [u8; 10] = [61,38,102,114,97,109,101,45,62,99]; byte_text(&code[..]); }
+                    number(copy(field));
+                    { let code: [u8; 8] = [59,40,118,111,105,100,41,102]; byte_text(&code[..]); }
+                    number(copy(field)); character(59); character(10);
+                } else {
+                    { let code: [u8; 8] = [102,114,97,109,101,45,62,99]; byte_text(&code[..]); }
+                    number(copy(field)); character(61); character(42); character(102);
+                    number(copy(field)); character(59); character(10);
+                }
+            }
+        }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+fn task_arguments(nodes: &[AstNode], graph: &[StaticNode], site: u64) -> u64 {
+    let launch = graph[site].first_child;
+    let task = graph[graph[launch].first_child].next_sibling;
+    if nodes[task].kind != 15 { return 0; }
+    graph[graph[task].first_child].next_sibling
+}
+
+fn task_frame(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    site: u64, function: u64, phase: u64, emit: bool) -> bool {
+    let mut arg = task_arguments(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(site));
+    while arg != 0 {
+        if !task_capture(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(arg), copy(phase), copy(emit)) { return false; }
+        arg = graph[arg].next_sibling;
+    }
+    if phase != 1 { return true; }
+    let mut owners = [Owner { slot: 0, pool: 0, constructor: 0, region: false }; 524289];
+    let mut parameter = graph[function].first_child;
+    let mut actual = task_arguments(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(site));
+    while nodes[parameter].kind == 3 {
+        if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[..], copy(parameter), copy(actual), false) { return false; }
+        actual = graph[actual].next_sibling;
+        parameter = graph[parameter].next_sibling;
+    }
+    if emit {
+        { let code: [u8; 48] = [105,102,32,40,33,98,97,115,101,41,32,114,101,115,101,114,118,101,40,49,48,52,56,53,55,54,48,48,85,76,76,41,59,10,105,102,32,40,102,97,105,108,101,100,41,32,123,10]; byte_text(&code[..]); }
+    }
+    let mut prior = copy(parameter);
+    while prior != graph[function].first_child {
+        let mut binding = graph[function].first_child;
+        while graph[binding].next_sibling != prior { binding = graph[binding].next_sibling; }
+        if !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[..], copy(binding), false, copy(emit)) { return false; }
+        prior = binding;
+    }
+    if emit { { let code: [u8; 15] = [114,101,116,117,114,110,32,116,114,117,101,59,32,125,10]; byte_text(&code[..]); } }
+    // A top-level yield stores the next program point. Capture storage is
+    // independent of the worker and stays in the frame until completion.
+    let mut statement = graph[parameter].first_child;
+    let mut yields: u64 = 0;
+    if emit { { let code: [u8; 29] = [115,119,105,116,99,104,32,40,116,97,115,107,45,62,112,99,41,32,123,32,99,97,115,101,32,48,58,59,10]; byte_text(&code[..]); } }
+    while statement != 0 {
+        let expression = graph[statement].first_child;
+        let kind = nodes[statement].kind;
+        if kind == 25 {
+            yields = yields + 1;
+            if emit {
+                { let code: [u8; 9] = [116,97,115,107,45,62,112,99,61]; byte_text(&code[..]); }
+                number(copy(yields));
+                { let code: [u8; 21] = [59,32,114,101,116,117,114,110,32,102,97,108,115,101,59,10,99,97,115,101,32]; byte_text(&code[..]); }
+                number(copy(yields));
+                { let code: [u8; 3] = [58,59,10]; byte_text(&code[..]); }
+            }
+        } else if kind == 8 && nodes[expression].kind == 15 {
+            let callee = graph[expression].first_child;
+            let arg = graph[callee].next_sibling;
+            let drop_word: [u8; 4] = [100,114,111,112];
+            if !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], callee, &drop_word[..])
+                || nodes[arg].kind != 7 || graph[arg].next_sibling != 0 { return false; }
+            let binding = graph[arg].binding;
+            if owners[binding].constructor == 0 { return false; }
+            if !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[..], binding, true, copy(emit)) { return false; }
+        } else if kind == 6 && expression == 0 { break; }
+        else { return false; }
+        statement = graph[statement].next_sibling;
+    }
+    prior = parameter;
+    while prior != graph[function].first_child {
+        let mut binding = graph[function].first_child;
+        while graph[binding].next_sibling != prior { binding = graph[binding].next_sibling; }
+        if !cleanup_order(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[..], copy(binding), true, true, copy(emit)) { return false; }
+        prior = binding;
+    }
+    if emit { { let code: [u8; 33] = [114,101,116,117,114,110,32,116,114,117,101,59,32,100,101,102,97,117,108,116,58,32,97,98,111,114,116,40,41,59,32,125,10]; byte_text(&code[..]); } }
+    true
+}
+
+fn emit_task_site(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    site: u64, function: u64, emit: bool) -> bool {
+    if emit {
+        { let code: [u8; 28] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,32,123,32,84,97,115,107,32,116,97,115,107,59,10]; byte_text(&code[..]); }
+    }
+    if !task_frame(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        copy(site), copy(function), 0, copy(emit)) { return false; }
+    if emit {
+        { let code: [u8; 11] = [125,32,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(site)); character(59); character(10);
+        { let code: [u8; 16] = [115,116,97,116,105,99,32,98,111,111,108,32,112,111,108,108]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 37] = [40,84,97,115,107,32,42,116,97,115,107,44,32,98,111,111,108,32,102,97,105,108,101,100,41,32,123,32,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 34] = [32,42,102,114,97,109,101,61,40,118,111,105,100,42,41,116,97,115,107,59,32,40,118,111,105,100,41,102,114,97,109,101,59,10]; byte_text(&code[..]); }
+    }
+    if !task_frame(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        site, function, 1, copy(emit)) { return false; }
+    if emit { character(125); character(10); }
+    true
+}
+
+fn emit_task_launch(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], site: u64, function: u64, emit: bool) -> bool {
+    let main = nodes[nodes[site].parent].parent;
+    let main_name: [u8; 4] = [109,97,105,110];
+    if nodes[main].kind != 1
+        || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], main, &main_name[..]) { return false; }
+    if emit { character(123); character(10); }
+    let mut arg = task_arguments(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(site));
+    while arg != 0 {
+        if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[0..owners.len()], copy(arg), copy(arg), copy(emit)) { return false; }
+        owners[arg] = Owner { slot: 0, pool: 0, constructor: 0, region: false };
+        arg = graph[arg].next_sibling;
+    }
+    if emit {
+        { let code: [u8; 23] = [114,101,103,105,111,110,95,110,101,119,40,38,114,101,103,105,111,110,95,116,97,115,107]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 17] = [44,115,105,122,101,111,102,40,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 8] = [41,44,48,44,49,41,59,116]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 31] = [61,40,118,111,105,100,42,41,114,101,103,105,111,110,95,97,100,100,40,38,114,101,103,105,111,110,95,116,97,115,107]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 3] = [41,59,10]; byte_text(&code[..]); }
+        { let code: [u8; 9] = [84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+        number(copy(site));
+        { let code: [u8; 9] = [32,42,102,114,97,109,101,61,116]; byte_text(&code[..]); }
+        number(copy(site)); character(59); character(10);
+    }
+    if !task_frame(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        copy(site), function, 2, copy(emit)) { return false; }
+    if emit {
+        { let code: [u8; 28] = [116,97,115,107,95,115,112,97,119,110,40,38,102,114,97,109,101,45,62,116,97,115,107,44,112,111,108,108]; byte_text(&code[..]); }
+        number(site); character(41); character(59); character(10); character(125); character(10);
+    }
+    true
+}
+
+fn emit_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], block: u64, destination: u64, loop_node: u64, emit: bool) -> i64 {
+    if emit {
+        let mark: [u8; 10] = [115, 105, 122, 101, 95, 116, 32, 109, 97, 114];
+        byte_text(&mark[..]); number(copy(block));
+        let cursor_init: [u8; 9] = [61, 99, 117, 114, 115, 111, 114, 59, 10];
+        byte_text(&cursor_init[..]);
+        let region_mark: [u8; 16] = [82, 101, 103, 105, 111, 110, 66, 97, 110, 100, 32, 42, 98, 97, 110, 100];
+        byte_text(&region_mark[..]);
+        number(copy(block));
+        let region_mark_value: [u8; 15] = [61, 99, 117, 114, 114, 101, 110, 116, 95, 98, 97, 110, 100, 59, 10];
+        byte_text(&region_mark_value[..]);
+
+    }
+    let scalar = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+    let mut statement = graph[block].first_child;
+    let mut last: u64 = 0;
+    let mut outcome: i64 = 1;
+    let mut rewind = true;
+    while statement != 0 {
+        let kind = nodes[statement].kind;
+        let mut expr = graph[statement].first_child;
+        if kind == 5 && nodes[expr].kind == 4 && nodes[graph[expr].next_sibling].kind == 16 {
+            expr = graph[expr].next_sibling;
+        }
+        let spawned = if kind == 5 && nodes[expr].kind == 15 {
+            spawned_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expr))
+        } else { 0 };
+        if spawned != 0 {
+            if !emit_task_launch(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(statement), spawned, copy(emit)) { return 0; }
+        } else if kind == 5 && nodes[expr].kind == 66 {
+            if !i64_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expr))
+                && nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(expr)) == 0
+                && !vector_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    copy(expr)) { return 0; }
+            let capacity = graph[graph[expr].first_child].next_sibling;
+            if !decimal(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end) { return 0; }
+            owners[statement] = Owner { slot: 0, pool: copy(statement), constructor: 0, region: false };
+            if emit {
+                let prefix: [u8; 8] = [
+                    115, 105, 122, 101, 95, 116, 32, 110,
+                ];
+                byte_text(&prefix[..]); number(copy(statement)); character(61);
+                spelling(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end);
+                character(59); character(10);
+                // int *p
+                let used: [u8; 6] = [
+                    105, 110, 116, 32, 42, 112,
+                ];
+                byte_text(&used[..]);
+                number(copy(statement));
+                // =push(sizeof(int),_Alignof(int),n
+                let used_push: [u8; 33] = [
+                    61, 112, 117, 115, 104, 40, 115, 105, 122, 101, 111, 102, 40, 105, 110, 116, 41, 44, 95, 65,
+                    108, 105, 103, 110, 111, 102, 40, 105, 110, 116, 41, 44, 110,
+                ];
+                let nominal = nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(expr));
+                let variants = if nodes[nominal].kind == 29 { pool_width(&graph[0..graph.len()], copy(nominal)) } else { 1 };
+                byte_text(&used_push[..]);
+                number(copy(statement)); character(42); number(copy(variants)); character(41); character(59); character(10);
+                if vector_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expr)) {
+                    let descriptor: [u8; 9] = [82, 101, 103, 105, 111, 110, 32, 42, 118];
+                    byte_text(&descriptor[..]);
+                    number(copy(statement));
+                    let reserve_descriptors: [u8; 39] = [61, 112, 117, 115, 104, 40, 115, 105, 122, 101, 111, 102, 40, 82, 101, 103, 105, 111, 110, 41, 44, 95, 65, 108, 105, 103, 110, 111, 102, 40, 82, 101, 103, 105, 111, 110, 41, 44, 110];
+                    byte_text(&reserve_descriptors[..]);
+                    number(copy(statement));
+                } else {
+                    // long long *v
+                    let payload: [u8; 12] = [
+                        108, 111, 110, 103, 32, 108, 111, 110, 103, 32, 42, 118,
+                    ];
+                    byte_text(&payload[..]);
+                    number(copy(statement));
+                    // =push(sizeof(long long),_Alignof(long long),n
+                    let payload_push: [u8; 45] = [
+                        61, 112, 117, 115, 104, 40, 115, 105, 122, 101, 111, 102, 40, 108, 111, 110, 103, 32, 108, 111,
+                        110, 103, 41, 44, 95, 65, 108, 105, 103, 110, 111, 102, 40, 108, 111, 110, 103, 32, 108, 111,
+                        110, 103, 41, 44, 110,
+                    ];
+                    byte_text(&payload_push[..]);
+                    number(copy(statement)); character(42);
+                    number(payload_width(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal));
+                    character(42); number(copy(variants));
+                }
+                character(41); character(59); character(10);
+                // for(size_t i=0;i<n
+                let zero: [u8; 18] = [
+                    102, 111, 114, 40, 115, 105, 122, 101, 95, 116, 32, 105, 61, 48, 59, 105, 60, 110,
+                ];
+                byte_text(&zero[..]);
+                number(copy(statement)); character(42); number(variants);
+                // ;++i)p
+                let fill: [u8; 6] = [
+                    59, 43, 43, 105, 41, 112,
+                ];
+                byte_text(&fill[..]);
+                number(copy(statement));
+                // [i]=0; (void)v
+                let fill_end: [u8; 14] = [
+                    91, 105, 93, 61, 48, 59, 10, 40, 118, 111, 105, 100, 41, 118,
+                ];
+                byte_text(&fill_end[..]);
+                number(copy(statement)); character(59); character(10);
+            }
+        } else if kind == 5 && nodes[expr].kind == 2 {
+            if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], expr, copy(statement), 0, copy(emit)) != 3 { return 0; }
+        } else if kind == 5 && nodes[expr].kind == 15 {
+            if !emit_region_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(statement), expr, copy(emit)) { return 0; }
+        } else if kind == 10 && destination != 0 && nodes[expr].kind == 15 && nodes[destination].kind != 1 {
+            let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expr));
+            if identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function) == 0 {
+                if !emit_region_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], copy(destination), expr, copy(emit)) { return 0; }
+            } else {
+                let origin = graph[graph[graph[expr].first_child].next_sibling].binding;
+                if storage_escapes(&nodes[0..nodes.len()], &graph[0..graph.len()], &owners[0..owners.len()], copy(origin), copy(block)) {
+                    if inside_loop(&nodes[0..nodes.len()], copy(block)) { return 0; }
+                    rewind = false;
+                }
+                if !transfer_owner(&mut owners[0..owners.len()], origin, copy(destination)) { return 0; }
+            }
+            outcome = 3;
+        } else if (kind == 10 || kind == 6) && nodes[destination].kind == 1 && nodes[expr].kind == 26 {
+            let condition = graph[expr].first_child;
+            let yes = graph[condition].next_sibling;
+            let no = graph[yes].next_sibling;
+            if nodes[yes].kind != 2 || nodes[no].kind != 2 { return 0; }
+            if emit { character(105); character(102); character(40); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, condition, true, copy(emit)) { return 0; }
+            if emit { character(41); character(123); character(10); }
+            if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], yes, copy(destination), 0, copy(emit)) != 3 { return 0; }
+            if emit {
+                let otherwise: [u8; 7] = [125,101,108,115,101,123,10];
+                byte_text(&otherwise[..]);
+            }
+            if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], no, copy(destination), 0, copy(emit)) != 3 { return 0; }
+            if emit { character(125); character(10); }
+            outcome = 3;
+        } else if (kind == 10 || kind == 6) && nodes[destination].kind == 1 {
+            let mut binding = graph[expr].binding;
+            if nodes[expr].kind == 16 {
+                if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], copy(statement), copy(expr), copy(emit)) { return 0; }
+                binding = copy(statement);
+            } else if nodes[expr].kind != 7 { return 0; }
+            if !emit_region_result(&mut owners[0..owners.len()], copy(destination), binding, copy(emit)) { return 0; }
+            outcome = 3;
+        } else if kind == 10 && destination != 0 && nodes[expr].kind == 16 {
+            if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(destination), expr, copy(emit)) { return 0; }
+            if owners[destination].slot == 0 { return 0; }
+            if storage_escapes(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &owners[0..owners.len()], copy(destination), copy(block)) {
+                if inside_loop(&nodes[0..nodes.len()], copy(block)) { return 0; }
+                rewind = false;
+            }
+            outcome = 3;
+        } else if kind == 10 && destination != 0 && nodes[expr].kind == 7 {
+            let original = graph[expr].binding;
+            if storage_escapes(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &owners[0..owners.len()], copy(original), copy(block)) {
+                if inside_loop(&nodes[0..nodes.len()], copy(block)) { return 0; }
+                rewind = false;
+            }
+            if !transfer_owner(&mut owners[0..owners.len()], original, copy(destination)) { return 0; }
+            outcome = 3;
+        } else if kind == 5 && (nodes[expr].kind == 9 || nodes[expr].kind == 4) {
+            let value = if nodes[expr].kind == 4 {
+                if !scalar_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expr)) { return 0; }
+                graph[expr].next_sibling
+            } else { copy(expr) };
+            if emit {
+                let local: [u8; 11] = [108,111,110,103,32,108,111,110,103,32,120];
+                byte_text(&local[..]); number(copy(statement)); character(61);
+            }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, value, false, copy(emit)) { return 0; }
+            if emit {
+                let used: [u8; 7] = [40,118,111,105,100,41,120];
+                character(59); character(10); byte_text(&used[..]); number(copy(statement)); character(59); character(10);
+            }
+        } else if kind == 5 {
+            if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(statement), expr, copy(emit)) { return 0; }
+        } else if kind == 22 || ((kind == 8 || kind == 10) && nodes[expr].kind == 27) {
+            let loop_node = if kind == 22 { copy(statement) } else { copy(expr) };
+            let body = if kind == 22 { graph[expr].next_sibling } else { graph[expr].first_child };
+            // The checker has already joined state at the back edge. Emission
+            // can reuse bindings across iterations if ownership stays local.
+            let mut binding = graph[statement].visible;
+            while binding != 0 {
+                if owners[binding].constructor != 0 { return 0; }
+                binding = graph[binding].visible;
+            }
+            if emit {
+                let word: [u8; 6] = [119,104,105,108,101,40];
+                byte_text(&word[..]);
+            }
+            if kind != 22 {
+                if emit { character(49); }
+            } else if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, expr, true, copy(emit)) { return 0; }
+            if emit { character(41); character(123); character(10); }
+            let edge = emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], body, 0, loop_node, copy(emit));
+            if edge != 1 && edge != 4 && edge != 5 { return 0; }
+            if emit { character(125); character(10); }
+        } else if kind == 21 && nodes[expr].kind == 7 {
+            let binding = graph[expr].binding;
+            let operator = nodes[statement].name_start;
+            if nodes[statement].name_end - operator != 1 || source[operator] != 61
+                || !mutable_local(&source[0..source.len()], &nodes[0..nodes.len()], copy(binding)) { return 0; }
+            if emit { character(120); number(copy(binding)); character(61); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, graph[expr].next_sibling, false, copy(emit)) { return 0; }
+            if emit { character(59); character(10); }
+        } else if kind == 57 {
+            if !transfer_owner(&mut owners[0..owners.len()], graph[statement].binding, copy(statement)) {
+                return 0;
+            }
+        } else if (kind == 8 || kind == 10) && nodes[expr].kind == 2 {
+            outcome = emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], expr, 0, 0, copy(emit));
+            if outcome == 0 { return 0; }
+        } else if (kind == 23 || kind == 24) && loop_node != 0 && expr == 0
+            && graph[statement].destination == loop_node {
+            outcome = if kind == 23 { 4 } else { 5 };
+        } else if (kind == 8 || kind == 10) && nodes[expr].kind == 26 && loop_node != 0 {
+            let condition = graph[expr].first_child;
+            let arm = graph[condition].next_sibling;
+            let edge = graph[arm].first_child;
+            let edge_kind = nodes[edge].kind;
+            if (edge_kind != 23 && edge_kind != 24) || graph[edge].destination != loop_node
+                || graph[edge].first_child != 0 || graph[edge].next_sibling != 0 || graph[arm].next_sibling != 0 {
+                return 0;
+            }
+            if emit { character(105); character(102); character(40); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, condition, true, copy(emit)) { return 0; }
+            if emit { character(41); character(123); character(10); }
+            let mut prior = copy(last);
+            while prior != 0 && nodes[prior].parent == block {
+                if owners[prior].constructor != 0 { return 0; }
+                if prior == graph[block].first_child { break; }
+                let mut previous = graph[block].first_child;
+                while graph[previous].next_sibling != prior { previous = graph[previous].next_sibling; }
+                prior = previous;
+            }
+            if !emit_block_cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], copy(block), copy(last), false, true, copy(emit)) { return 0; }
+            if emit {
+                emit_loop_jump(if edge_kind == 23 { 4 } else { 5 });
+                character(125); character(10);
+            }
+        } else if (kind == 8 || kind == 10) && nodes[expr].kind == 26 {
+            let condition = graph[expr].first_child;
+            let yes = graph[condition].next_sibling;
+            let no = graph[yes].next_sibling;
+            if nodes[yes].kind != 2 || !branch_preserves_owners(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(yes))
+                || (no != 0 && (nodes[no].kind != 2
+                    || !branch_preserves_owners(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(no)))) { return 0; }
+            if emit { character(105); character(102); character(40); }
+            if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, condition, true, copy(emit)) { return 0; }
+            if emit { character(41); character(123); character(10); }
+            if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut owners[0..owners.len()], yes, 0, 0, copy(emit)) != 1 { return 0; }
+            if no != 0 {
+                if emit {
+                    let otherwise: [u8; 6] = [125,101,108,115,101,123];
+                    byte_text(&otherwise[..]); character(10);
+                }
+                if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], no, 0, 0, copy(emit)) != 1 { return 0; }
+            }
+            if emit { character(125); character(10); }
+        } else if kind == 6 && expr == 0 {
+            outcome = 2;
+        } else if region_annotation(&source[0..source.len()], &nodes[0..nodes.len()], copy(statement)) {
+            let size = graph[statement].first_child;
+            let count = graph[size].next_sibling;
+            let literal = graph[count].first_child;
+            if count != 0 && !decimal(&source[0..source.len()], nodes[literal].start, nodes[literal].end) { return 0; }
+            if emit {
+                let enter: [u8; 13] = [114, 101, 103, 105, 111, 110, 95, 101, 110, 116, 101, 114, 40];
+                byte_text(&enter[..]);
+                emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], size);
+                character(44);
+                if count == 0 { character(48); } else {
+                    spelling(&source[0..source.len()], nodes[literal].start, nodes[literal].end);
+                }
+                character(44);
+                let mut candidate: u64 = 1;
+                let mut allocations: u64 = 0;
+                let new_word: [u8; 3] = [110,101,119];
+                while candidate < nodes.len() as u64 {
+                    if nodes[candidate].kind == 16 && graph[candidate].scope == block
+                        && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(candidate), &new_word[..]) {
+                        let pool = graph[graph[candidate].first_child].binding;
+                        if vector_pool(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                            graph[pool].first_child) {
+                            allocations = allocations + 1;
+                        }
+                    }
+                    candidate = candidate + 1;
+                }
+                number(allocations);
+                character(41); character(59); character(10);
+            }
+        } else if kind == 8 && nodes[expr].kind == 16 {
+            let receiver = graph[expr].first_child;
+            let binding = graph[receiver].binding;
+            let arg = graph[receiver].next_sibling;
+            if !owners[binding].region { return 0; }
+            let push_str: [u8; 8] = [112,117,115,104,95,115,116,114];
+            let pool = owners[binding].pool;
+            let pool_expression = graph[pool].first_child;
+            let nominal = vector_scalar_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[graph[pool_expression].first_child].first_child);
+            if vector_owned_string(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[graph[pool_expression].first_child].first_child) {
+                let moved = graph[arg].binding;
+                if !owners[moved].region || nodes[moved].parent != block { return 0; }
+                if emit {
+                    let push: [u8; 19] = [114,101,103,105,111,110,95,112,117,115,104,95,111,119,110,101,100,40,114];
+                    byte_text(&push[..]); number(owners[binding].slot); character(44); character(114);
+                    number(owners[moved].slot); character(44); character(38); character(112);
+                    number(owners[moved].pool); character(91); character(115);
+                    number(owners[moved].slot); character(93); character(41); character(59); character(10);
+                }
+                owners[moved] = Owner { slot: 0, pool: 0, constructor: 0, region: false };
+            } else if nominal != 0 {
+                if !emit_vector_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    copy(arg), nominal, owners[binding].slot, copy(emit)) { return 0; }
+            } else if matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(expr), &push_str[..]) {
+                let size = text_payload(&source[0..source.len()], nodes[arg].start, nodes[arg].end, false);
+                if emit && size != 0 {
+                    let prefix: [u8; 15] = [114,101,103,105,111,110,95,97,112,112,101,110,100,40,114];
+                    byte_text(&prefix[..]); number(owners[binding].slot); character(44);
+                    let bytes: [u8; 24] = [40,99,111,110,115,116,32,117,110,115,105,103,110,101,100,32,99,104,97,114,91,93,41,123];
+                    byte_text(&bytes[..]);
+                    let written = text_payload(&source[0..source.len()], nodes[arg].start, nodes[arg].end, true);
+                    character(125); character(44); number(written);
+                    character(41); character(59); character(10);
+                }
+            } else {
+                if emit {
+                    let push: [u8; 13] = [114, 101, 103, 105, 111, 110, 95, 112, 117, 115, 104, 40, 114];
+                    byte_text(&push[..]);
+                    number(owners[binding].slot); character(44);
+                }
+                if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &scalar, arg, false, copy(emit)) { return 0; }
+                if emit { character(41); character(59); character(10); }
+            }
+        } else if kind == 8 && nodes[expr].kind == 15 {
+            let callee = graph[expr].first_child;
+            let arg = graph[callee].next_sibling;
+            let name = &source[nodes[callee].name_start..nodes[callee].name_end];
+            let drop_word: [u8; 4] = [100, 114, 111, 112];
+            let print_word: [u8; 5] = [112, 114, 105, 110, 116];
+            let joined = if name.content_eq(&drop_word[..]) {
+                joined_binding(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(arg))
+            } else { 0 };
+            if joined != 0 && spawned_function(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], graph[joined].first_child) != 0 {
+                if emit {
+                    { let code: [u8; 12] = [116,97,115,107,95,106,111,105,110,40,38,116]; byte_text(&code[..]); }
+                    number(copy(joined));
+                    { let code: [u8; 32] = [45,62,116,97,115,107,41,59,114,101,103,105,111,110,95,100,114,111,112,40,38,114,101,103,105,111,110,95,116,97,115,107]; byte_text(&code[..]); }
+                    number(copy(joined));
+                    { let code: [u8; 3] = [41,59,116]; byte_text(&code[..]); }
+                    number(joined);
+                    { let code: [u8; 7] = [61,78,85,76,76,59,10]; byte_text(&code[..]); }
+                }
+            } else if name.content_eq(&drop_word[..]) && nodes[arg].kind == 7 {
+                let binding = graph[arg].binding;
+                if owners[binding].slot == 0 && owners[binding].constructor == 0 { return 0; }
+                if !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], binding, true, copy(emit)) { return 0; }
+            } else if name.content_eq(&drop_word[..]) && nodes[arg].kind == 37 {
+                if !emit_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut owners[0..owners.len()], copy(statement), copy(arg), copy(emit))
+                    || !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &mut owners[0..owners.len()], copy(statement), true, copy(emit)) { return 0; }
+            } else if name.content_eq(&print_word[..]) && nodes[arg].kind == 16 {
+                let binding = graph[graph[arg].first_child].binding;
+                let len: [u8; 3] = [108,101,110];
+                let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
+                if !owners[binding].region || (!matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(arg), &len[..])
+                    && !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], arg, &byte_len[..])) { return 0; }
+                if emit {
+                    let prefix: [u8; 16] = [112,114,105,110,116,102,40,34,37,122,117,92,110,34,44,114];
+                    byte_text(&prefix[..]); number(owners[binding].slot);
+                    let postfix: [u8; 8] = [45,62,108,101,110,41,59,10];
+                    byte_text(&postfix[..]);
+                }
+            } else if name.content_eq(&print_word[..]) && nodes[arg].kind == 14 {
+                let binding = graph[graph[arg].first_child].binding;
+                let slot = owners[binding].slot;
+                if slot == 0 { return 0; }
+                if emit {
+                    let prefix: [u8; 17] = [112,114,105,110,116,102,40,34,37,108,108,100,92,110,34,44,118];
+                    byte_text(&prefix[..]); number(owners[binding].pool);
+                    character(91); character(115); number(slot);
+                    character(93); character(41); character(59); character(10);
+                }
+            } else if name.content_eq(&print_word[..]) && nodes[arg].kind == 17 {
+                let index = graph[arg].first_child;
+                if nodes[index].kind == 18 {
+                    let receiver = graph[index].first_child;
+                    let binding = graph[receiver].binding;
+                    if !owners[binding].region { return 0; }
+                    let pool = graph[owners[binding].pool].first_child;
+                    let nominal = vector_scalar_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        graph[graph[pool].first_child].first_child);
+                    if nominal == 0 { return 0; }
+                    let position = field_position(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(arg));
+                    let element = graph[receiver].next_sibling;
+                    if !decimal_value(&source[0..source.len()], nodes[element].start, nodes[element].end) { return 0; }
+                    if emit {
+                        let read: [u8; 33] = [112,114,105,110,116,102,40,34,37,108,108,100,92,110,34,44,114,101,103,105,111,110,95,114,101,97,100,95,114,111,119,40,114];
+                        byte_text(&read[..]); number(owners[binding].slot); character(44);
+                        spelling(&source[0..source.len()], nodes[element].start, nodes[element].end);
+                        character(44); number(position); character(41); character(41); character(59); character(10);
+                    }
+                } else {
+                    let subject = graph[graph[graph[arg].first_child].first_child].first_child;
+                    let binding = graph[subject].binding;
+                    let pool = owners[binding].pool;
+                    let nominal = nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], graph[pool].first_child);
+                    let format = destructor_field_kind(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(nominal), copy(arg));
+                    if nominal == 0 || owners[binding].slot == 0 || format == 0 { return 0; }
+                    if emit {
+                        print_begin(copy(format));
+                        let index = field_position(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(nominal), arg);
+                        slot_field(pool, owners[binding].slot, pool_width(&graph[0..graph.len()], nominal), index);
+                        print_end(format);
+                    }
+                }
+            } else if name.content_eq(&print_word[..]) && nodes[arg].kind == 18 {
+                let receiver = graph[arg].first_child;
+                let binding = graph[receiver].binding;
+                let index = graph[receiver].next_sibling;
+                if !owners[binding].region
+                    || !decimal_value(&source[0..source.len()], nodes[index].start, nodes[index].end) { return 0; }
+                if emit {
+                    let read: [u8; 29] = [112, 114, 105, 110, 116, 102, 40, 34, 37, 108, 108, 100, 92, 110, 34, 44, 114, 101, 103, 105, 111, 110, 95, 114, 101, 97, 100, 40, 114];
+                    byte_text(&read[..]);
+                    number(owners[binding].slot); character(44);
+                    spelling(&source[0..source.len()], nodes[index].start, nodes[index].end);
+                    character(41); character(41); character(59); character(10);
+                }
+            } else if !emit_scalar_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &scalar, copy(callee), copy(arg), copy(emit)) { return 0; }
+        } else { return 0; }
+        last = copy(statement);
+        if outcome >= 2 { break; }
+        statement = graph[statement].next_sibling;
+    }
+    if !emit_block_cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[0..owners.len()], copy(block), last, true, rewind, copy(emit)) { return 0; }
+    if emit && (outcome == 4 || outcome == 5) {
+        emit_loop_jump(copy(outcome));
+    }
+    outcome
+}
+
+fn emit_loop_jump(outcome: i64) {
+    let stop: [u8; 7] = [98,114,101,97,107,59,10];
+    let restart: [u8; 10] = [99,111,110,116,105,110,117,101,59,10];
+    if outcome == 4 { byte_text(&stop[..]); } else { byte_text(&restart[..]); }
+}
+
+fn emit_block_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owners: &mut [Owner], block: u64, last: u64, clear: bool, rewind_cursor: bool, emit: bool) -> bool {
+    let mut last = last;
+    while last != 0 {
+        if !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[0..owners.len()], copy(last), copy(clear), copy(emit)) { return false; }
+        let mut previous = graph[block].first_child;
+        if previous == last { break; }
+        while graph[previous].next_sibling != last { previous = graph[previous].next_sibling; }
+        last = previous;
+    }
+    if emit {
+        let leave: [u8; 19] = [114, 101, 103, 105, 111, 110, 95, 114, 101, 115, 116, 111, 114, 101, 40, 98, 97, 110, 100];
+        byte_text(&leave[..]);
+        number(copy(block)); character(41); character(59); character(10);
+        let rewind: [u8; 10] = [99, 117, 114, 115, 111, 114, 61, 109, 97, 114];
+        if rewind_cursor {
+            byte_text(&rewind[..]); number(copy(block)); character(59); character(10);
+        }
+        let used: [u8; 9] = [40,118,111,105,100,41,109,97,114];
+        byte_text(&used[..]); number(block); character(59); character(10);
+    }
+    true
+}
+
+fn emit_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    scalar: &Destructor, callee: u64, arg: u64, emit: bool) -> bool {
+    let function = plain_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], callee);
+    if function == 0 { return false; }
+    let mut parameter = graph[function].first_child;
+    let mut argument = arg;
+    if emit { character(104); number(function); character(40); }
+    while nodes[parameter].kind == 3 {
+        if argument == 0 || !scalar_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[parameter].first_child) { return false; }
+        if !destructor_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            scalar, copy(argument), false, copy(emit)) { return false; }
+        parameter = graph[parameter].next_sibling;
+        argument = graph[argument].next_sibling;
+        if emit && argument != 0 { character(44); }
+    }
+    if argument != 0 { return false; }
+    if emit { character(41); character(59); character(10); }
+    true
+}
+
+fn helper_uses_pools(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> bool {
+    let mut statement = graph[block].first_child;
+    while statement != 0 {
+        if nodes[graph[statement].first_child].kind == 66 { return true; }
+        statement = graph[statement].next_sibling;
+    }
+    false
+}
+
+fn emit_helper(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    function: u64, prototype: bool, emit: bool) -> bool {
+    if identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function)) != 0 { return true; }
+    let mut parameter = graph[function].first_child;
+    let pool = regional_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+    if emit {
+        let unit: [u8; 6] = [118,111,105,100,32,104];
+        let region: [u8; 9] = [82,101,103,105,111,110,32,42,104];
+        if pool == 0 { byte_text(&unit[..]); } else { byte_text(&region[..]); }
+        number(copy(function)); character(40);
+        if nodes[parameter].kind != 3 {
+            let unit: [u8; 4] = [118,111,105,100];
+            byte_text(&unit[..]);
+        }
+    }
+    while nodes[parameter].kind == 3 {
+        let annotation = graph[parameter].first_child;
+        if parameter == pool {
+            if emit {
+                let count: [u8; 8] = [115,105,122,101,95,116,32,110];
+                let occupied: [u8; 8] = [44,105,110,116,32,42,32,112];
+                let payload: [u8; 10] = [44,82,101,103,105,111,110,32,42,118];
+                byte_text(&count[..]); number(copy(parameter));
+                byte_text(&occupied[..]); number(copy(parameter));
+                byte_text(&payload[..]); number(copy(parameter));
+            }
+        } else {
+            let boolean: [u8; 4] = [98,111,111,108];
+            if !scalar_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation))
+                && (pool == 0 || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], annotation, &boolean[..])) { return false; }
+            if emit {
+                let arg: [u8; 11] = [108,111,110,103,32,108,111,110,103,32,120];
+                byte_text(&arg[..]); number(copy(parameter));
+            }
+        }
+        parameter = graph[parameter].next_sibling;
+        if emit && nodes[parameter].kind == 3 { character(44); }
+    }
+    if nodes[parameter].kind == 4 {
+        let unit: [u8; 4] = [86,111,105,100];
+        if pool == 0 && !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(parameter), &unit[..]) { return false; }
+        parameter = graph[parameter].next_sibling;
+    }
+    if nodes[parameter].kind != 2 { return false; }
+    if emit { character(41); }
+    if prototype {
+        if emit { character(59); character(10); }
+        return true;
+    }
+    if emit {
+        character(123); character(10);
+        let mut arg = graph[function].first_child;
+        while nodes[arg].kind == 3 {
+            if arg != pool {
+                let used: [u8; 7] = [40,118,111,105,100,41,120];
+                byte_text(&used[..]); number(copy(arg)); character(59); character(10);
+            }
+            arg = graph[arg].next_sibling;
+        }
+    }
+    if pool != 0 || helper_uses_pools(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(parameter)) {
+        let mut owners = [Owner { slot: 0, pool: 0, constructor: 0, region: false }; 524289];
+        let mut destination: u64 = 0;
+        if pool != 0 {
+            destination = copy(function);
+            owners[pool] = Owner { slot: 0, pool: copy(pool), constructor: 0, region: false };
+            if emit {
+                let result: [u8; 9] = [82,101,103,105,111,110,32,42,113];
+                byte_text(&result[..]); number(copy(function)); character(59); character(10);
+            }
+        }
+        let outcome = emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut owners[..], parameter, destination, 0, copy(emit));
+        if outcome == 0 || (pool != 0 && outcome != 3) { return false; }
+        if emit {
+            if pool != 0 {
+                let ret: [u8; 8] = [114,101,116,117,114,110,32,113];
+                byte_text(&ret[..]); number(function); character(59); character(10);
+            }
+            character(125); character(10);
+        }
+        return true;
+    }
+    let context = Destructor { receiver: 0, nominal: 0, constructor: 0, slot: 0, pool: 0 };
+    if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &context, parameter, false, copy(emit)) { return false; }
+    if emit { character(125); character(10); }
+    true
+}
+
+pub fn emit_pool_c(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool) -> i32 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 76 { return 9; }
+        item = graph[item].next_sibling;
+    }
+    let mut main = graph[0].first_child;
+    let global_size: [u8; 17] = [114,101,103,105,111,110,95,115,116,97,99,107,95,115,105,122,101];
+    let region_budget = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &global_size[..]);
+    if region_budget != 0 {
+        let count = graph[region_budget].first_child;
+        if !decimal(&source[0..source.len()], nodes[count].start, nodes[count].end) { return 9; }
+    }
+    let size_key: [u8; 4] = [115,105,122,101];
+    let classic_budget = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &size_key[..]);
+    if nodes[main].kind == 58 {
+        let datastack: [u8; 9] = [100,97,116,97,115,116,97,99,107];
+        if !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(main), &datastack[..]) { return 9; }
+        let default_size: [u8; 11] = [114,101,103,105,111,110,95,115,105,122,101];
+        let default_property = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &default_size[..]);
+        let mut property = graph[main].first_child;
+        while property != 0 {
+            if property != region_budget && property != default_property && property != classic_budget { return 9; }
+            let count = graph[property].first_child;
+            if !decimal(&source[0..source.len()], nodes[count].start, nodes[count].end) { return 9; }
+            property = graph[property].next_sibling;
+        }
+        main = graph[main].next_sibling;
+    }
+    let main_word: [u8; 4] = [109,97,105,110];
+    while main != 0 && !matches_word(&source[0..source.len()], &nodes[0..nodes.len()], copy(main), &main_word[..]) {
+        if nodes[main].kind == 1 && !emit_helper(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(main), false, false) { return 9; }
+        if nodes[main].kind == 49 {
+            let receiver = destructor_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(main));
+            if receiver == 0 { return 9; }
+            let mut body = graph[receiver].next_sibling;
+            if nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            let mut previous = graph[0].first_child;
+            let mut declared = false;
+            while previous != main {
+                if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(previous), copy(main)) {
+                    if nodes[previous].kind == 28 {
+                        if declared { return 9; }
+                        let context = Destructor { receiver: copy(receiver), nominal: copy(previous),
+                            constructor: 0, slot: 0, pool: 0 };
+                        if !destructor_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                            &context, copy(body), false, false) { return 9; }
+                        declared = true;
+                    }
+                    if nodes[previous].kind == 49 { return 9; }
+                }
+                previous = graph[previous].next_sibling;
+            }
+            if !declared { return 9; }
+        }
+        main = graph[main].next_sibling;
+    }
+    let block = graph[main].first_child;
+    let name = &source[nodes[main].name_start..nodes[main].name_end];
+    if !name.content_eq(&main_word[..]) || graph[main].next_sibling != 0
+        || nodes[main].kind != 1 || nodes[block].kind != 2 { return 9; }
+    let mut owners = [Owner { slot: 0, pool: 0, constructor: 0, region: false }; 524289];
+    if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[..], copy(block), 0, 0, false) == 0 { return 9; }
+    let mut site = graph[block].first_child;
+    let mut tasks: u64 = 0;
+    while site != 0 {
+        let function = spawned_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[site].first_child);
+        if nodes[site].kind == 5 && function != 0 {
+            if !emit_task_site(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(site), function, false) { return 9; }
+            tasks = tasks + 1;
+        }
+        site = graph[site].next_sibling;
+    }
+    if !emit { return 0; }
+    emit_runtime();
+    if tasks != 0 {
+        emit_task_runtime();
+        site = graph[block].first_child;
+        while site != 0 {
+            let function = spawned_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[site].first_child);
+            if nodes[site].kind == 5 && function != 0
+                && !emit_task_site(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    copy(site), function, true) { return 9; }
+            site = graph[site].next_sibling;
+        }
+    }
+    let mut pass: u64 = 0;
+    while pass < 2 {
+        let mut helper = graph[0].first_child;
+        while helper != main {
+            if nodes[helper].kind == 1 && !emit_helper(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(helper), pass == 0, true) { return 9; }
+            helper = graph[helper].next_sibling;
+        }
+        pass = pass + 1;
+    }
+    // int main(void) {
+    let line_67: [u8; 17] = [
+        105, 110, 116, 32, 109, 97, 105, 110, 40, 118, 111, 105, 100, 41, 32, 123, 10,
+    ];
+    byte_text(&line_67[..]);
+    //     reserve(0
+    let line_68: [u8; 14] = [
+        32, 32, 32, 32, 114, 101, 115, 101, 114, 118, 101, 40, 48, 10,
+    ];
+    byte_text(&line_68[..]);
+    if classic_budget != 0 {
+        character(43);
+        emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], classic_budget);
+    } else {
+        let mut item: u64 = 1;
+        while item < nodes.len() as u64 {
+            if nodes[item].kind == 31 && integer_literal(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &source[0..source.len()], graph[item].first_child) {
+                let scalar_budget: [u8; 3] = [43, 51, 50];
+                byte_text(&scalar_budget[..]);
+            }
+            if nodes[item].kind == 16 {
+                let descriptor_budget: [u8; 3] = [43, 54, 52];
+                byte_text(&descriptor_budget[..]);
+            }
+            if nodes[item].kind == 66 {
+                let capacity = graph[graph[item].first_child].next_sibling;
+                if decimal(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end) {
+                    let term: [u8; 4] = [43, 57, 54, 42];
+                    byte_text(&term[..]);
+                    spelling(&source[0..source.len()], nodes[capacity].start, nodes[capacity].end);
+                    let wide: [u8; 3] = [85, 76, 76];
+                    byte_text(&wide[..]);
+                    let declaration = nominal_pool_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(item));
+                    character(42); number(payload_width(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration)));
+                    if nodes[declaration].kind == 29 {
+                        character(42); number(pool_width(&graph[0..graph.len()], declaration));
+                    }
+                }
+            }
+            item = item + 1;
+        }
+    }
+    character(41); character(59); character(10);
+    if region_budget != 0 {
+        let set_budget: [u8; 14] = [103, 108, 111, 98, 97, 108, 95, 98, 117, 100, 103, 101, 116, 61];
+        byte_text(&set_budget[..]);
+        emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], region_budget);
+        character(59); character(10);
+    }
+    let size_word: [u8; 11] = [114,101,103,105,111,110,95,115,105,122,101];
+    let global_size = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &size_word[..]);
+    let set_limit: [u8; 13] = [103,108,111,98,97,108,95,108,105,109,105,116,61];
+    byte_text(&set_limit[..]);
+    if global_size != 0 {
+        emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(global_size));
+    } else {
+        // A back edge makes the growth bound unknown for this pass.
+        let mut pushes: u64 = 0;
+        let mut dynamic = false;
+        let mut item: u64 = 1;
+        let push: [u8; 4] = [112,117,115,104];
+        while item < nodes.len() as u64 {
+            if nodes[item].kind == 22 || nodes[item].kind == 27 { dynamic = true; }
+            if nodes[item].kind == 16 && matches_word(&source[0..source.len()], &nodes[0..nodes.len()],
+                copy(item), &push[..]) {
+                let receiver = graph[item].first_child;
+                let binding = graph[receiver].binding;
+                let mut constructor = graph[binding].first_child;
+                if nodes[constructor].kind == 4 { constructor = graph[constructor].next_sibling; }
+                let pool = graph[graph[constructor].first_child].binding;
+                pushes = pushes + vector_width(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], graph[pool].first_child);
+            }
+            item = item + 1;
+        }
+        let total = pushes + text_growth(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(block));
+        number(if dynamic { 104857600 } else if total == 0 { 8 } else { total });
+    }
+    character(59); character(10);
+    if tasks != 0 {
+        site = graph[block].first_child;
+        while site != 0 {
+            let function = spawned_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[site].first_child);
+            if nodes[site].kind == 5 && function != 0 {
+                if global_size == 0 {
+                    { let code: [u8; 33] = [105,102,32,40,103,108,111,98,97,108,95,108,105,109,105,116,60,115,105,122,101,111,102,40,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+                    number(copy(site));
+                    { let code: [u8; 32] = [41,41,32,103,108,111,98,97,108,95,108,105,109,105,116,61,115,105,122,101,111,102,40,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+                    number(copy(site)); character(41); character(59); character(10);
+                }
+                { let code: [u8; 18] = [82,101,103,105,111,110,32,114,101,103,105,111,110,95,116,97,115,107]; byte_text(&code[..]); }
+                number(copy(site));
+                { let code: [u8; 15] = [61,123,48,125,59,32,84,97,115,107,70,114,97,109,101]; byte_text(&code[..]); }
+                number(copy(site));
+                { let code: [u8; 3] = [32,42,116]; byte_text(&code[..]); }
+                number(copy(site));
+                { let code: [u8; 7] = [61,78,85,76,76,59,10]; byte_text(&code[..]); }
+            }
+            site = graph[site].next_sibling;
+        }
+    }
+    if emit_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut owners[..], block, 0, 0, true) == 0 { return 9; }
+    if tasks != 0 {
+        { let code: [u8; 12] = [116,97,115,107,95,101,110,100,40,41,59,10]; byte_text(&code[..]); }
+        site = graph[graph[main].first_child].first_child;
+        while site != 0 {
+            let function = spawned_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[site].first_child);
+            if nodes[site].kind == 5 && function != 0 {
+                { let code: [u8; 5] = [105,102,32,40,116]; byte_text(&code[..]); }
+                number(copy(site));
+                { let code: [u8; 26] = [41,32,114,101,103,105,111,110,95,100,114,111,112,40,38,114,101,103,105,111,110,95,116,97,115,107]; byte_text(&code[..]); }
+                number(copy(site)); character(41); character(59); character(10);
+            }
+            site = graph[site].next_sibling;
+        }
+    }
+    let footer: [u8; 41] = [114, 101, 103, 105, 111, 110, 95, 114, 101, 108, 101, 97, 115, 101, 40, 41, 59, 10, 114, 101, 108, 101, 97, 115, 101, 40, 41, 59, 10, 114, 101, 116, 117, 114, 110, 32, 48, 59, 10, 125, 10];
+    byte_text(&footer[..]);
+    0
+}

@@ -1,0 +1,729 @@
+use bootstrap::constants::constant_name_reserved;
+use bootstrap::model::{AstNode, StaticNode, LayoutVisibility, Token, token_at};
+use bootstrap::packages::PackageFile;
+use bootstrap::verify::{unknown_qualified_function, missing_direct_dependency, report_violation};
+use bootstrap::declarations::private_socket_field;
+
+struct Import {
+    file: u64,
+    start: u64,
+    end: u64,
+    target: u64,
+    module: u64,
+}
+
+struct Edit {
+    end: u64,
+    target: u64,
+}
+
+fn file_at(files: &[PackageFile], position: u64) -> u64 {
+    let mut low: u64 = 0;
+    let mut high = files.len() as u64;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if files[middle].end < position { low = middle + 1; }
+        else { high = middle; }
+    }
+    low
+}
+
+fn same_module(names: &[u8], files: &[PackageFile], left: u64, right: u64) -> bool {
+    let a = &names[files[left].module_start..files[left].module_end];
+    let b = &names[files[right].module_start..files[right].module_end];
+    a.content_eq(&b[0..b.len()])
+}
+
+fn spelled(source: &[u8], left: u64, end: u64, right: u64, last: u64) -> bool {
+    let a = &source[left..end];
+    a.content_eq(&source[right..last])
+}
+
+fn module_matches(source: &[u8], tokens: &[Token], module: &[u8], start: u64, end: u64, offset: usize) -> bool {
+    let mut part = start;
+    let mut written = offset;
+    while part < end {
+        let spelling = &source[tokens[part].start..tokens[part].end];
+        if spelling.len() > module.len() - written
+            || !spelling.content_eq(&module[written..written + spelling.len()]) { return false; }
+        written = written + spelling.len();
+        part = part + 1;
+    }
+    written == module.len()
+}
+
+fn component(kind: i64) -> bool {
+    kind == 1 || kind == 28 || kind == 29 || kind == 35 || kind == 64 || kind == 76
+}
+
+fn nominal(kind: i64) -> bool {
+    kind == 28 || kind == 29
+}
+
+fn declared(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], symbols: &[u64],
+    file: u64, start: u64, end: u64) -> u64 {
+    let mut index: usize = 0;
+    while index < symbols.len() {
+        let node = symbols[index];
+        if spelled(&source[0..source.len()], nodes[node].name_start, nodes[node].name_end, copy(start), copy(end)) {
+            let owner = file_at(&files[0..files.len()], nodes[node].start);
+            if same_module(&names[0..names.len()], &files[0..files.len()], copy(file), owner) { return node; }
+        }
+        index = index + 1;
+    }
+    0
+}
+
+fn qualified(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
+    nodes: &[AstNode], symbols: &[u64], first: u64, separator: u64, member: u64, current: u64, alias: u64) -> u64 {
+    let mut index: usize = 0;
+    while index < symbols.len() {
+        let node = symbols[index];
+        if spelled(&source[0..source.len()], nodes[node].name_start, nodes[node].name_end,
+                tokens[member].start, tokens[member].end) {
+            let file = file_at(&files[0..files.len()], nodes[node].start);
+            let module = &names[files[file].module_start..files[file].module_end];
+            let mut match_module = false;
+            if alias == 0 {
+                match_module = module_matches(&source[0..source.len()], &tokens[0..tokens.len()],
+                    &module[0..module.len()], copy(first), copy(separator), 0);
+            } else {
+                let directory = &names[files[alias - 1].module_start..files[alias - 1].module_end];
+                if directory.len() <= module.len()
+                    && directory.content_eq(&module[0..directory.len()]) {
+                    if separator == first + 1 { match_module = directory.len() == module.len(); }
+                    else {
+                        match_module = module_matches(&source[0..source.len()], &tokens[0..tokens.len()],
+                            &module[0..module.len()], first + 1, copy(separator), directory.len());
+                    }
+                }
+            }
+            if match_module {
+                if nodes[node].public || same_module(&names[0..names.len()], &files[0..files.len()], copy(current), copy(file)) {
+                    if !can_import(&names[0..names.len()], &files[0..files.len()], copy(current), copy(file)) { return 0; }
+                    return node;
+                }
+                return 0;
+            }
+        }
+        index = index + 1;
+    }
+    0
+}
+
+fn imported(source: &[u8], imports: &[Import], file: u64, start: u64, end: u64) -> u64 {
+    let mut index: usize = 0;
+    while index < imports.len() {
+        if imports[index].file == file
+            && spelled(&source[0..source.len()], imports[index].start, imports[index].end, copy(start), copy(end)) {
+            return (index as u64) + 1;
+        }
+        index = index + 1;
+    }
+    0
+}
+
+fn enter_import(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
+    nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64,
+    separator: u64, member: u64, local: u64) -> i32 {
+    if used == entries.len() { return 4; }
+    let target = qualified(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()], copy(first), copy(separator), copy(member), copy(file), 0);
+    let spelling = &source[tokens[member].start..tokens[member].end];
+    let spelling_size = spelling.len();
+    let mut module: u64 = 0;
+    let mut candidate: u64 = 0;
+    while candidate < files.len() as u64 {
+        let path = &names[files[candidate].module_start..files[candidate].module_end];
+        let size = path.len();
+        if spelling_size < size {
+            let prefix_size = size - spelling_size;
+            if spelling.content_eq(&path[prefix_size..size])
+                && module_matches(&source[0..source.len()], &tokens[0..tokens.len()],
+                    &path[0..prefix_size], copy(first), separator + 1, 0) {
+                if !can_import(&names[0..names.len()], &files[0..files.len()], copy(file), copy(candidate)) { return 13; }
+                module = candidate + 1;
+                break;
+            }
+        }
+        candidate = candidate + 1;
+    }
+    if target == 0 && module == 0 {
+        let namespace = &source[tokens[first].start..tokens[first].end];
+        drop(inaccessible_package(&names[0..names.len()], &files[0..files.len()], file, namespace));
+        return 13;
+    }
+    if target != 0 && module != 0 { return 14; }
+    let start = tokens[local].start;
+    let end = tokens[local].end;
+    if imported(&source[0..source.len()], &entries[0..used], copy(file), copy(start), copy(end)) != 0
+        || declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()], copy(file), copy(start), copy(end)) != 0 {
+        return 14;
+    }
+    entries[used] = Import { file: file, start: start, end: end, target: target, module: module };
+    0
+}
+
+fn install_imports(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
+    nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64) -> (i32, usize) {
+    let mut last = copy(first);
+    while tokens[last + 1].kind == 43 { last = last + 2; }
+    let separator = copy(last) - 1;
+    let mut count = used;
+    if tokens[last].kind == 4 {
+        last = last + 1;
+        while tokens[last].kind != 5 {
+            let member = copy(last);
+            let mut local = copy(member);
+            last = last + 1;
+            if tokens[last].kind == 41 { local = last + 1; last = last + 2; }
+            let code = enter_import(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()],
+                &mut entries[0..entries.len()], copy(count), copy(file), copy(first), copy(separator), member, local);
+            if code != 0 { return (code, 0); }
+            count = count + 1;
+            if tokens[last].kind == 11 { last = last + 1; }
+        }
+    } else {
+        let local = if tokens[last + 1].kind == 41 { last + 2 } else { copy(last) };
+        let code = enter_import(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()],
+            &mut entries[0..entries.len()], copy(count), file, first, separator, last, local);
+        if code != 0 { return (code, 0); }
+        count = count + 1;
+    }
+    return (0, count);
+}
+
+
+fn native_type_name(name: &[u8]) -> bool {
+    let vector: [u8; 6] = [86,101,99,116,111,114];
+    let map: [u8; 7] = [72,97,115,104,77,97,112];
+    let string: [u8; 6] = [83,116,114,105,110,103];
+    name.content_eq(&vector[..]) || name.content_eq(&map[..]) || name.content_eq(&string[..])
+}
+
+// Permit export declarations of reserved native names only in the root STD.
+// This does not permit user packages to redeclare the corresponding types.
+pub fn prepare_native_exports(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &mut [Token]) {
+    let root: [u8; 3] = [115,116,100];
+    let mut token: u64 = 2;
+    while token < tokens.len() as u64 {
+        if tokens[token - 1].kind == 58 && tokens[token - 2].kind == 57 {
+            let owner = file_at(&files[0..files.len()], tokens[token].start);
+            if owner < files.len() as u64 && files[owner].package == 64 {
+                let module = &names[files[owner].module_start..files[owner].module_end];
+                if module.content_eq(&root[..])
+                    && native_type_name(&source[tokens[token].start..tokens[token].end]) {
+                    let kind = tokens[token].kind;
+                    let start = tokens[token].start;
+                    let end = tokens[token].end;
+                    tokens[token] = Token { nominal: true, annotation: 0, kind: kind,
+                        start: start, end: end };
+                }
+            }
+        }
+        token = token + 1;
+    }
+}
+
+// Root STD declarations bind existing native types. Their source declarations
+// are exports, not nominal record layouts; user packages cannot install these bindings.
+fn native_std_type(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) -> bool {
+    if nodes[item].kind != 28 { return false; }
+    let owner = file_at(&files[0..files.len()], nodes[item].start);
+    let root: [u8; 3] = [115,116,100];
+    let module = &names[files[owner].module_start..files[owner].module_end];
+    if files[owner].package != 64 || !module.content_eq(&root[..]) { return false; }
+    let name = &source[nodes[item].name_start..nodes[item].name_end];
+    native_type_name(name)
+}
+
+fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) -> u64 {
+    let module: [u8; 9] = [115,116,100,58,58,105,116,101,114];
+    let owner = file_at(&files[0..files.len()], nodes[item].start);
+    let path = &names[files[owner].module_start..files[owner].module_end];
+    if files[owner].package != 64 || !path.content_eq(&module[..]) { return 0; }
+    let spelling = &source[nodes[item].name_start..nodes[item].name_end];
+    let name0: [u8; 4] = [73,116,101,114];
+    if spelling.content_eq(&name0[..]) { return 1; }
+    let name1: [u8; 3] = [77,97,112];
+    if spelling.content_eq(&name1[..]) { return 2; }
+    let name2: [u8; 6] = [70,105,108,116,101,114];
+    if spelling.content_eq(&name2[..]) { return 3; }
+    let name3: [u8; 6] = [82,101,100,117,99,101];
+    if spelling.content_eq(&name3[..]) { return 4; }
+    let factory: [u8; 4] = [105,116,101,114];
+    if spelling.content_eq(&factory[..]) { return 6; }
+    0
+}
+
+fn write_target(output: &mut [u8], cursor: usize, target: u64, type_name: bool) -> usize {
+    let prefix_bytes: [u8; 14] = [95, 95, 100, 105, 110, 95, 112, 97, 99, 107, 97, 103, 101, 95]; // __din_package_
+    let prefix = &prefix_bytes[..];
+    let mut digits: [u8; 20] = [0; 20];
+    let mut length: usize = 0;
+    let mut number = target;
+    while number != 0 {
+        // The remainder fits in u8. Use a table to keep conversions exact.
+        let decimal_bytes: [u8; 10] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57]; // 0123456789
+        let decimal = &decimal_bytes[..];
+        digits[length] = decimal[number % 10];
+        length = length + 1;
+        number = number / 10;
+    }
+    if prefix.len() + length > output.len() - cursor { return 0; }
+    let mut pos = cursor;
+    let mut index: usize = 0;
+    while index < prefix.len() {
+        output[pos] = if index == 0 && type_name { 68 } else { prefix[index] };
+        pos = pos + 1;
+        index = index + 1;
+    }
+    while length > 0 {
+        length = length - 1;
+        output[pos] = digits[length];
+        pos = pos + 1;
+    }
+    pos
+}
+
+// Only the standard argument wrapper can access the process entry data.
+// Preserve the call's byte location when import removal changes offsets.
+fn process_arguments(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode],
+    graph: &[StaticNode], function: u64, file: u64) -> u64 {
+    let env: [u8; 8] = [115, 116, 100, 58, 58, 101, 110, 118]; // std::env
+    let args: [u8; 4] = [97, 114, 103, 115];
+    let primitive: [u8; 21] = [114, 117, 110, 116, 105, 109, 101, 58, 58, 112, 114, 111, 99, 101, 115, 115, 95, 97, 114, 103, 115];
+    let module = &names[files[file].module_start..files[file].module_end];
+    let name = &source[nodes[function].name_start..nodes[function].name_end];
+    if !module.content_eq(&env[..]) || !name.content_eq(&args[..]) { return 0; }
+    let result = graph[function].first_child;
+    let body = graph[result].next_sibling;
+    let tail = graph[body].first_child;
+    let call = graph[tail].first_child;
+    let callee = graph[call].first_child;
+    if nodes[result].kind != 4 || nodes[body].kind != 2 || nodes[tail].kind != 10 || nodes[call].kind != 15
+        || nodes[callee].kind != 36 || graph[tail].next_sibling != 0 || graph[callee].next_sibling != 0 { return 0; }
+    let spelling = &source[nodes[callee].start..nodes[callee].end];
+    if spelling.content_eq(&primitive[..]) { return nodes[call].start; }
+    0
+}
+
+fn standard_module(module: &[u8]) -> bool {
+    let name: [u8; 3] = [115,116,100];
+    if module.len() < 3 { return false; }
+    let prefix = &module[0..3];
+    prefix.content_eq(&name[..]) && (module.len() == 3 || (module.len() > 4 && module[3] == 58 && module[4] == 58))
+}
+
+fn can_import(names: &[u8], files: &[PackageFile], owner: u64, dependency: u64) -> bool {
+    let module = &names[files[dependency].module_start..files[dependency].module_end];
+    if files[dependency].package < 64 {
+        let mask: u64 = 1 << files[dependency].package;
+        return (files[owner].visible & mask) != 0;
+    }
+    let platform: [u8; 8] = [115,116,100,58,58,115,121,115];
+    if module.len() < 8 { return true; }
+    let prefix = &module[0..8];
+    if !prefix.content_eq(&platform[..])
+        || (module.len() != 8 && (module.len() < 10 || module[8] != 58 || module[9] != 58)) { return true; }
+    let from = &names[files[owner].module_start..files[owner].module_end];
+    standard_module(&from[0..from.len()])
+}
+
+// A package can be present in the build graph through a transitive edge.
+fn inaccessible_package(names: &[u8], files: &[PackageFile], owner: u64, namespace: &[u8]) -> bool {
+    let length = namespace.len();
+    let mut file: u64 = 0;
+    while file < files.len() as u64 {
+        if files[file].package < 64 && !can_import(&names[0..names.len()], &files[0..files.len()], copy(owner), copy(file)) {
+            let module = &names[files[file].module_start..files[file].module_end];
+            if (module.len() == length || (module.len() >= length + 2 && module[length] == 58 && module[length + 1] == 58))
+                && namespace.content_eq(&module[0..length]) {
+                missing_direct_dependency(&namespace[0..namespace.len()]);
+                return true;
+            }
+        }
+        file = file + 1;
+    }
+    false
+}
+
+// Include all package units and the standard modules they reference.
+fn select_units(names: &[u8], files: &[PackageFile], nodes: &[AstNode], imports: &[Import],
+    edits: &[Edit], selected: &mut [bool]) {
+    let mut file: u64 = 0;
+    while file < files.len() as u64 {
+        let module = &names[files[file].module_start..files[file].module_end];
+        selected[file] = !standard_module(&module[0..module.len()]);
+        file = file + 1;
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut index: u64 = 0;
+        while index < imports.len() as u64 {
+            let owner = imports[index].file;
+            if selected[owner] {
+                let target = imports[index].target;
+                if target != 0 {
+                    let dependency = file_at(&files[0..files.len()], nodes[target].start);
+                    if !selected[dependency] { selected[dependency] = true; changed = true; }
+                }
+                let module = imports[index].module;
+                if module != 0 {
+                    let mut candidate: u64 = 0;
+                    while candidate < files.len() as u64 {
+                        if !selected[candidate] && same_module(&names[0..names.len()], &files[0..files.len()], copy(candidate), copy(module) - 1) {
+                            selected[candidate] = true; changed = true;
+                        }
+                        candidate = candidate + 1;
+                    }
+                }
+            }
+            index = index + 1;
+        }
+        file = 0;
+        let mut cursor: u64 = 0;
+        while file < files.len() as u64 {
+            let end = files[file].end + 1;
+            if selected[file] {
+                while cursor < end {
+                    let stop = edits[cursor].end;
+                    let target = edits[cursor].target;
+                    if target != 0 {
+                        let dependency = file_at(&files[0..files.len()], nodes[target].start);
+                        if !selected[dependency] { selected[dependency] = true; changed = true; }
+                    }
+                    cursor = if stop == 0 { cursor + 1 } else { stop };
+                }
+            }
+            cursor = end;
+            file = file + 1;
+        }
+    }
+}
+
+fn private_layout(module: &[u8], name: &[u8]) -> bool {
+    let io: [u8; 7] = [115, 116, 100, 58, 58, 105, 111]; // std::io
+    let file: [u8; 4] = [70, 105, 108, 101]; // File
+    if module.content_eq(&io[..]) { return name.content_eq(&file[..]); }
+    let module_0: [u8; 13] = [115, 116, 100, 58, 58, 105, 111, 58, 58, 97, 115, 121, 110]; // std::io::asyn
+    let module_1: [u8; 19] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 97, 115, 121, 110, 58, 58, 116, 99, 112]; // std::net::asyn::tcp
+    let module_2: [u8; 19] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 97, 115, 121, 110, 58, 58, 117, 100, 112]; // std::net::asyn::udp
+    let module_3: [u8; 13] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 116, 99, 112]; // std::net::tcp
+    let module_4: [u8; 13] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 117, 100, 112]; // std::net::udp
+    let module_5: [u8; 13] = [115, 116, 100, 58, 58, 115, 121, 115, 58, 58, 110, 101, 116]; // std::sys::net
+    let module_6: [u8; 22] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 116, 108, 115, 58, 58, 111, 112, 101, 110, 115, 115, 108]; // std::net::tls::openssl
+    let module_7: [u8; 19] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 115, 104, 97, 50, 53, 54]; // std::crypto::sha256
+    let module_8: [u8; 16] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 97, 101, 115]; // std::crypto::aes
+    let module_9: [u8; 19] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 115, 104, 97, 53, 49, 50]; // std::crypto::sha512
+    let module_10: [u8; 17] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 115, 104, 97, 51]; // std::crypto::sha3
+    let md5: [u8; 16] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 109, 100, 53]; // std::crypto::md5
+    if module.content_eq(&md5[..]) {
+        let state: [u8; 3] = [77, 100, 53]; // Md5
+        return name.content_eq(&state[..]);
+    }
+    let x509: [u8; 17] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 120, 53, 48, 57]; // std::crypto::x509
+    let certificate: [u8; 11] = [67, 101, 114, 116, 105, 102, 105, 99, 97, 116, 101]; // Certificate
+    if module.content_eq(&x509[..]) {
+        let key: [u8; 9] = [80, 117, 98, 108, 105, 99, 75, 101, 121]; // PublicKey
+        return name.content_eq(&key[..]) || name.content_eq(&certificate[..]);
+    }
+    let tls_handshake: [u8; 13] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 116, 108, 115]; // std::net::tls
+    if module.content_eq(&tls_handshake[..]) {
+        let session: [u8; 7] = [83, 101, 115, 115, 105, 111, 110]; // Session
+        return name.content_eq(&session[..]) || name.content_eq(&certificate[..]);
+    }
+    let tls_record: [u8; 21] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 116, 108, 115, 58, 58, 114, 101, 99, 111, 114, 100]; // std::net::tls::record
+    if module.content_eq(&tls_record[..]) {
+        let state: [u8; 12] = [82, 101, 99, 111, 114, 100, 67, 105, 112, 104, 101, 114]; // RecordCipher
+        return name.content_eq(&state[..]);
+    }
+    let p256: [u8; 17] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 112, 50, 53, 54]; // std::crypto::p256
+    if module.content_eq(&p256[..]) {
+        let ephemeral: [u8; 12] = [69, 112, 104, 101, 109, 101, 114, 97, 108, 75, 101, 121]; // EphemeralKey
+        let signing: [u8; 10] = [83, 105, 103, 110, 105, 110, 103, 75, 101, 121]; // SigningKey
+        let public_key: [u8; 9] = [80, 117, 98, 108, 105, 99, 75, 101, 121]; // PublicKey
+        return name.content_eq(&ephemeral[..]) || name.content_eq(&signing[..]) || name.content_eq(&public_key[..]);
+    }
+    if !(module.content_eq(&module_0[..])
+        || module.content_eq(&module_1[..])
+        || module.content_eq(&module_2[..])
+        || module.content_eq(&module_3[..])
+        || module.content_eq(&module_4[..])
+        || module.content_eq(&module_5[..])
+        || module.content_eq(&module_6[..])
+        || module.content_eq(&module_7[..])
+        || module.content_eq(&module_8[..])
+        || module.content_eq(&module_9[..])
+        || module.content_eq(&module_10[..])) { return false; }
+    let type_0: [u8; 10] = [67, 111, 110, 110, 101, 99, 116, 105, 111, 110]; // Connection
+    let type_1: [u8; 8] = [76, 105, 115, 116, 101, 110, 101, 114]; // Listener
+    let type_2: [u8; 14] = [80, 108, 97, 116, 102, 111, 114, 109, 83, 111, 99, 107, 101, 116]; // PlatformSocket
+    let type_3: [u8; 8] = [82, 101, 97, 100, 72, 97, 108, 102]; // ReadHalf
+    let type_4: [u8; 9] = [87, 114, 105, 116, 101, 72, 97, 108, 102]; // WriteHalf
+    let type_5: [u8; 6] = [83, 104, 97, 50, 53, 54]; // Sha256
+    let type_6: [u8; 9] = [65, 69, 83, 49, 50, 56, 71, 67, 77]; // AES128GCM
+    let type_7: [u8; 9] = [65, 69, 83, 50, 53, 54, 71, 67, 77]; // AES256GCM
+    let type_8: [u8; 6] = [83, 104, 97, 51, 56, 52]; // Sha384
+    let type_9: [u8; 6] = [83, 104, 97, 53, 49, 50]; // Sha512
+    let type_10: [u8; 8] = [83, 104, 97, 51, 95, 50, 50, 52]; // Sha3_224
+    let type_11: [u8; 8] = [83, 104, 97, 51, 95, 50, 53, 54]; // Sha3_256
+    let type_12: [u8; 8] = [83, 104, 97, 51, 95, 51, 56, 52]; // Sha3_384
+    let type_13: [u8; 8] = [83, 104, 97, 51, 95, 53, 49, 50]; // Sha3_512
+    name.content_eq(&file[..])
+        || name.content_eq(&type_0[..])
+        || name.content_eq(&type_1[..])
+        || name.content_eq(&type_2[..])
+        || name.content_eq(&type_3[..])
+        || name.content_eq(&type_4[..])
+        || name.content_eq(&type_5[..])
+        || name.content_eq(&type_6[..])
+        || name.content_eq(&type_7[..])
+        || name.content_eq(&type_8[..])
+        || name.content_eq(&type_9[..])
+        || name.content_eq(&type_10[..])
+        || name.content_eq(&type_11[..])
+        || name.content_eq(&type_12[..])
+        || name.content_eq(&type_13[..])
+}
+
+pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
+    nodes: &[AstNode], graph: &[StaticNode], output: &mut [u8], visibility: &mut [LayoutVisibility]) -> (i32, usize, u64) {
+    let mut token: u64 = 0;
+    while token < tokens.len() as u64 {
+        let start = tokens[token].start;
+        let end = tokens[token].end;
+        if end - start == 20 && private_socket_field(&source[start..end]) {
+            let file = file_at(&files[0..files.len()], copy(start));
+            let module = &names[files[file].module_start..files[file].module_end];
+            if !standard_module(&module[0..module.len()]) {
+                return (report_violation(1, start), 0, 0);
+            }
+        }
+        token = token + 1;
+    }
+    let mut entries = [Import { file: 0, start: 0, end: 0, target: 0, module: 0 }; 4096];
+    // Entries are indexed by byte offset in the package source buffer.
+    let mut edits = [Edit { end: 0, target: 0 }; 3145728];
+    let main_bytes: [u8; 4] = [109, 97, 105, 110]; // main
+    let main = &main_bytes[..];
+    let generated_bytes: [u8; 14] = [95, 95, 100, 105, 110, 95, 112, 97, 99, 107, 97, 103, 101, 95]; // __din_package_
+    let generated = &generated_bytes[..];
+    let root_bytes: [u8; 7] = [114, 117, 110, 116, 105, 109, 101]; // runtime
+    let root = &root_bytes[..];
+    let mut symbols: [u64; 4096] = [0; 4096];
+    let mut symbols_end: usize = 0;
+    let mut main_node: u64 = 0;
+    let mut env_call: u64 = 0;
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].parent == 0 {
+            let file = file_at(&files[0..files.len()], nodes[node].start);
+            if file == files.len() as u64 || nodes[node].end > files[file].end { return (7, 0, 0); }
+            let kind = nodes[node].kind;
+            if component(copy(kind)) {
+                if symbols_end == 4096 { return (4, 0, 0); }
+                let start = nodes[node].name_start;
+                let end = nodes[node].name_end;
+                if kind == 76 && constant_name_reserved(&source[start..end], false) {
+                    return (report_violation(1, start), 0, 0);
+                }
+                if declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end)) != 0 { return (14, 0, 0); }
+                if kind == 1 && files[file].module_start != 0 {
+                    let argument_call = process_arguments(&source[0..source.len()], &names[0..names.len()],
+                        &files[0..files.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node), copy(file));
+                    if argument_call != 0 { env_call = argument_call; }
+                }
+                symbols[symbols_end] = copy(node);
+                symbols_end = symbols_end + 1;
+                let name = &source[start..end];
+                if files[file].entry && kind == 1 && name.content_eq(&main[0..main.len()]) { main_node = copy(node); }
+                else { edits[start] = Edit { end: end, target: copy(node) }; }
+                if native_std_type(&source[0..source.len()], &names[0..names.len()],
+                    &files[0..files.len()], &nodes[0..nodes.len()], copy(node)) {
+                    edits[nodes[node].start] = Edit { end: nodes[node].end, target: 0 };
+                }
+            } else if kind != 32 && kind != 49 && kind != 58 { return (15, 0, 0); }
+        }
+        node = node + 1;
+    }
+    if main_node == 0 { return (15, 0, 0); }
+    let mut count: usize = 0;
+    node = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].parent == 0 && nodes[node].kind == 32 {
+            let file = file_at(&files[0..files.len()], nodes[node].start);
+            let token = token_at(&tokens[0..tokens.len()], nodes[node].start);
+            let (code, written) = install_imports(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[..symbols_end],
+                &mut entries[..], copy(count), file, token + 1);
+            if code != 0 { return (code, 0, 0); }
+            count = written;
+            edits[nodes[node].start] = Edit { end: nodes[node].end, target: 0 };
+        }
+        node = node + 1;
+    }
+    node = 1;
+    while node < nodes.len() as u64 {
+        let kind = nodes[node].kind;
+        let type_name = kind == 4 || kind == 37 || kind == 49 || kind == 53;
+        if (kind == 7 && graph[node].binding == 0) || kind == 36 || (type_name && nodes[node].name_end != 0) {
+            let file = file_at(&files[0..files.len()], nodes[node].start);
+            let start = nodes[node].name_start;
+            let mut end = nodes[node].name_end;
+            let first = token_at(&tokens[0..tokens.len()], copy(start));
+            let mut last = copy(first);
+            while tokens[last + 1].kind == 43 { last = last + 2; }
+            let entry = imported(&source[0..source.len()], &entries[..count], copy(file), copy(start), copy(end));
+            let mut target: u64 = 0;
+            let mut alias: u64 = 0;
+            if entry != 0 {
+                target = entries[entry - 1].target;
+                alias = entries[entry - 1].module;
+            } else {
+                target = declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end));
+            }
+            if last != first && (target == 0 || !nominal(nodes[target].kind)) {
+                let mut member = copy(last);
+                while member > first {
+                    target = qualified(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                        &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[..symbols_end],
+                        copy(first), member - 1, copy(member), copy(file), copy(alias));
+                    if target != 0 && (member == last || (kind == 36 && member == last - 2 && nominal(nodes[target].kind))) {
+                        end = tokens[member].end;
+                        break;
+                    }
+                    target = 0;
+                    member = member - 2;
+                }
+                let namespace = &source[tokens[first].start..tokens[first].end];
+                if target == 0 && tokens[first].annotation != -1 && !namespace.content_eq(&root[0..root.len()]) {
+                    let parent = nodes[node].parent;
+                    let dependency_reported = inaccessible_package(&names[0..names.len()], &files[0..files.len()],
+                        copy(file), &namespace[0..namespace.len()]);
+                    if !dependency_reported && kind == 36 && nodes[parent].kind == 15 && graph[parent].first_child == node {
+                        unknown_qualified_function(&source[nodes[node].start..nodes[node].end]);
+                    }
+                    return (13, 0, 0);
+                }
+            }
+            if target == 0 && alias != 0 { return (13, 0, 0); }
+            if target == 0 && end - start >= generated.len() as u64 {
+                let prefix = &source[start..start + (generated.len() as u64)];
+                if prefix.content_eq(&generated[0..generated.len()]) { return (13, 0, 0); }
+            }
+            if target != 0 && target != main_node && (!type_name || nominal(nodes[target].kind)) {
+                edits[start] = Edit { end: end, target: target };
+            }
+        }
+        node = node + 1;
+    }
+    let mut selected: [bool; 256] = [false; 256];
+    if files.len() > 256 { return (4, 0, 0); }
+    select_units(&names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &entries[..count],
+        &edits[..], &mut selected[..]);
+    let mut file: u64 = 0;
+    let mut cursor: usize = 0;
+    let mut written: usize = 0;
+    let mut arguments_offset: u64 = 0;
+    let mut layout_count: usize = 0;
+    let mut first_layout: usize = 0;
+    let mut file_start: u64 = 0;
+    while file < files.len() as u64 {
+        if cursor as u64 > files[file].end {
+            while first_layout < layout_count {
+                let name = visibility[first_layout].name;
+                let kind = visibility[first_layout].kind;
+                visibility[first_layout] = LayoutVisibility { kind: kind, name: name, start: copy(file_start), end: written as u64 };
+                first_layout = first_layout + 1;
+            }
+            file_start = written as u64;
+            file = file + 1;
+            continue;
+        }
+        if !selected[file] { cursor = (files[file].end + 1) as usize; continue; }
+        if env_call != 0 && cursor as u64 == env_call { arguments_offset = written as u64; }
+        if edits[cursor].end != 0 {
+            let target = edits[cursor].target;
+            if target != 0 {
+                if nodes[target].kind == 28 && nodes[target].name_start == cursor as u64 && files[file].package == 64 {
+                    let module = &names[files[file].module_start..files[file].module_end];
+                    let name = &source[nodes[target].name_start..nodes[target].name_end];
+                    if private_layout(&module[0..module.len()], &name[0..name.len()]) {
+                        if layout_count == visibility.len() { return (4, 0, 0); }
+                        visibility[layout_count] = LayoutVisibility { kind: 0, name: written as u64, start: 0, end: 0 };
+                        layout_count = layout_count + 1;
+                    }
+                }
+                if nodes[target].name_start == cursor as u64 && files[file].package == 64 {
+                    let module = &names[files[file].module_start..files[file].module_end];
+                    let reactor: [u8; 22] = [115,116,100,58,58,115,121,115,58,58,110,101,116,58,58,114,101,97,99,116,111,114];
+                    if module.content_eq(&reactor[..]) {
+                        let name = &source[nodes[target].name_start..nodes[target].name_end];
+                        let ready: [u8;5] = [114,101,97,100,121];
+                        let create: [u8;12] = [113,117,101,117,101,95,99,114,101,97,116,101];
+                        let watch: [u8;11] = [113,117,101,117,101,95,119,97,116,99,104];
+                        let wait: [u8;10] = [113,117,101,117,101,95,119,97,105,116];
+                        let attach: [u8;6] = [97,116,116,97,99,104];
+                        let complete: [u8;8] = [99,111,109,112,108,101,116,101];
+                        let completion_create: [u8;17] = [99,111,109,112,108,101,116,105,111,110,95,99,114,101,97,116,101];
+                        let completion_attach: [u8;17] = [99,111,109,112,108,101,116,105,111,110,95,97,116,116,97,99,104];
+                        let completion_submit: [u8;17] = [99,111,109,112,108,101,116,105,111,110,95,115,117,98,109,105,116];
+                        let completion_next: [u8;15] = [99,111,109,112,108,101,116,105,111,110,95,110,101,120,116];
+                        let kind: i64 = if name.content_eq(&ready[..]) { 1 } else if name.content_eq(&create[..]) { 2 }
+                            else if name.content_eq(&watch[..]) { 3 } else if name.content_eq(&wait[..]) { 4 } else if name.content_eq(&attach[..]) { 5 } else if name.content_eq(&complete[..]) { 6 } else if name.content_eq(&completion_create[..]) { 7 } else if name.content_eq(&completion_attach[..]) { 8 } else if name.content_eq(&completion_submit[..]) { 9 } else if name.content_eq(&completion_next[..]) { 10 } else { 0 };
+                        if kind != 0 {
+                            if layout_count == visibility.len() { return (4, 0, 0); }
+                            visibility[layout_count] = LayoutVisibility { kind: kind, name: written as u64, start: 0, end: 0 };
+                            layout_count = layout_count + 1;
+                        }
+                    }
+                }
+                let iterator = iter_symbol(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                    &nodes[0..nodes.len()], copy(target));
+                if iterator != 0 {
+                    let adapter: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
+                    let prefix: [u8; 13] = [95,95,99,111,114,98,111,95,105,116,101,114,95];
+                    let width: usize = if iterator == 1 { 18 } else { 13 };
+                    if width >= output.len() - written { return (4, 0, 0); }
+                    let mut letter: usize = 0;
+                    while letter < width {
+                        output[written] = if iterator == 1 { adapter[letter] } else { prefix[letter] };
+                        written = written + 1;
+                        letter = letter + 1;
+                    }
+                    if iterator != 1 {
+                        let mut letter = nodes[target].name_start;
+                        while letter < nodes[target].name_end {
+                            if written == output.len() { return (4, 0, 0); }
+                            output[written] = source[letter];
+                            written = written + 1;
+                            letter = letter + 1;
+                        }
+                    }
+                } else if native_std_type(&source[0..source.len()], &names[0..names.len()],
+                    &files[0..files.len()], &nodes[0..nodes.len()], copy(target)) {
+                    let mut letter = nodes[target].name_start;
+                    while letter < nodes[target].name_end {
+                        if written == output.len() { return (4, 0, 0); }
+                        output[written] = source[letter];
+                        written = written + 1;
+                        letter = letter + 1;
+                    }
+                } else {
+                    written = write_target(&mut output[0..output.len()], written, copy(target), nominal(nodes[target].kind));
+                }
+                if written == 0 { return (4, 0, 0); }
+            }
+            cursor = edits[cursor].end as usize;
+        } else {
+            if written == output.len() { return (4, 0, 0); }
+            output[written] = source[cursor];
+            written = written + 1;
+            cursor = cursor + 1;
+        }
+    }
+    return (0, written, arguments_offset);
+}

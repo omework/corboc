@@ -1,0 +1,540 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, Token, constructor_arguments, constructor_field_value};
+use bootstrap::tasks::{scalar_handle_type, check_native_worker, thread_block, copy_task_summary, task_survives, dependent_handle, task_method, in_async, complete_task};
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::loans::loan_conflict;
+use bootstrap::scalar::{folded_integer, verify_primitive};
+use bootstrap::places::scalar_place;
+use bootstrap::declarations::{nominal_declaration, verification_field, layout_visible};
+use bootstrap::lowering_types::option_code;
+use bootstrap::calls::{bootstrap_callee, lookup_record_method};
+
+pub fn handle_vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let vector: [u8; 6] = [86,101,99,116,111,114];
+    let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+    let inner = graph[annotation].first_child;
+    if !name.content_eq(&vector[..]) || inner == 0 || graph[inner].next_sibling != 0 { return 0; }
+    let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], inner);
+    if handle == 0 { return 0; }
+    return 2200 + handle - 620;
+}
+
+pub fn handle_vector(ty: i64) -> bool { ty >= 2300 && ty <= 2327 }
+
+pub fn owned_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let child = graph[annotation].first_child;
+    if child == 0 || graph[child].next_sibling != 0
+        || nodes[annotation].name_end - nodes[annotation].name_start != 1
+        || source[nodes[annotation].name_start] != 65 { return 0; }
+    let pool = handle_vector_pool(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], child);
+    if pool == 0 { return 0; }
+    pool + 100
+}
+
+pub fn record_with_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> bool {
+    if nodes[record].kind != 28 { return false; }
+    let mut field = graph[record].first_child;
+    let mut found = false;
+    while field != 0 {
+        let annotation = graph[field].first_child;
+        if owned_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) != 0 {
+            found = true;
+        } else if graph[annotation].first_child != 0
+            || verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
+            return false;
+        }
+        field = graph[field].next_sibling;
+    }
+    found
+}
+
+pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64) -> i64 {
+    let receiver = graph[call].first_child;
+    if nodes[receiver].kind != 17 || graph[receiver].next_sibling != 0 { return 0; }
+    let pop: [u8; 3] = [112,111,112];
+    let method = &source[nodes[call].name_start..nodes[call].name_end];
+    if !method.content_eq(&pop[..]) { return 0; }
+    let (ty, owner, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], graph[receiver].first_child);
+    if ty < 0 { return ty; }
+    if ty != 300 { return 0; }
+    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], shape);
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(record), copy(receiver));
+    let vector = owned_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[field].first_child);
+    if vector == 0 { return 0; }
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], record, copy(receiver)) { return -9; }
+    let writable = if values[owner].ty == 734 { values[owner].exclusive } else { values[owner].mutable };
+    if !writable { return 0 - violation(5, nodes[receiver].start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], copy(owner), copy(receiver), true);
+    if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[receiver].start) }; }
+    let handle = vector - 2300 + 620;
+    let output = option_code(copy(handle));
+    let root = if values[owner].ty == 734 { values[owner].target } else { copy(owner) };
+    if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(root)) {
+        let moved = apply_handle_pop(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], copy(call), root, copy(receiver), copy(output));
+        if moved < 0 { return moved; }
+        if moved > 0 { return output; }
+    }
+    values[receiver] = CheckedValue { ty: handle, state: 1, mutable: false,
+        target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+    values[call] = CheckedValue { ty: copy(output), state: 1, mutable: false,
+        target: receiver, loan_parent: 0, origin_call: 0, exclusive: false };
+    output
+}
+
+fn ungroup(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+    let mut node = expression;
+    while nodes[node].kind == 19 { node = graph[node].first_child; }
+    node
+}
+
+// Follow a guaranteed tail extraction through ordinary forwarding calls.
+// Let a conditional or stateful method keep its existing conservative summary.
+pub fn returned_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    function: u64, depth: u64) -> u64 {
+    if function == 0 || depth >= 64 { return 0; }
+    let formal = graph[function].first_child;
+    let result = graph[formal].next_sibling;
+    if nodes[formal].kind != 3 || nodes[result].kind != 4 { return 0; }
+    let body = graph[result].next_sibling;
+    let first_statement = graph[body].first_child;
+    let tail = if nodes[first_statement].kind == 5 { graph[first_statement].next_sibling } else { copy(first_statement) };
+    if (nodes[tail].kind != 10 && nodes[tail].kind != 6) || graph[tail].next_sibling != 0 { return 0; }
+    let call = ungroup(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[tail].first_child);
+    let receiver = graph[call].first_child;
+    if nodes[call].kind == 15 {
+        let argument = graph[receiver].next_sibling;
+        let deref = graph[argument].first_child;
+        let name = graph[deref].first_child;
+        if graph[argument].next_sibling != 0 || nodes[argument].kind != 13
+            || nodes[deref].kind != 14 || nodes[name].kind != 7 || graph[name].binding != formal { return 0; }
+        let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], call);
+        return returned_handle_pop(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], callee, depth + 1);
+    }
+    if nodes[call].kind != 16 || graph[receiver].next_sibling != 0 { return 0; }
+    let method = &source[nodes[call].name_start..nodes[call].name_end];
+    let pop: [u8; 3] = [112,111,112];
+    let ty = graph[formal].first_child;
+    if method.content_eq(&pop[..]) && nodes[receiver].kind == 17 {
+        let base = ungroup(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[receiver].first_child);
+        let name = graph[base].first_child;
+        if nodes[base].kind != 14 || nodes[name].kind != 7 || graph[name].binding != formal { return 0; }
+        let owner = nodes[function].parent;
+        let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            if nodes[owner].kind == 49 { owner } else { graph[ty].first_child });
+        return verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, receiver);
+    }
+    if nodes[first_statement].kind == 5 && nodes[receiver].kind == 7 && graph[receiver].binding == first_statement {
+        let initializer = graph[first_statement].initializer;
+        let deref = graph[initializer].first_child;
+        let projection = graph[deref].first_child;
+        let base = ungroup(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[projection].first_child);
+        if nodes[initializer].kind != 13 || nodes[deref].kind != 14 || nodes[projection].kind != 17
+            || nodes[base].kind != 14 || graph[graph[base].first_child].binding != formal { return 0; }
+        let owner = nodes[function].parent;
+        let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            if nodes[owner].kind == 49 { owner } else { graph[ty].first_child });
+        let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, projection);
+        let annotation = graph[field].first_child;
+        let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[annotation].first_child);
+        let name = &source[nodes[nested].name_start..nodes[nested].name_end];
+        let next = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name, method, true);
+        return returned_handle_pop(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], next, depth + 1);
+    }
+    if ty == 0 || nodes[receiver].kind != 7 || graph[receiver].binding != formal { return 0; }
+    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[ty].first_child);
+    let owner = &source[nodes[record].name_start..nodes[record].name_end];
+    let next = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &owner[0..owner.len()], &method[0..method.len()], true);
+    returned_handle_pop(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], next, depth + 1)
+}
+
+// A forwarded extraction updates the original owner, not the adapter's
+// descriptor. Constructor mappings preserve that identity across moves.
+fn extraction_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    root: u64, field: u64, depth: u64) -> u64 {
+    if root == 0 || depth >= 64 || nodes[root].kind == 3 { return 0; }
+    if values[root].ty == 734 {
+        return extraction_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &values[0..values.len()], values[root].target, field, depth + 1);
+    }
+    let constructor = values[root].origin_call;
+    if nodes[constructor].kind != 37 { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constructor));
+    if nominal == nodes[field].parent { return root; }
+    let parent = values[root].loan_parent;
+    let mut member = graph[constructor].first_child;
+    let mut owner: u64 = 0;
+    while member != 0 {
+        let actual = if constructor_arguments(values[parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], copy(parent), copy(member))
+        } else if parent != 0 { copy(parent) } else { copy(member) };
+        if values[actual].ty == 734 {
+            let nested = extraction_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &values[0..values.len()], actual, copy(field), depth + 1);
+            if nested != 0 {
+                if owner != 0 && owner != nested { return 0; }
+                owner = nested;
+            }
+        }
+        member = graph[member].next_sibling;
+    }
+    owner
+}
+
+pub fn apply_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    call: u64, root: u64, field: u64, result: i64) -> i64 {
+    if root == 0 || nodes[root].kind == 3 { return 0; }
+    let root = extraction_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &values[0..values.len()], root, copy(field), 0);
+    if root == 0 { return 0; }
+    let constructor = values[root].origin_call;
+    if nodes[constructor].kind != 37 { return -9; }
+    let member = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], constructor, field);
+    let ty = values[member].ty;
+    if !handle_vector(copy(ty)) { return -9; }
+    let entry = values[member].origin_call;
+    if entry == 0 { return 0; }
+    let mut point = copy(call);
+    let mut optional = graph[call].scope != graph[root].scope || values[member].loan_parent != 0;
+    while point != 0 && nodes[point].kind != 2 && !optional {
+        let parent = nodes[point].parent;
+        if nodes[parent].kind == 11 && graph[parent].first_child != point {
+            let operator = nodes[parent].name_start;
+            let first = source[operator];
+            optional = (first == 38 || first == 124) && source[operator + 1] == first;
+        }
+        point = parent;
+    }
+    if optional {
+        if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], member) { return -9; }
+        return 0;
+    }
+    let remaining = values[entry].origin_call;
+    let handle = values[entry].target;
+    let pool = values[member].target;
+    values[member] = CheckedValue { ty: ty, state: 1, mutable: false, target: pool,
+        loan_parent: 0, origin_call: remaining, exclusive: false };
+    values[call] = CheckedValue { ty: result, state: 1, mutable: false, target: handle,
+        loan_parent: 0, origin_call: 0, exclusive: false };
+    1
+}
+
+pub fn pooled_handle(ty: i64) -> bool { ty >= 2400 && ty <= 2427 }
+
+pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    values: &mut [CheckedValue], call: u64, destination: u64, pool: u64) -> i64 {
+    let name = &source[nodes[call].name_start..nodes[call].name_end];
+    let new: [u8; 3] = [110,101,119];
+    if !name.content_eq(&new[..]) { return -9; }
+    let argument = graph[graph[call].first_child].next_sibling;
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if values[pool].state != 1 || !values[pool].mutable { return 0 - violation(5, nodes[call].start); }
+    let expected = values[pool].ty - 2350 + 620;
+    let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
+    let actual = if worker != 0 {
+        check_native_worker(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &tokens[0..tokens.len()], &mut values[0..values.len()], copy(worker))
+    } else {
+        verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(argument), copy(expected), 1)
+    };
+    if actual < 0 { return actual; }
+    if actual != expected { return 0 - violation(1, nodes[call].start); }
+    let summary = if worker == 0 { argument } else { worker };
+    if !task_survives(&graph[0..graph.len()], &values[0..values.len()], copy(summary), graph[destination].scope) {
+        return 0 - violation(4, nodes[call].start);
+    }
+    let ty = actual - 620 + 2400;
+    values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[destination].mutable,
+        target: pool, loan_parent: 0, origin_call: summary, exclusive: false };
+    return ty;
+}
+
+pub fn drop_temporary_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    values: &mut [CheckedValue], call: u64) -> i64 {
+    if nodes[call].kind != 15 { return 0; }
+    let name = graph[call].first_child;
+    let method = graph[name].next_sibling;
+    if nodes[name].kind != 7 || graph[name].binding != 0 || method == 0
+        || graph[method].next_sibling != 0 { return 0; }
+    let word: [u8; 4] = [100,114,111,112];
+    let spelling = &source[nodes[name].name_start..nodes[name].name_end];
+    if !spelling.content_eq(&word[..]) { return 0; }
+    let joins = task_method(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(method));
+    let launch = if joins { graph[method].first_child } else { copy(method) };
+    let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(launch));
+    if worker != 0 {
+        let ty = check_native_worker(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[0..values.len()], copy(worker));
+        if ty < 0 { return ty; }
+        let discarded = if joins {
+            if in_async(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(method)) {
+                return 0 - violation(8, nodes[method].start);
+            }
+            values[worker].loan_parent
+        } else { copy(worker) };
+        if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], discarded) {
+            return 0 - violation(8, nodes[method].start);
+        }
+        if joins && ty != 3301 {
+            let captures = values[worker].origin_call;
+            complete_task(&mut values[0..values.len()], captures, graph[launch].first_child);
+        }
+        return 1;
+    }
+    if nodes[method].kind != 16 { return 0; }
+    let pool = graph[graph[method].first_child].binding;
+    if values[pool].ty < 2350 || values[pool].ty > 2377 { return 0; }
+    let allocated = allocate_handle(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &tokens[0..tokens.len()], &mut values[0..values.len()], copy(method), copy(method), pool);
+    if allocated < 0 { return allocated; }
+    if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(method)) {
+        return 0 - violation(8, nodes[method].start);
+    }
+    return 1;
+}
+
+pub fn take_pooled_handle(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    expression: u64, binding: u64, expected: i64, mode: i64) -> i64 {
+    let start = nodes[expression].start;
+    let ty = values[binding].ty;
+    let pool = values[binding].target;
+    let summary = values[binding].origin_call;
+    if values[binding].state != 1 || values[pool].state != 1 { return 0 - violation(4, start); }
+    if mode != 1 && mode != 3 { return -9; }
+    let handle = ty - 2400 + 620;
+    if expected != 0 && handle != expected { return 0 - violation(1, start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], copy(binding), copy(expression), true);
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+    if mode == 3 && values[summary].origin_call != 0 { return 0 - violation(8, start); }
+    let mutable = values[binding].mutable;
+    copy_task_summary(&mut values[0..values.len()], copy(summary), expression, copy(handle), false);
+    values[binding] = CheckedValue { ty: ty, state: 2, mutable: mutable,
+        target: pool, loan_parent: 0, origin_call: summary, exclusive: false };
+    return handle;
+}
+
+pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    let name = &source[nodes[call].name_start..nodes[call].name_end];
+    let push: [u8; 4] = [112,117,115,104];
+    let argument = graph[graph[call].first_child].next_sibling;
+    if !name.content_eq(&push[..]) { return -9; }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    let ty = values[vector].ty;
+    let pool = values[vector].target;
+    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation(4, nodes[call].start); }
+    if !values[vector].mutable { return 0 - violation(5, nodes[call].start); }
+    let optional = graph[call].scope != graph[vector].scope;
+    let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(vector), copy(call), true);
+    if access < 0 { return -9; }
+    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    let expected = ty - 2300 + 620;
+    let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
+    let actual = if worker != 0 {
+        check_native_worker(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &tokens[0..tokens.len()], &mut values[0..values.len()], copy(worker))
+    } else {
+        verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(argument), copy(expected), 1)
+    };
+    if actual < 0 { return actual; }
+    if actual != expected { return 0 - violation(1, nodes[call].start); }
+    let summary = if worker == 0 { argument } else { worker };
+    if !task_survives(&graph[0..graph.len()], &values[0..values.len()], copy(summary), graph[vector].scope) {
+        return 0 - violation(4, nodes[call].start);
+    }
+    let previous = values[vector].origin_call;
+    if optional {
+        if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(summary)) { return -9; }
+        let arm = graph[call].scope;
+        let branch = nodes[arm].parent;
+        if (nodes[branch].kind != 26 || nodes[nodes[branch].parent].kind != 8)
+            && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(vector)) {
+            return -9;
+        }
+        values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
+            loan_parent: call, origin_call: previous, exclusive: false };
+        return 1;
+    }
+    if values[vector].loan_parent != 0 { return -9; }
+    values[call] = CheckedValue { ty: 0, state: 1, mutable: false, target: summary,
+        loan_parent: 0, origin_call: previous, exclusive: false };
+    values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
+        loan_parent: 0, origin_call: call, exclusive: false };
+    return 1;
+}
+
+pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    let name = &source[nodes[call].name_start..nodes[call].name_end];
+    let remove: [u8; 6] = [114,101,109,111,118,101];
+    let pop: [u8; 3] = [112,111,112];
+    let removes = name.content_eq(&remove[..]);
+    if !removes && !name.content_eq(&pop[..]) { return -9; }
+    let argument = graph[graph[call].first_child].next_sibling;
+    if !removes && (nodes[nodes[call].parent].kind != 39
+        || graph[nodes[call].parent].first_child != call) { return -9; }
+    if (removes && (argument == 0 || graph[argument].next_sibling != 0)) || (!removes && argument != 0) {
+        return 0 - violation(8, nodes[call].start);
+    }
+    let pool = values[vector].target;
+    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation(4, nodes[call].start); }
+    if !values[vector].mutable { return 0 - violation(5, nodes[call].start); }
+    if graph[call].scope != graph[vector].scope || values[vector].loan_parent != 0 { return -9; }
+    let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(vector), copy(call), true);
+    if access < 0 { return -9; }
+    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    let head = values[vector].origin_call;
+    let mut len: u64 = 0;
+    let mut item = copy(head);
+    while item != 0 {
+        len = len + 1;
+        item = values[item].origin_call;
+    }
+    if len == 0 { return -9; }
+    let mut reverse_index: u64 = 0;
+    if removes {
+        let index_type = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(argument), 0, 0);
+        if index_type < 0 { return index_type; }
+        if index_type < 1 || index_type > 7 || index_type == 3 { return 0 - violation(1, nodes[argument].start); }
+        let index = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
+        if index.known {
+            if index.negative || index.magnitude >= len { return -9; }
+            reverse_index = len - index.magnitude - 1;
+        } else if len != 1 { return -9; }
+    }
+    let mut selected = copy(head);
+    let mut predecessor: u64 = 0;
+    while reverse_index != 0 {
+        predecessor = copy(selected);
+        selected = values[selected].origin_call;
+        reverse_index = reverse_index - 1;
+    }
+    let next = values[selected].origin_call;
+    let handle = values[selected].target;
+    let ty = values[vector].ty;
+    if predecessor == 0 {
+        values[vector] = CheckedValue { ty: copy(ty), state: 1, mutable: true, target: pool,
+            loan_parent: 0, origin_call: next, exclusive: false };
+    } else {
+        let payload = values[predecessor].target;
+        values[predecessor] = CheckedValue { ty: 0, state: 1, mutable: false, target: payload,
+            loan_parent: 0, origin_call: next, exclusive: false };
+    }
+    if removes {
+        let output = ty - 2300 + 620;
+        copy_task_summary(&mut values[0..values.len()], handle, call, copy(output), false);
+        return output;
+    }
+    values[call] = CheckedValue { ty: 951, state: 1, mutable: false, target: handle,
+        loan_parent: 0, origin_call: 0, exclusive: false };
+    return 951;
+}
+
+// Recognize the loop transfer function: every Some joins its element
+// and returns to the head, while None is the only exit.
+pub fn drain_handles(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], loop_node: u64) -> i64 {
+    if nodes[loop_node].kind != 27 { return 0; }
+    let body = graph[loop_node].first_child;
+    let statement = graph[body].first_child;
+    let match_node = graph[statement].first_child;
+    if (nodes[statement].kind != 8 && nodes[statement].kind != 10) || graph[statement].next_sibling != 0
+        || nodes[match_node].kind != 39 { return 0; }
+    let pop = graph[match_node].first_child;
+    let name = graph[pop].first_child;
+    let vector = graph[name].binding;
+    if nodes[pop].kind != 16 || nodes[name].kind != 7 || graph[name].next_sibling != 0
+        || !handle_vector(values[vector].ty) { return 0; }
+    let pop_word: [u8; 3] = [112,111,112];
+    let method = &source[nodes[pop].name_start..nodes[pop].name_end];
+    if !method.content_eq(&pop_word[..]) { return 0; }
+    let mut arm = graph[pop].next_sibling;
+    let mut some = false;
+    let mut none = false;
+    let mut early = false;
+    while arm != 0 {
+        let pattern = graph[arm].first_child;
+        let arm_body = graph[pattern].next_sibling;
+        let first = graph[arm_body].first_child;
+        let spelling = &source[nodes[pattern].name_start..nodes[pattern].name_end];
+        let some_word: [u8; 4] = [83,111,109,101];
+        let none_word: [u8; 4] = [78,111,110,101];
+        if nodes[arm_body].kind != 2 { return 0; }
+        if spelling.content_eq(&none_word[..]) {
+            if none || graph[pattern].first_child != 0 || nodes[first].kind != 23
+                || graph[first].first_child != 0 || graph[first].destination != loop_node
+                || graph[first].next_sibling != 0 { return 0; }
+            none = true;
+        } else if spelling.content_eq(&some_word[..]) {
+            let binder = graph[pattern].first_child;
+            let drop_call = graph[first].first_child;
+            let drop_name = graph[drop_call].first_child;
+            let join = graph[drop_name].next_sibling;
+            let argument = graph[join].first_child;
+            let drop_word: [u8; 4] = [100,114,111,112];
+            let called = &source[nodes[drop_name].name_start..nodes[drop_name].name_end];
+            if some || !graph[binder].declaration || graph[binder].next_sibling != 0
+                || nodes[first].kind != 8 || nodes[drop_call].kind != 15
+                || nodes[drop_name].kind != 7 || graph[drop_name].binding != 0
+                || !called.content_eq(&drop_word[..]) || graph[join].next_sibling != 0
+                || !task_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], join)
+                || nodes[argument].kind != 7 || graph[argument].binding != binder { return 0; }
+            let next = graph[first].next_sibling;
+            if next != 0 {
+                if nodes[next].kind != 23 || graph[next].destination != loop_node
+                    || graph[next].first_child != 0 || graph[next].next_sibling != 0 { return 0; }
+                early = true;
+            }
+            some = true;
+        } else { return 0; }
+        arm = graph[arm].next_sibling;
+    }
+    if !some || !none || in_async(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(loop_node)) { return 0; }
+    let ty = values[vector].ty;
+    let pool = values[vector].target;
+    if ty >= 2320 || values[vector].state != 1 || values[pool].state != 1 || !values[vector].mutable { return 0; }
+    let mut item = values[vector].origin_call;
+    while item != 0 {
+        let handle = values[item].target;
+        let mut capture = values[handle].origin_call;
+        while capture != 0 {
+            if values[capture].ty >= 5000 { return 0; }
+            capture = values[capture].origin_call;
+        }
+        item = values[item].origin_call;
+    }
+    if early {
+        if values[vector].loan_parent == 0 || !dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(vector)) {
+            return 0;
+        }
+        return 1;
+    }
+    let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        copy(vector), copy(loop_node), true);
+    if access != 0 { return 0; }
+    values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
+        loan_parent: 0, origin_call: 0, exclusive: false };
+    return 1;
+}

@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn source(ok:bool)->Result<i64,bool>{if ok{return Ok(7);}Err(true)}
+fn result(ok:bool)->Result<i64,bool>{let value=source(ok)?;Ok(value+1)}
+fn optional(ok:bool)->Option<i64>{if ok{return Some(9);}None}
+fn outer_option(ok:bool)->Option<i64>{let value=optional(ok)?;Some(value+1)}
+struct Guard{}
+impl Guard{fn drop(&mut self){print(42);}}
+fn cleanup()->Result<i64,bool>{let guard=Guard{};let value=source(false)?;drop(guard);Ok(value)}
+fn main(){
+ match result(true){Ok(value)=>{print(value);},Err(error)=>{drop(error);}}
+ match result(false){Ok(value)=>{drop(value);},Err(error)=>{print(error);}}
+ match outer_option(true){Some(value)=>{print(value);},None=>{}}
+ match outer_option(false){Some(value)=>{drop(value);},None=>{print(0);}}
+ match cleanup(){Ok(value)=>{drop(value);},Err(error)=>{print(error);}}
+}

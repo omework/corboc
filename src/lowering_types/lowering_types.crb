@@ -1,0 +1,367 @@
+use bootstrap::scalar::pointer_integer_type;
+use bootstrap::model::result_type;
+use bootstrap::target_c::{byte_text, character};
+
+pub fn number(n: u64) {
+    if n >= 10 { number(n / 10); }
+    let digit = n % 10;
+    let mut byte: i32 = 48;
+    let mut index: u64 = 0;
+    while index < digit { index = index + 1; byte = byte + 1; }
+    character(byte);
+}
+
+pub fn local(node: u64) { character(118); number(node); }
+
+pub fn temporary(node: u64) { character(116); number(node); }
+
+// Convert small type descriptors without a narrowing integer cast.
+pub fn signed(n: u64) -> i64 {
+    if n == 0 { return 0; }
+    signed(n / 2) * 2 + (if n % 2 == 0 { 0 } else { 1 })
+}
+
+pub fn unsigned(n: i64) -> u64 {
+    if n <= 0 { return 0; }
+    unsigned(n / 2) * 2 + (if n % 2 == 0 { 0 } else { 1 })
+}
+
+// Keep the mutability of each loan in a scalar reference chain.
+pub fn scalar_reference(referent: i64, mutable: bool) -> i64 {
+    if referent > 0 && referent < 20 { return referent + (if mutable { 40 } else { 20 }); }
+    if referent >= 20 && referent < 60 { return referent + (if mutable { 80 } else { 40 }); }
+    if referent > 6000000 && referent <= 6000009 {
+        return 7700000 + (referent - 6000000) * 2 + (if mutable { 1 } else { 0 });
+    }
+    return -1;
+}
+
+pub fn scalar_referent(reference: i64) -> i64 {
+    if reference >= 20 && reference < 60 { return reference % 20; }
+    if reference >= 60 && reference < 100 { return reference - 40; }
+    if reference >= 100 && reference < 140 { return reference - 80; }
+    if reference >= 7700002 && reference <= 7700019 { return 6000000 + (reference - 7700000) / 2; }
+    return -1;
+}
+
+// Compact type codes for vectors and slices of nonempty, inline scalar arrays.
+pub fn array_vector_type(ty: i64) -> bool { ty > 7640000 && ty <= 7680969 }
+
+fn compact_array_type(code: i64) -> i64 {
+    10000 + code / 10 * 100 + code % 10
+}
+
+fn compact_array_code(element: i64) -> i64 {
+    (element - 10000) / 100 * 10 + element % 100
+}
+
+pub fn array_vector_code(element: i64) -> i64 { 7640000 + compact_array_code(element) }
+
+pub fn vector_type(ty: i64) -> bool {
+    (ty > 7600000 && ty <= 7600140) || (ty > 7600200 && ty <= 7600209)
+        || (ty >= 7600300 && ty <= 7600319) || (ty > 7800000 && ty < 8200000) || array_vector_type(ty)
+}
+
+pub fn vector_element(ty: i64) -> i64 {
+    if array_vector_type(copy(ty)) { return compact_array_type(ty - 7640000); }
+    if ty == 7600140 { return 4; }
+    if ty >= 8000000 { return ty - 1999900; }
+    if ty > 7800000 { return ty - 4800000; }
+    if ty >= 7600310 { return ty - 200310; }
+    if ty >= 7600300 { return ty - 400300; }
+    if ty > 7600200 { return ty - 1600200; }
+    ty - 7600000
+}
+
+pub fn slice_code(element: i64) -> i64 {
+    if element > 0 && element < 140 { return 2000000 + element; }
+    if element >= 10101 && element <= 419609 && element % 100 >= 1 && element % 100 <= 9 {
+        return 2700000 + compact_array_code(element);
+    }
+    if element > 3000000 && element <= 3524288 { return 2100000 + element - 3000000; }
+    return -1;
+}
+
+pub fn slice_element(ty: i64) -> i64 {
+    if ty > 2700000 && ty <= 2740969 { return compact_array_type(ty - 2700000); }
+    if ty == 2000139 { return 2000138; }
+    if ty > 2100000 && ty <= 2624288 { return 3000000 + ty - 2100000; }
+    if ty > 2000000 && ty < 2000140 { return ty - 2000000; }
+    return -1;
+}
+
+pub fn c_type(ty: i64) {
+    if ty == 11 { c_type(pointer_integer_type()); return; }
+    if result_type(copy(ty)) { character(114); number(unsigned(ty - 9000000000000000000)); return; }
+    if wide_array(copy(ty)) {
+        array_name(copy(ty));
+        if placed_array(ty) { character(42); }
+        return;
+    }
+    if ty == 7799999 { { let code: [u8;4] = [98,111,111,108]; byte_text(&code[..]); } return; }
+    if map_type(copy(ty)) { { let code: [u8;12] = [82,101,103,105,111,110,97,108,77,97,112,42]; byte_text(&code[..]); } return; }
+    if ty >= 7700002 && ty <= 7700019 { { let code: [u8;6] = [79,119,110,101,100,42]; byte_text(&code[..]); } return; }
+    if optional(copy(ty)) { character(111); number(unsigned(option_payload(ty))); return; }
+    if vector_type(copy(ty)) { { let code: [u8;6] = [82,101,103,105,111,110]; byte_text(&code[..]); } return; }
+    if future_type(copy(ty)) || handle_type(copy(ty)) { { let code: [u8;9] = [84,97,115,107,86,97,108,117,101]; byte_text(&code[..]); } return; }
+    if completion(copy(ty)) {
+        if task_payload(copy(ty)) <= 9 { { let code: [u8;14] = [84,97,115,107,67,111,109,112,108,101,116,105,111,110]; byte_text(&code[..]); } }
+        else { character(106); number(unsigned(task_payload(ty))); }
+        return;
+    }
+    if is_tuple(copy(ty)) { character(113); number(unsigned(ty)); return; }
+    if ty >= 6000000 && ty < 7000000 { { let code: [u8;5] = [79,119,110,101,100]; byte_text(&code[..]); } return; }
+    if ty >= 5000000 && ty < 6000000 { { let code: [u8;6] = [80,111,111,108,115,42]; byte_text(&code[..]); } return; }
+    if ty >= 3000000 {
+        character(115); number(nominal_type(copy(ty)));
+        if ty >= 4000000 { character(42); }
+        return;
+    }
+    if ty >= 2000000 {
+        character(122); number(unsigned(ty - 2000000));
+        return;
+    }
+    if ty >= 10000 {
+        character(97); number(unsigned(array_shape(copy(ty))));
+        if ty >= 1000000 { character(42); }
+        return;
+    }
+    let referent = scalar_referent(copy(ty));
+    if referent > 0 {
+        c_type(referent); character(42);
+        return;
+    }
+    let base = ty;
+    if base == 0 { { let code: [u8;4] = [118,111,105,100]; byte_text(&code[..]); } }
+    if base == 1 { { let code: [u8;7] = [105,110,116,51,50,95,116]; byte_text(&code[..]); } }
+    if base == 2 { { let code: [u8;7] = [105,110,116,54,52,95,116]; byte_text(&code[..]); } }
+    if base == 3 { { let code: [u8;4] = [98,111,111,108]; byte_text(&code[..]); } }
+    if base == 4 || base == 10 { { let code: [u8;7] = [117,105,110,116,56,95,116]; byte_text(&code[..]); } }
+    if base == 5 { { let code: [u8;8] = [117,105,110,116,49,54,95,116]; byte_text(&code[..]); } }
+    if base == 6 { { let code: [u8;8] = [117,105,110,116,51,50,95,116]; byte_text(&code[..]); } }
+    if base == 7 { { let code: [u8;8] = [117,105,110,116,54,52,95,116]; byte_text(&code[..]); } }
+    if base == 8 { { let code: [u8;5] = [102,108,111,97,116]; byte_text(&code[..]); } }
+    if base == 9 { { let code: [u8;6] = [100,111,117,98,108,101]; byte_text(&code[..]); } }
+}
+
+pub fn declaration(ty: i64, node: u64) {
+    c_type(ty);
+    character(32);
+    temporary(node);
+}
+
+pub fn consume(ty: i64, node: u64, binding: bool) {
+    if ty != 0 {
+        { let code: [u8;6] = [40,118,111,105,100,41]; byte_text(&code[..]); }
+        if binding { local(node); } else { temporary(node); }
+        { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    }
+}
+
+pub fn array_code(element: i64, length: u64, placed: bool) -> i64 {
+    if length > 3145728 || element <= 0 || element >= 8000000 { return -1; }
+    if !placed && length <= 4096 && element < 60 { return 10000 + signed(length) * 100 + element; }
+    6000000000000000000 + (if placed || length > 4096 { 500000000000000000 } else { 0 })
+        + signed(length) * 10000000 + element
+}
+
+pub fn wide_array(ty: i64) -> bool { ty / 1000000000000000000 == 6 }
+pub fn placed_array(ty: i64) -> bool {
+    ty >= 6500000000000000000 && ty < 7000000000000000000
+}
+pub fn array_value_type(ty: i64) -> bool {
+    (ty >= 10000 && ty < 1000000) || wide_array(ty)
+}
+pub fn array_item(ty: i64) -> i64 {
+    if wide_array(copy(ty)) { return ty % 10000000; }
+    array_shape(ty) % 100
+}
+pub fn array_length(ty: i64) -> u64 {
+    if wide_array(copy(ty)) { return unsigned(ty % 500000000000000000 / 10000000); }
+    unsigned((array_shape(ty) - 10000) / 100)
+}
+pub fn array_name(ty: i64) {
+    character(119); number(unsigned(ty % 1000000000000000000));
+}
+pub fn array_has_owners(ty: i64) -> bool {
+    if !wide_array(copy(ty)) { return false; }
+    let item = array_item(ty);
+    handle_type(copy(item)) || (item >= 3000000 && item < 4000000) || (item >= 6000000 && item < 7000000)
+}
+
+pub fn array_shape(ty: i64) -> i64 { ty % 1000000 }
+
+pub fn nominal_type(ty: i64) -> u64 {
+    if ty >= 3000000 && ty < 4000000 { return unsigned(ty - 3000000); }
+    if ty >= 4000000 && ty < 5000000 { return unsigned(ty - 4000000); }
+    0
+}
+
+pub fn pool_type(ty: i64) -> i64 {
+    if ty < 5000000 || ty >= 7000000 { return 0; }
+    let payload = ty % 1000000;
+    if payload < 10 { return payload; }
+    if payload < 20 { return 7200000 + payload - 10; }
+    if payload < 30 { return 7400000 + payload - 20; }
+    if payload >= 400000 { return payload + 7200000; }
+    payload + 2999900
+}
+
+pub fn wrap_pool(ty: i64, owner: bool) -> i64 {
+    let code: i64 = if owner { 6000000 } else { 5000000 };
+    if ty > 0 && ty <= 9 { return code + ty; }
+    if ty >= 7200000 && ty <= 7200009 { return code + 10 + task_payload(ty); }
+    if ty >= 7400000 && ty <= 7400009 { return code + 20 + task_payload(ty); }
+    if ty > 3000000 && ty < 4000000 { return code + ty - 2999900; }
+    if vector_type(copy(ty)) { return code + ty - 7200000; }
+    return -1;
+}
+
+pub fn uses_pool(ty: i64) -> bool { ty >= 5000000 && ty < 7000000 }
+
+fn tuple_field(ty: i64) -> i64 {
+    if ty > 0 && ty < 140 { return ty; }
+    if ty >= 7200000 && ty <= 7200009 { return 140 + ty - 7200000; }
+    if ty >= 7400000 && ty <= 7400009 { return 150 + ty - 7400000; }
+    if ty > 6000000 && ty <= 6000009 { return 160 + ty - 6000000; }
+    if ty >= 2000001 && ty <= 2000009 { return 180 + ty - 2000000; }
+    if ty > 3000000 && ty < 3499900 { return 200 + (ty - 3000000) * 2; }
+    if ty > 4000000 && ty < 4499900 { return 201 + (ty - 4000000) * 2; }
+    return -1;
+}
+
+pub fn tuple_code(ty: i64, field: i64) -> i64 {
+    let code = tuple_field(copy(field));
+    if code < 0 { return -1; }
+    if ty == 0 { return field; }
+    let prefix = if is_tuple(copy(ty)) { ty % 1000000000000000000 } else { tuple_field(ty) };
+    if prefix < 0 || prefix >= 1000000000000 { return -1; }
+    8000000000000000000 + prefix * 1000000 + code
+}
+
+pub fn is_tuple(ty: i64) -> bool { ty / 1000000000000000000 == 8 }
+
+pub fn tuple_item(ty: i64) -> i64 {
+    if !is_tuple(copy(ty)) { return ty; }
+    tuple_part(copy(ty), 0, tuple_count(ty))
+}
+
+pub fn tuple_count(ty: i64) -> u64 {
+    if !is_tuple(copy(ty)) { return 1; }
+    if ty % 1000000000000000000 >= 1000000000000 { return 3; }
+    2
+}
+
+pub fn tuple_part(ty: i64, ordinal: u64, count: u64) -> i64 {
+    let mut value = ty % 1000000000000000000;
+    let mut distance = count - ordinal - 1;
+    while distance != 0 { value = value / 1000000; distance = distance - 1; }
+    let code = value % 1000000;
+    if code > 200 { return (if (code - 200) % 2 == 0 { 3000000 } else { 4000000 }) + (code - 200) / 2; }
+    if code > 180 { return 2000000 + code - 180; }
+    if code > 160 { return 6000000 + code - 160; }
+    if code >= 150 { return 7400000 + code - 150; }
+    if code >= 140 { return 7200000 + code - 140; }
+    code
+}
+
+pub fn tuple_has_owners(ty: i64) -> bool {
+    if !is_tuple(copy(ty)) { return false; }
+    let count = tuple_count(copy(ty));
+    let mut ordinal: u64 = 0;
+    while ordinal < count {
+        let field = tuple_part(copy(ty), copy(ordinal), copy(count));
+        if handle_type(copy(field)) || uses_pool(copy(field)) || (field >= 3000000 && field < 4000000) {
+            return true;
+        }
+        ordinal = ordinal + 1;
+    }
+    false
+}
+
+// The low codes retain the scalar ABI. The high range encodes the actual
+// result layout, including a nominal type with recursive handle fields.
+pub fn task_code(kind: i64, payload: i64) -> i64 {
+    if payload < 0 { return -1; }
+    if payload <= 9 { return 7000000 + kind * 100000 + payload; }
+    let tag = if kind == 4 { 7 } else { kind };
+    if map_type(copy(payload)) {
+        return tag * 1000000000000000000 + 900000000000000000 + payload % 1000000000000000000;
+    }
+    if result_type(copy(payload)) {
+        return tag * 1000000000000000000 + 910000000000000000 + (payload - 9000000000000000000);
+    }
+    if payload >= 1000000000000000000 { return -1; }
+    tag * 1000000000000000000 + payload
+}
+
+pub fn task_payload(ty: i64) -> i64 {
+    if ty >= 1000000000000000000 {
+        let payload = ty % 1000000000000000000;
+        if payload > 910000000000000000 && payload < 910064000000000000 {
+            return 9000000000000000000 + (payload - 910000000000000000);
+        }
+        if payload >= 900000000000000000 && payload <= 900000001000000000 {
+            return 4000000000000000000 + payload - 900000000000000000;
+        }
+        return payload;
+    }
+    ty % 100000
+}
+
+pub fn future_type(ty: i64) -> bool {
+    (ty >= 7100000 && ty <= 7100009) || ty / 1000000000000000000 == 1
+}
+
+pub fn handle_type(ty: i64) -> bool {
+    (ty >= 7200000 && ty <= 7200009) || ty / 1000000000000000000 == 2 || async_handle_type(ty)
+}
+
+pub fn completion(ty: i64) -> bool {
+    (ty >= 7300000 && ty <= 7300009) || ty / 1000000000000000000 == 3
+}
+
+
+// A map descriptor retains separate key and entry types. The runtime uses
+// their normalized key bits and the entry layout, never the source spelling.
+pub fn map_code(key: i64, value: i64) -> i64 {
+    if key < 1 || key > 7 || value < 1 || value >= 8000000 { return -1; }
+    4000000000000000000 + key * 10000000 + value
+}
+
+pub fn map_type(ty: i64) -> bool { ty / 1000000000000000000 == 4 }
+pub fn map_key(ty: i64) -> i64 { ty % 1000000000000000000 / 10000000 }
+pub fn map_value(ty: i64) -> i64 { ty % 10000000 }
+pub fn option_code(ty: i64) -> i64 {
+    if nested_option(copy(ty)) {
+        if ty >= 5999000000000000000 { return -1; }
+        return ty + 1000000000000000;
+    }
+    if optional(copy(ty)) && option_payload(copy(ty)) < 1000000000000000 {
+        return 5001000000000000000 + option_payload(ty);
+    }
+    if ty <= 0 || ty >= 1000000000000000 { return -1; }
+    5000000000000000000 + ty
+}
+
+pub fn nested_option(ty: i64) -> bool { ty >= 5001000000000000000 && ty < 6000000000000000000 }
+
+pub fn optional(ty: i64) -> bool { ty / 1000000000000000000 == 5 }
+
+pub fn option_payload(ty: i64) -> i64 {
+    if nested_option(copy(ty)) {
+        if ty < 5002000000000000000 { return 5000000000000000000 + ty % 1000000000000000; }
+        return ty - 1000000000000000;
+    }
+    ty % 1000000000000000000
+}
+
+pub fn option_base(ty: i64) -> i64 {
+    if nested_option(copy(ty)) { return ty % 1000000000000000; }
+    option_payload(ty)
+}
+
+
+pub fn async_handle_type(ty: i64) -> bool {
+    (ty >= 7400000 && ty <= 7400009) || ty / 1000000000000000000 == 7
+}

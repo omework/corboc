@@ -1,0 +1,119 @@
+use bootstrap::model::{AstNode, StaticNode, Token, token_at};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::nested_loans::nested_loan_type;
+use bootstrap::process_arguments::{argument_text_type, shared_text_annotation};
+
+pub fn check_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], annotation: u64) -> i64 {
+    let nested = nested_loan_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if nested != 0 { return nested; }
+    let prefix = token_at(&tokens[0..tokens.len()], nodes[annotation].start);
+    let kind = tokens[prefix].kind;
+    if kind == 25 {
+        if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) {
+            return argument_text_type();
+        }
+        let referent = graph[annotation].first_child;
+        if referent == 0 { return 0; }
+        if graph[referent].first_child != 0 { return 0; }
+        let ty = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
+        if ty == 0 { return 0; }
+        if tokens[prefix + 1].kind == 16 { return 40 + ty; }
+        return 20 + ty;
+    }
+    if graph[annotation].first_child != 0 { return 0; }
+    verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end)
+}
+
+pub fn violation(rule: i64, offset: u64) -> i64 {
+    print(rule);
+    print(offset);
+    8
+}
+
+pub fn report_violation(rule: i64, offset: u64) -> i32 {
+    let code = violation(rule, offset);
+    drop(code);
+    8
+}
+
+#(if: target.os == "macos" && target.arch == "aarch64")
+    use bootstrap::build_driver::diagnostic;
+
+    fn diagnostic_detail(message: &[u8]) {
+        diagnostic(message);
+    }
+#(endif)
+
+#(if: target.os == "linux" && target.arch == "x86_64")
+    fn diagnostic_detail(message: &[u8]) {
+        let size = message.len();
+        if size == 0 { return; }
+        @unchecked {
+            let address = addr(&message[0]);
+            @asm {
+                mov edi, 2
+                mov rsi, ${address}
+                mov rdx, ${size}
+                call write
+            }
+        }
+    }
+#(endif)
+
+#(if: target.os == "windows" && target.arch == "x86_64")
+    fn diagnostic_detail(message: &[u8]) {
+        let size = message.len();
+        if size == 0 || size > 2147483647 { return; }
+        @unchecked {
+            let address = addr(&message[0]);
+            @asm {
+                sub rsp, 32
+                mov ecx, 2
+                mov rdx, ${address}
+                mov r8, ${size}
+                call _write
+                add rsp, 32
+            }
+        }
+    }
+#(endif)
+
+#(if: target.os == "linux" && target.arch == "aarch64" || target.os == "windows" && target.arch == "aarch64" || target.os == "macos" && target.arch == "x86_64")
+    fn diagnostic_detail(message: &[u8]) {
+        drop(message.len());
+    }
+#(endif)
+
+pub fn unknown_qualified_function(name: &[u8]) {
+    let message: [u8; 36] = [99, 111, 114, 98, 111, 99, 58, 32, 117, 110, 107, 110, 111, 119, 110, 32, 113, 117, 97, 108, 105, 102, 105, 101, 100, 32, 102, 117, 110, 99, 116, 105, 111, 110, 58, 32];
+    diagnostic_detail(&message[..]);
+    diagnostic_detail(name);
+    let newline: [u8; 1] = [10];
+    diagnostic_detail(&newline[..]);
+}
+
+pub fn address_requires_reference() {
+    let message: [u8; 43] = [99, 111, 114, 98, 111, 99, 58, 32, 97, 100, 100, 114, 32, 114, 101, 113, 117, 105, 114, 101, 115, 32, 97, 32, 114, 101, 102, 101, 114, 101, 110, 99, 101, 32, 97, 114, 103, 117, 109, 101, 110, 116, 10];
+    diagnostic_detail(&message[..]);
+}
+
+pub fn missing_direct_dependency(name: &[u8]) {
+    let message: [u8; 44] = [99, 111, 114, 98, 111, 99, 58, 32, 112, 97, 99, 107, 97, 103, 101, 32, 105, 115, 32, 110, 111, 116, 32, 97, 32, 100, 105, 114, 101, 99, 116, 32, 100, 101, 112, 101, 110, 100, 101, 110, 99, 121, 58, 32];
+    diagnostic_detail(&message[..]);
+    diagnostic_detail(name);
+    let newline: [u8; 1] = [10];
+    diagnostic_detail(&newline[..]);
+}
+
+pub fn unsupported_value_receiver() {
+    let message: [u8; 61] = [99, 111, 114, 98, 111, 99, 58, 32, 116, 104, 105, 115, 32, 116, 121, 112, 101, 32, 111, 102, 32, 98, 121, 45, 118, 97, 108, 117, 101, 32, 115, 101, 108, 102, 32, 114, 101, 99, 101, 105, 118, 101, 114, 32, 105, 115, 32, 110, 111, 116, 32, 115, 117, 112, 112, 111, 114, 116, 101, 100, 10];
+    diagnostic_detail(&message[..]);
+}
+
+pub fn private_layout_violation(offset: u64) -> i64 {
+    let message: [u8; 29] = [99, 111, 114, 98, 111, 99, 58, 32, 112, 114, 105, 118, 97, 116, 101, 32, 102, 105, 101, 108, 100, 32, 108, 97, 121, 111, 117, 116, 10];
+    diagnostic_detail(&message[..]);
+    violation(1, offset)
+}

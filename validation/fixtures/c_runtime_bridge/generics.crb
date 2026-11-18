@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+#(type: T *)
+struct Boxed<T>{value:T}
+struct Point{x:i64}
+fn main(){
+ let mut box=Boxed{value:Point{x:2}};let flag=Boxed{value:true};
+ @unchecked{@c(includes={"assert.h"}){
+  corbo_type_box copied=${box};assert(copied.f_value.f_x==2);
+  ${box}.f_value.f_x=3;
+  assert(${flag}.f_value);
+ }}
+ print(box.value.x);print(flag.value);
+}

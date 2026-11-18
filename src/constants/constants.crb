@@ -1,0 +1,140 @@
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::scalar::{verify_primitive, verify_literal};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::verify::report_violation;
+
+pub fn constant_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> i64 {
+    let annotation = graph[declaration].first_child;
+    if graph[annotation].first_child != 0 { return 0; }
+    verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end)
+}
+
+pub fn constant_name_reserved(name: &[u8], associated: bool) -> bool {
+    let drop_name: [u8;4] = [100,114,111,112];
+    if name.content_eq(&drop_name[..]) { return true; }
+    if associated { return false; }
+    let main_name: [u8;4] = [109,97,105,110];
+    let print_name: [u8;5] = [112,114,105,110,116];
+    let copy_name: [u8;4] = [99,111,112,121];
+    name.content_eq(&main_name[..]) || name.content_eq(&print_name[..]) || name.content_eq(&copy_name[..])
+}
+
+fn skip_path_trivia(source: &[u8], start: u64, end: u64) -> u64 {
+    let mut cursor = start;
+    while cursor < end {
+        let byte = source[cursor];
+        if byte <= 32 {
+            cursor = cursor + 1;
+            continue;
+        }
+        if byte != 47 || cursor + 1 == end || source[cursor + 1] != 47 { return cursor; }
+        cursor = cursor + 2;
+        while cursor < end && source[cursor] != 10 { cursor = cursor + 1; }
+    }
+    cursor
+}
+
+pub fn resolve_constant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], use_node: u64) -> u64 {
+    let kind = nodes[use_node].kind;
+    if kind == 7 {
+        if graph[use_node].binding != 0 { return 0; }
+        let name = &source[nodes[use_node].name_start..nodes[use_node].name_end];
+        let mut item = graph[0].first_child;
+        while item != 0 {
+            if nodes[item].kind == 76 {
+                let declared = &source[nodes[item].name_start..nodes[item].name_end];
+                if name.content_eq(&declared[0..declared.len()]) { return item; }
+            }
+            item = graph[item].next_sibling;
+        }
+    }
+    if kind == 36 && graph[use_node].first_child == 0 {
+        let owner_end = nodes[use_node].name_end;
+        let end = nodes[use_node].end;
+        let separator = skip_path_trivia(&source[0..source.len()], copy(owner_end), copy(end));
+        if separator + 2 >= end || source[separator] != 58 || source[separator + 1] != 58 { return 0; }
+        let member = skip_path_trivia(&source[0..source.len()], separator + 2, copy(end));
+        let owner = &source[nodes[use_node].name_start..owner_end];
+        let name = &source[member..end];
+        let mut item = graph[0].first_child;
+        while item != 0 {
+            if nodes[item].kind == 49 {
+                let nominal = &source[nodes[item].name_start..nodes[item].name_end];
+                if nominal.content_eq(&owner[0..owner.len()]) {
+                    let mut entry = graph[item].first_child;
+                    while entry != 0 {
+                        if nodes[entry].kind == 76 {
+                            let declared = &source[nodes[entry].name_start..nodes[entry].name_end];
+                            if name.content_eq(&declared[0..declared.len()]) { return entry; }
+                        }
+                        entry = graph[entry].next_sibling;
+                    }
+                }
+            }
+            item = graph[item].next_sibling;
+        }
+    }
+    0
+}
+
+pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i32 {
+    let mut constant: u64 = 1;
+    while constant < nodes.len() as u64 {
+        if nodes[constant].kind != 76 {
+            constant = constant + 1;
+            continue;
+        }
+        let start = nodes[constant].start;
+        let name = &source[nodes[constant].name_start..nodes[constant].name_end];
+        let parent = nodes[constant].parent;
+        if constant_name_reserved(&name[0..name.len()], parent != 0) { return report_violation(1, start); }
+        let ty = constant_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constant));
+        if ty == 0 { return report_violation(1, start); }
+        let expression = graph[graph[constant].first_child].next_sibling;
+        let negative = nodes[expression].kind == 12;
+        let literal = if negative { graph[expression].first_child } else { expression };
+        if verify_literal(&source[0..source.len()], &nodes[literal], ty, negative) < 0 {
+            return report_violation(1, nodes[literal].start);
+        }
+        if parent == 0 {
+            let mut item = graph[0].first_child;
+            while item != 0 {
+                let kind = nodes[item].kind;
+                if item != constant && (kind == 76 || kind == 1 || kind == 35 || kind == 64) {
+                    let other = &source[nodes[item].name_start..nodes[item].name_end];
+                    if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                }
+                item = graph[item].next_sibling;
+            }
+        } else {
+            let owner = &source[nodes[parent].name_start..nodes[parent].name_end];
+            let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], parent);
+            let mut field = graph[nominal].first_child;
+            while nodes[field].kind == 31 {
+                let other = &source[nodes[field].name_start..nodes[field].name_end];
+                if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                field = graph[field].next_sibling;
+            }
+            let mut item = graph[0].first_child;
+            while item != 0 {
+                if nodes[item].kind == 49 {
+                    let other_owner = &source[nodes[item].name_start..nodes[item].name_end];
+                    if owner.content_eq(&other_owner[0..other_owner.len()]) {
+                        let mut entry = graph[item].first_child;
+                        while entry != 0 {
+                            if entry != constant {
+                                let other = &source[nodes[entry].name_start..nodes[entry].name_end];
+                                if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                            }
+                            entry = graph[entry].next_sibling;
+                        }
+                    }
+                }
+                item = graph[item].next_sibling;
+            }
+        }
+        constant = constant + 1;
+    }
+    0
+}

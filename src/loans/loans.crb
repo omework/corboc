@@ -1,0 +1,901 @@
+use bootstrap::model::{summary_value,summary_next};
+use bootstrap::model::constructor_argument_retained;
+use bootstrap::scalar_options::{option_borrow, option_handle};
+use bootstrap::task_vectors::{handle_vector, pooled_handle};
+use bootstrap::map_entries::{dependent_map, dependent_option, entry_reference, entry_targets, entry_payload_has_root};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, Token, token_at, constructor_arguments, constructor_field_value};
+use bootstrap::stored::{stored_loan_array, relayed_loan_array, selected_loan_union, stored_array_view, vector_reference_owner, returned_field, apply_returned_field, field_reborrow, apply_field_reborrow, returned_array_loan, apply_returned_array_loan};
+use bootstrap::tasks::task_value;
+use bootstrap::scalar::verify_primitive;
+use bootstrap::verify::{violation, check_type, verify_expr};
+
+pub fn loan_element(values: &[CheckedValue], reference: u64) -> i64 {
+    let ty = values[reference].ty;
+    if ty >= 81 && ty <= 87 { return ty - 80; }
+    if selected_loan_union(copy(ty)) { return ty % 10; }
+    if ty >= 200 { return ty - 200; }
+    if ty >= 20 && ty < 60 { return ty % 20; }
+    let target_type = values[values[reference].target].ty;
+    if target_type >= 20 && target_type < 60 { return target_type % 20; }
+    target_type
+}
+
+pub fn external_roots(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], loan: u64) -> bool {
+    let target = values[loan].target;
+    if nodes[target].kind==4 && nodes[nodes[target].parent].kind==3
+        && graph[nodes[target].parent].type_node==target && values[target].target==target {return true;}
+    if target == 0 || nodes[target].kind != 3 || values[target].target != target { return false; }
+    if values[loan].ty >= 81 && values[loan].ty <= 87 { return false; }
+    if selected_loan_union(values[loan].ty) {
+        let mut item = values[loan].origin_call;
+        while item != 0 {
+            let origin = values[item].target;
+            if origin == 0 || nodes[origin].kind != 3 || values[origin].target != origin { return false; }
+            item = graph[item].next_sibling;
+        }
+        return true;
+    }
+    let call = values[loan].origin_call;
+    if call != 0 {
+        let mut argument = graph[graph[call].first_child].next_sibling;
+        while argument != 0 {
+            if values[argument].state == 1 && !external_roots(&nodes[0..nodes.len()],
+                &graph[0..graph.len()], &values[0..values.len()], graph[argument].binding) {
+                return false;
+            }
+            argument = graph[argument].next_sibling;
+        }
+    }
+    true
+}
+
+pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    values: &[CheckedValue], expression: u64, result: i64) -> i64 {
+    let kind = nodes[expression].kind;
+    let offset = nodes[expression].start;
+    if kind == 7 {
+        let binding = graph[expression].binding;
+        if binding == 0 { return violation(1, offset); }
+        if values[binding].state != 1 { return violation(6, offset); }
+        let target = values[binding].target;
+        if target == 0 || values[binding].ty >= 100 { return violation(1, offset); }
+        if !external_roots(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], copy(binding)) {
+            return violation(4, offset);
+        }
+        let ty = loan_element(&values[0..values.len()], copy(binding));
+        if ty != result % 20 || values[binding].exclusive != (result >= 40) {
+            return violation(1, offset);
+        }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+            &graph[0..graph.len()], binding, expression, true);
+        if conflict > 0 { return violation(5, offset); }
+        if conflict < 0 { return 9; }
+        return 0;
+    }
+    if kind == 13 {
+        let place = graph[expression].first_child;
+        if nodes[place].kind == 7 {
+            let target = graph[place].binding;
+            if target == 0 { return violation(1, offset); }
+            return violation(4, offset);
+        }
+        if nodes[place].kind == 17 || nodes[place].kind == 18 {
+            let mut base = copy(place);
+            while nodes[base].kind == 17 || nodes[base].kind == 18 || nodes[base].kind == 19 {
+                base = graph[base].first_child;
+            }
+            if nodes[base].kind == 7 && graph[base].binding != 0 {
+                // An owned local or by-value parameter has no caller
+                // storage that can carry this direct borrow on return.
+                if values[graph[base].binding].target == 0
+                    || (values[graph[base].binding].ty >= 400 && values[graph[base].binding].ty <= 450) {
+                    return violation(4, offset);
+                }
+            }
+            return 9;
+        }
+        if nodes[place].kind == 14 {
+            let operand = graph[place].first_child;
+            if nodes[operand].kind != 7 { return 9; }
+            let binding = graph[operand].binding;
+            if binding == 0 { return violation(1, offset); }
+            if values[binding].state != 1 { return violation(6, offset); }
+            let target = values[binding].target;
+            if target == 0 || values[binding].ty >= 100 { return 9; }
+            if nodes[target].kind != 3 || values[target].target != target {
+                return violation(4, offset);
+            }
+            let prefix = token_at(&tokens[0..tokens.len()], copy(offset));
+            let exclusive = tokens[prefix + 1].kind == 16;
+            if exclusive && !values[binding].exclusive { return violation(5, offset); }
+            let ty = loan_element(&values[0..values.len()], copy(binding));
+            if ty != result % 20 || exclusive != (result >= 40) {
+                return violation(1, offset);
+            }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+                &graph[0..graph.len()], binding, expression, exclusive);
+            if conflict > 0 { return violation(5, offset); }
+            if conflict < 0 { return 9; }
+            return 0;
+        }
+    }
+    return 9;
+}
+
+// A positive result is a conflict with a later use in the same statement
+// sequence. A negative result requires control-flow liveness to decide.
+pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) -> bool {
+    let ty = values[loan].ty;
+    if ty >= 81 && ty <= 87 {
+        let mut item = values[loan].origin_call;
+        while item != 0 {
+            if values[item].target == target { return true; }
+            item = values[item].origin_call;
+        }
+        return false;
+    }
+    if stored_loan_array(copy(ty)) || relayed_loan_array(copy(ty)) || selected_loan_union(copy(ty)) {
+        let mut item = if stored_loan_array(copy(ty)) || relayed_loan_array(copy(ty)) { graph[values[loan].origin_call].first_child }
+            else { values[loan].origin_call };
+        while item != 0 {
+            if values[item].target == target { return true; }
+            item = graph[item].next_sibling;
+        }
+        let parent = values[loan].loan_parent;
+        return parent != 0 && (parent == target || reserves(&values[0..values.len()],
+            &graph[0..graph.len()], parent, target));
+    }
+    if stored_array_view(copy(ty)) { return values[loan].target == target; }
+    if ty >= 741 && ty <= 749 {
+        let parent = values[loan].loan_parent;
+        let root = values[loan].target;
+        let storage = values[root].ty;
+        if (storage == 294 || storage == 298 || storage == 299) && values[root].target == target { return true; }
+        return loan != target && (values[loan].target == target || parent == target
+            || (parent != 0 && reserves(&values[0..values.len()], &graph[0..graph.len()], parent, target)));
+    }
+    if option_borrow(copy(ty)) != 0 {
+        let parent = values[loan].loan_parent;
+        return loan != target && (values[loan].target == target || parent == target
+            || (parent != 0 && reserves(&values[0..values.len()], &graph[0..graph.len()], parent, target)));
+    }
+    if (ty >= 710 && ty <= 729) || ty == 734 || (ty > 920 && ty < 950) {
+        return loan != target && values[loan].target == target;
+    }
+    if dependent_map(copy(ty)) {
+        return ty < 1200 && entry_targets(&values[0..values.len()], loan, target);
+    }
+    if dependent_option(copy(ty)) {
+        if values[loan].target == target { return true; }
+        return ty < 1500 && values[values[loan].origin_call].target == target;
+    }
+    if entry_reference(copy(ty)) {
+        return values[loan].target == target || values[loan].loan_parent == target;
+    }
+    if ty == 3500 {
+        return reserves(&values[0..values.len()], &graph[0..graph.len()], values[loan].loan_parent, target);
+    }
+    if ty == 3501 {
+        return bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            values[loan].loan_parent, target, false);
+    }
+    if task_value(copy(ty)) {
+        if ty >= 4101 {
+            let mut item = values[loan].loan_parent;
+            while item != 0 {
+                if values[item].target == target { return true; }
+                item = values[item].origin_call;
+            }
+        }
+        let mut capture = values[loan].origin_call;
+        while capture != 0 {
+            if values[capture].target == target || values[capture].loan_parent == target { return true; }
+            let parent = values[capture].loan_parent;
+            if parent != 0 && parent != capture && reserves(&values[0..values.len()],
+                &graph[0..graph.len()], parent, copy(target)) { return true; }
+            let owner = values[capture].target;
+            if (values[owner].ty == 300 || values[owner].ty == 301 || values[owner].ty == 310)
+                && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(owner), copy(target)) { return true; }
+            if values[capture].ty == 5010 && reserves(&values[0..values.len()], &graph[0..graph.len()],
+                values[capture].loan_parent, copy(target)) { return true; }
+            if values[capture].ty == 5000 && entry_payload_has_root(&values[0..values.len()],
+                values[capture].loan_parent, copy(target)) { return true; }
+            capture = values[capture].origin_call;
+        }
+        return false;
+    }
+    if vector_reference_owner(copy(ty)) {
+        let mut item = values[loan].origin_call;
+        while item != 0 {
+            if values[item].target == target { return true; }
+            item = values[item].origin_call;
+        }
+        return false;
+    }
+    if ty == 296 {
+        let mut entry = values[loan].origin_call;
+        while entry != 0 {
+            let mut field = graph[values[entry].origin_call].first_child;
+            while field != 0 {
+                if reserves(&values[0..values.len()], &graph[0..graph.len()], copy(field), copy(target)) { return true; }
+                field = graph[field].next_sibling;
+            }
+            entry = values[entry].loan_parent;
+        }
+        return false;
+    }
+    if ty == 300 || ty == 310 || ty == 301 || ty == 475 {
+        let mut field = graph[values[loan].origin_call].first_child;
+        if ty == 310 { field = graph[field].next_sibling; }
+        while field != 0 {
+            let parent = values[loan].loan_parent;
+            let actual = if (ty == 300 || ty == 475) && constructor_arguments(values[parent].ty) {
+                constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], parent, copy(field))
+            } else if ty == 300 && parent != 0 { parent } else { copy(field) };
+            let field_type = values[actual].ty;
+            if field_type >= 741 && field_type <= 749
+                && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target)) { return true; }
+            if (field_type == 296 || field_type == 300 || field_type == 301)
+                && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target)) { return true; }
+            if ((field_type > 20 && field_type < 60) || field_type == 734 || field_type == 752)
+                && values[actual].target == target { return true; }
+            if field_type >= 81 && field_type <= 87 && reserves(&values[0..values.len()],
+                &graph[0..graph.len()], copy(actual), copy(target)) { return true; }
+            if bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+                copy(field), copy(target), false) { return true; }
+            field = graph[field].next_sibling;
+        }
+        return false;
+    }
+    if ty > 1900 && ty < 1940 {
+        let parent = values[loan].target;
+        return parent != 0 && parent != loan && (parent == target
+            || reserves(&values[0..values.len()], &graph[0..graph.len()], parent, target));
+    }
+    if ty == 752 { return values[loan].target == target; }
+    if ty >= 101 && ty <= 107 && values[loan].target != 0 && values[loan].target != loan {
+        return values[loan].target == target || values[loan].loan_parent == target;
+    }
+    if ty >= 100 { return false; }
+    if loan != target && values[loan].target == target { return true; }
+    let call = values[loan].origin_call;
+    if call != 0 {
+        let mut argument = graph[graph[call].first_child].next_sibling;
+        while argument != 0 {
+            let origin = graph[argument].binding;
+            if values[argument].state == 1 && (origin == target || reserves(&values[0..values.len()],
+                &graph[0..graph.len()], origin, copy(target))) { return true; }
+            argument = graph[argument].next_sibling;
+        }
+    }
+    let parent = values[loan].loan_parent;
+    if parent == 0 { return false; }
+    parent == target || reserves(&values[0..values.len()], &graph[0..graph.len()], parent, target)
+}
+
+// Resolve a projected use against the field's canonical name. An
+// unprojected use retains all field loans.
+fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    aggregate: u64, target: u64, use_node: u64, write: bool) -> i64 {
+    let mut point = use_node;
+    while nodes[nodes[point].parent].kind == 19 { point = nodes[point].parent; }
+    let projection = nodes[point].parent;
+    let mut field = graph[values[aggregate].origin_call].first_child;
+    while field != 0 {
+        let parent = values[aggregate].loan_parent;
+        let forwarded_slice = values[parent].ty >= 741 && values[parent].ty <= 749;
+        let formal = graph[graph[field].first_child].binding;
+        let actual = if constructor_arguments(values[parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], parent, copy(field))
+        } else if parent != 0 && (!forwarded_slice || nodes[formal].kind == 3) {
+            parent
+        } else { copy(field) };
+        let ty = values[actual].ty;
+        let selected = nodes[projection].kind != 17 || graph[field].field_name == graph[projection].field_name;
+        let nested = ty == 300 || ty == 301 || ty == 310;
+        let points_to_target = if nested || (ty >= 81 && ty <= 87) {
+            reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target))
+        } else if ty >= 741 && ty <= 749 {
+            reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target))
+        } else { ((ty > 20 && ty < 60) || ty == 734 || ty == 752) && values[actual].target == target };
+        // A nested descriptor can contain an exclusive loan. Until the
+        // projected path is followed recursively, reserve it on reads too.
+        if selected && points_to_target && (write || nested || values[actual].exclusive) { return 2; }
+        field = graph[field].next_sibling;
+    }
+    0
+}
+
+// Follow provenance through relay calls and storage views. A parameter may
+// serve as its own symbolic root.
+pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> bool {
+    let reference_type = values[loan].ty;
+    if constructor_arguments(copy(reference_type)) {
+        let mut summary_entry = values[loan].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if values[argument].ty > 9
+                && constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],copy(loan),copy(argument))
+                && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(argument)) { return false; }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return true;
+    }
+    if reference_type >= 81 && reference_type <= 87 {
+        let mut item = values[loan].origin_call;
+        while item != 0 {
+            if values[values[item].target].state != 1 { return false; }
+            item = values[item].origin_call;
+        }
+        return true;
+    }
+    if stored_loan_array(copy(reference_type)) || relayed_loan_array(copy(reference_type)) || selected_loan_union(copy(reference_type)) {
+        let mut item = if stored_loan_array(copy(reference_type)) || relayed_loan_array(reference_type) { graph[values[loan].origin_call].first_child }
+            else { values[loan].origin_call };
+        while item != 0 {
+            if values[values[item].target].state != 1 { return false; }
+            item = graph[item].next_sibling;
+        }
+        let parent = values[loan].loan_parent;
+        return parent == 0 || live_roots(&values[0..values.len()], &graph[0..graph.len()], parent);
+    }
+    if vector_reference_owner(copy(reference_type)) {
+        return values[values[loan].target].state == 1;
+    }
+    let target = values[loan].target;
+    let ty = values[loan].ty;
+    if ty == 734 || option_borrow(copy(ty)) != 0 {
+        let parent = values[loan].loan_parent;
+        return target != 0 && values[target].state == 1
+            && (parent == 0 || (values[parent].state == 1 && live_roots(&values[0..values.len()], &graph[0..graph.len()], parent)));
+    }
+    if ty >= 710 && ty <= 729 { return target != 0 && values[target].state == 1; }
+    if ty == 300 {
+        let field = values[loan].loan_parent;
+        let shape = values[loan].origin_call;
+        if values[loan].state != 1 { return false; }
+        if field != 0 { return live_roots(&values[0..values.len()], &graph[0..graph.len()], field); }
+        let mut item = graph[shape].first_child;
+        while item != 0 {
+            if values[item].ty >= 741 && values[item].ty <= 749
+                && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(item)) { return false; }
+            if values[item].ty > 20 && values[item].ty < 60 && values[values[item].target].state != 1 {
+                return false;
+            }
+            item = graph[item].next_sibling;
+        }
+        return true;
+    }
+    if ty >= 741 && ty <= 749 {
+        let parent = values[loan].loan_parent;
+        let storage = values[target].ty;
+        if (storage == 294 || storage == 298 || storage == 299) && values[values[target].target].state != 1 {
+            return false;
+        }
+        return target != 0 && values[target].state == 1
+            && (parent == 0 || (values[parent].state == 1 && live_roots(&values[0..values.len()], &graph[0..graph.len()], parent)));
+    }
+    if ty > 1900 && ty < 1940 && target != 0 && target != loan {
+        return values[target].state == 1 && live_roots(&values[0..values.len()], &graph[0..graph.len()], target);
+    }
+    if target == 0 || values[target].state != 1 { return false; }
+    if entry_reference(copy(ty)) {
+        if values[values[loan].loan_parent].state != 1 { return false; }
+        let storage = values[loan].origin_call;
+        let mut payload = values[storage].target;
+        while payload != 0 {
+            if values[values[payload].target].state != 1 { return false; }
+            payload = values[payload].origin_call;
+        }
+        return true;
+    }
+    let call = values[loan].origin_call;
+    if call != 0 {
+        let mut argument = graph[graph[call].first_child].next_sibling;
+        while argument != 0 {
+            if values[argument].state == 1 && !live_roots(&values[0..values.len()], &graph[0..graph.len()],
+                graph[argument].binding) { return false; }
+            argument = graph[argument].next_sibling;
+        }
+    }
+    let parent = values[loan].loan_parent;
+    if parent == 0 { return true; }
+    return live_roots(&values[0..values.len()], &graph[0..graph.len()], parent);
+}
+
+fn exclusive_slice_field(values: &[CheckedValue], graph: &[StaticNode], holder: u64, target: u64) -> bool {
+    let ty = values[holder].ty;
+    if ty>20 && ty<60{return values[holder].exclusive && reserves(&values[0..values.len()],&graph[0..graph.len()],holder,target);}
+    if (ty >= 741 && ty <= 749) || ty == 734 {
+        return values[holder].exclusive
+            && reserves(&values[0..values.len()], &graph[0..graph.len()], holder, target);
+    }
+    if constructor_arguments(copy(ty)) {
+        let mut summary_entry = values[holder].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if exclusive_slice_field(&values[0..values.len()], &graph[0..graph.len()], copy(argument), copy(target)) {
+                return true;
+            }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return false;
+    }
+    if ty != 300 && ty != 301 && ty != 310 && ty != 475 { return false; }
+    let parent = values[holder].loan_parent;
+    if parent != 0 {
+        return exclusive_slice_field(&values[0..values.len()], &graph[0..graph.len()], parent, target);
+    }
+    let mut field = graph[values[holder].origin_call].first_child;
+    if ty == 310 { field = graph[field].next_sibling; }
+    while field != 0 {
+        if exclusive_slice_field(&values[0..values.len()], &graph[0..graph.len()], copy(field), copy(target)) {
+            return true;
+        }
+        field = graph[field].next_sibling;
+    }
+    false
+}
+
+fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u64, target: u64) -> bool {
+    if !task_value(values[task].ty) { return false; }
+    if values[task].ty == 3500 {
+        let record = values[task].loan_parent;
+        if exclusive_slice_field(&values[0..values.len()], &graph[0..graph.len()],
+            copy(record), copy(target)) { return true; }
+        let mut member = graph[values[record].origin_call].first_child;
+        while member != 0 {
+            if values[member].exclusive && reserves(&values[0..values.len()], &graph[0..graph.len()],
+                copy(member), copy(target)) { return true; }
+            member = graph[member].next_sibling;
+        }
+        return false;
+    }
+    if values[task].ty == 3501 {
+        return bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            values[task].loan_parent, target, true);
+    }
+    if values[task].ty >= 4111 {
+        let mut item = values[task].loan_parent;
+        while item != 0 {
+            if values[item].target == target { return true; }
+            item = values[item].origin_call;
+        }
+    }
+    let mut capture = values[task].origin_call;
+    while capture != 0 {
+        if (values[capture].target == target || values[capture].loan_parent == target) && values[capture].exclusive { return true; }
+        let parent = values[capture].loan_parent;
+        if values[capture].exclusive && parent != 0 && parent != capture
+            && reserves(&values[0..values.len()], &graph[0..graph.len()], parent, copy(target)) { return true; }
+        let owner = values[capture].target;
+        if values[capture].exclusive
+            && (values[owner].ty == 300 || values[owner].ty == 301 || values[owner].ty == 310)
+            && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(owner), copy(target)) { return true; }
+        if values[capture].ty == 5000 && entry_payload_has_root(&values[0..values.len()],
+            values[capture].loan_parent, copy(target)) { return true; }
+        if values[capture].ty == 5010 {
+            let owner = values[capture].loan_parent;
+            if exclusive_slice_field(&values[0..values.len()], &graph[0..graph.len()],
+                copy(owner), copy(target)) { return true; }
+            let mut field = graph[values[owner].origin_call].first_child;
+            while field != 0 {
+                if values[field].exclusive && values[field].target == target { return true; }
+                field = graph[field].next_sibling;
+            }
+        }
+        capture = values[capture].origin_call;
+    }
+    false
+}
+
+fn bootstrap_task_reserves(values: &[CheckedValue], graph: &[StaticNode], node: u64,
+    target: u64, exclusive: bool) -> bool {
+    let ty = values[node].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut entry=values[node].origin_call;
+        while entry!=0 {
+            if bootstrap_task_reserves(&values[0..values.len()],&graph[0..graph.len()],summary_value(&values[0..values.len()],copy(entry)),copy(target),copy(exclusive)){return true;}
+            entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],entry);
+        }return false;
+    }
+    if (ty==300 || ty==475) && constructor_arguments(values[values[node].loan_parent].ty){return bootstrap_task_reserves(&values[0..values.len()],&graph[0..graph.len()],values[node].loan_parent,target,exclusive);}
+    if task_value(copy(ty)) {
+        if exclusive { return exclusive_task_target(&values[0..values.len()], &graph[0..graph.len()], node, target); }
+        return reserves(&values[0..values.len()], &graph[0..graph.len()], node, target);
+    }
+    if option_handle(copy(ty)) != 0 {
+        return bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            values[node].target, target, exclusive);
+    }
+    if pooled_handle(copy(ty)) {
+        return bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            values[node].origin_call, target, exclusive);
+    }
+    if handle_vector(copy(ty)) {
+        let mut item = values[node].origin_call;
+        while item != 0 {
+            if bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+                values[item].target, copy(target), copy(exclusive)) { return true; }
+            item = values[item].origin_call;
+        }
+        return false;
+    }
+    if ty != 300 && ty != 301 && ty != 310 && ty != 475 { return false; }
+    if ty == 310 && values[node].loan_parent != 0 {
+        return bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            values[node].loan_parent, target, exclusive);
+    }
+    let constructor = values[node].origin_call;
+    if constructor == 0 { return false; }
+    let mut field = graph[constructor].first_child;
+    if ty == 310 { field = graph[field].next_sibling; }
+    while field != 0 {
+        if bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+            copy(field), copy(target), copy(exclusive)) { return true; }
+        field = graph[field].next_sibling;
+    }
+    return false;
+}
+
+// The first field selector identifies disjoint storage beneath one binding.
+// Mutable bindings retain their own identity, since an initializer alone
+// cannot describe their later reassignments.
+fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+    if point == 0 || depth >= 128 { return 0; }
+    let kind = nodes[point].kind;
+    if kind == 7 { return projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[point].binding, depth + 1); }
+    if kind == 5 || kind == 3 {
+        let initializer = graph[point].initializer;
+        if initializer != 0 && !graph[point].mutable {
+            let path = projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], initializer, depth + 1);
+            if path != 0 { return path; }
+        }
+        return point * 1048576;
+    }
+    let child = graph[point].first_child;
+    if kind == 13 || kind == 14 || kind == 19 {
+        return projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], child, depth + 1);
+    }
+    if kind == 18 || kind == 16 {
+        let path = projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], child, depth + 1);
+        return if path % 1048576 != 0 { path } else { 0 };
+    }
+    if kind == 17 {
+        let path = projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], child, depth + 1);
+        if path != 0 && path % 1048576 == 0 && graph[point].field_name != 0 {
+            return path + graph[point].field_name;
+        }
+        return path;
+    }
+    0
+}
+
+pub fn disjoint_fields(nodes: &[AstNode], graph: &[StaticNode], point: u64, reference: u64) -> bool {
+    let current = projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], point, 0);
+    let prior = projected_path(nodes, graph, reference, 0);
+    current / 1048576 != 0 && current / 1048576 == prior / 1048576
+        && current % 1048576 != 0 && prior % 1048576 != 0 && current != prior
+}
+
+pub fn loan_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
+    target: u64, point: u64, write: bool) -> i64 {
+    loan_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        target, copy(point), write, nodes[point].start)
+}
+
+pub fn loan_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
+    target: u64, point: u64, write: bool, from: u64) -> i64 {
+    loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], target, point, write, from, 0)
+}
+
+pub fn loan_conflict_excluding(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
+    target: u64, point: u64, write: bool, excluded: u64) -> i64 {
+    loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], target, copy(point), write, nodes[point].start, excluded)
+}
+
+fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
+    target: u64, point: u64, write: bool, from: u64, excluded: u64) -> i64 {
+    if write {
+        let place = if nodes[point].kind == 21 { graph[point].first_child } else { copy(point) };
+        let selector = if values[place].state == 6 && values[place].target == target { values[place].origin_call } else { 0 };
+        let mut parent = nodes[point].parent;
+        while parent != 0 {
+            if nodes[parent].kind == 21 && values[parent].state == 5 {
+                let reserved = values[parent].target;
+                let prior = values[parent].origin_call;
+                let disjoint = reserved == target && selector != 0 && prior != 0 && prior != selector
+                    && values[parent].loan_parent == values[place].loan_parent;
+                if !disjoint && (reserved == target || reserves(&values[0..values.len()], &graph[0..graph.len()], copy(reserved), copy(target))
+                    || reserves(&values[0..values.len()], &graph[0..graph.len()], copy(target), reserved)) { return 1; }
+            }
+            parent = nodes[parent].parent;
+        }
+    }
+    let mut statement = copy(point);
+    while statement != 0 && nodes[nodes[statement].parent].kind != 2 {
+        statement = nodes[statement].parent;
+    }
+    let mut enclosing = nodes[point].parent;
+    while enclosing != 0 && nodes[enclosing].kind != 22 && nodes[enclosing].kind != 27 {
+        enclosing = nodes[enclosing].parent;
+    }
+    let block = nodes[statement].parent;
+    let mut uncertain = false;
+    let mut reference = graph[point].visible;
+    while reference != 0 {
+        if reference != excluded && values[reference].state == 1 && (values[reference].ty == 300
+            || values[reference].ty == 301 || values[reference].ty == 310 || option_handle(values[reference].ty) != 0 || handle_vector(values[reference].ty) || pooled_handle(values[reference].ty))
+            && bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
+                copy(reference), copy(target), !write) { return 1; }
+        if reference != excluded && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(point), copy(reference))
+            && (values[reference].state == 1 || values[reference].state == 4)
+            && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target))
+            && (write || exclusive_task_target(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target)) || values[reference].exclusive || values[reference].ty == 300 || (values[reference].ty >= 2111 && values[reference].ty <= 2117) || (values[reference].ty >= 1100 && values[reference].ty < 1200) || (values[reference].ty >= 481 && values[reference].ty <= 487)) {
+            if task_value(values[reference].ty) {
+                if values[reference].state == 1 { return 1; }
+                uncertain = true;
+            }
+            let mut use_node: u64 = 1;
+            while use_node < nodes.len() as u64 {
+                let carried = enclosing != 0 && nodes[reference].start < nodes[enclosing].start
+                    && nodes[use_node].start >= nodes[enclosing].start
+                    && nodes[use_node].end <= nodes[enclosing].end;
+                let mut certainty: i64 = 0;
+                if graph[use_node].binding == reference && (carried || nodes[use_node].start >= from) {
+                    certainty = if values[reference].ty != 300 { 2 } else {
+                        uses_reference_field(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                            &values[0..values.len()], copy(reference), copy(target), copy(use_node), copy(write))
+                    };
+                }
+                if certainty != 0 {
+                    uncertain = true;
+                    let mut use_statement = copy(use_node);
+                    while use_statement != 0 && nodes[nodes[use_statement].parent].kind != 2 {
+                        use_statement = nodes[use_statement].parent;
+                    }
+                    if certainty == 2
+                        && (!stored_loan_array(values[reference].ty)
+                            || graph[graph[values[reference].origin_call].first_child].next_sibling == 0)
+                        && nodes[use_node].start >= from && values[reference].state == 1 && block != 0
+                        && nodes[use_statement].parent == block
+                        && graph[use_node].scope == graph[point].scope
+                        && linear_use_path(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(use_node), copy(use_statement))
+                        && linear_sequence(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                            copy(statement), use_statement) {
+                        return 1;
+                    }
+                }
+                use_node = use_node + 1;
+            }
+        }
+        reference = graph[reference].visible;
+    }
+    // A possible later use prevents proving that the exclusive loan has ended.
+    if uncertain { return 1; }
+    0
+}
+
+fn linear_use_path(nodes: &[AstNode], graph: &[StaticNode], use_node: u64, stop: u64) -> bool {
+    let mut node = use_node;
+    while node != stop {
+        let kind = nodes[node].kind;
+        if kind == 11 || kind == 22 || kind == 26 || kind == 27 || kind == 39
+            || kind == 55 || kind == 56 { return false; }
+        let parent = nodes[node].parent;
+        if nodes[parent].kind == 39 && graph[parent].first_child == node {
+            node = nodes[parent].parent;
+        } else {
+            node = parent;
+        }
+    }
+    let kind = nodes[stop].kind;
+    kind == 5 || kind == 6 || kind == 8 || kind == 10 || kind == 21
+}
+
+fn linear_sequence(nodes: &[AstNode], graph: &[StaticNode], first: u64, last: u64) -> bool {
+    let mut node = first;
+    while node != last {
+        if node == 0 { return false; }
+        let kind = nodes[node].kind;
+        if kind != 5 && kind != 8 && kind != 21 { return false; }
+        let child = graph[node].first_child;
+        if nodes[child].kind == 2 || nodes[child].kind == 26 || nodes[child].kind == 27
+            || nodes[child].kind == 39 || nodes[child].kind == 56 || nodes[child].kind == 65 {
+            return false;
+        }
+        node = graph[node].next_sibling;
+    }
+    true
+}
+
+pub fn borrow_mutable(prefix: &[u8]) -> bool {
+    let mut at: usize = 1;
+    while at < prefix.len() && (prefix[at] == 32 || (prefix[at] >= 9 && prefix[at] <= 13)) {
+        at = at + 1;
+    }
+    prefix.len() - at >= 3 && prefix[at] == 109 && prefix[at+1] == 117 && prefix[at+2] == 116
+}
+
+// Handle a single borrowed scalar argument. Additional arguments need
+// reservation tracking across argument evaluation.
+pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], annotation: u64, argument: u64) -> i64 {
+    let start = nodes[argument].start;
+    let referent = graph[annotation].first_child;
+    let expected = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
+    if expected == 0 || graph[referent].first_child != 0 { return -9; }
+    if source[nodes[annotation].start] != 38 { return -9; }
+    let exclusive = borrow_mutable(&source[nodes[annotation].start..nodes[referent].start]);
+    let place = graph[argument].first_child;
+    if nodes[argument].kind == 7 {
+        let binding = graph[argument].binding;
+        if binding == 0 || values[binding].state != 1 || values[binding].target == 0 {
+            return 0 - violation(4, start);
+        }
+        if loan_element(&values[0..values.len()], copy(binding)) != expected || values[binding].exclusive != exclusive {
+            return 0 - violation(1, start);
+        }
+        if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+            return 0 - violation(4, start);
+        }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+            &graph[0..graph.len()], binding, copy(argument), exclusive);
+        if conflict > 0 { return 0 - violation(5, start); }
+        if conflict < 0 { return -9; }
+        return 1;
+    }
+    if nodes[argument].kind != 13 || nodes[place].kind != 7 { return -9; }
+    let binding = graph[place].binding;
+    if binding == 0 || values[binding].state != 1 { return 0 - violation(4, start); }
+    if values[binding].target != 0 { return -9; }
+    let access = borrow_mutable(&source[start..nodes[place].start]);
+    if access != exclusive || values[binding].ty != expected { return 0 - violation(1, start); }
+    if exclusive && !values[binding].mutable { return 0 - violation(5, start); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], binding, argument, exclusive);
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+    1
+}
+
+pub fn compatible_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], annotation: u64, expected: i64, exclusive: bool) -> bool {
+    let referent = graph[annotation].first_child;
+    let token = token_at(&tokens[0..tokens.len()], nodes[annotation].start);
+    if tokens[token].kind != 25 || referent == 0 { return false; }
+    if (tokens[token + 1].kind == 16) != exclusive { return false; }
+    let ty = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
+    ty == expected
+}
+
+fn exclusive_pair(values: &[CheckedValue], graph: &[StaticNode], left: u64, right: u64) -> i64 {
+    if (values[left].ty >= 81 && values[left].ty <= 87) || (values[right].ty >= 81 && values[right].ty <= 87) {
+        return 1;
+    }
+    if left == right || values[left].target == values[right].target { return 1; }
+    if selected_loan_union(values[left].ty) {
+        return if reserves(&values[0..values.len()], &graph[0..graph.len()], left, values[right].target) { 1 } else { 0 };
+    }
+    if selected_loan_union(values[right].ty) {
+        return if reserves(&values[0..values.len()], &graph[0..graph.len()], right, values[left].target) { 1 } else { 0 };
+    }
+    if values[left].origin_call != 0 {
+        let call = values[left].origin_call;
+        let mut argument = graph[graph[call].first_child].next_sibling;
+        while argument != 0 {
+            if values[argument].state == 1 && exclusive_pair(&values[0..values.len()],
+                &graph[0..graph.len()], graph[argument].binding, copy(right)) != 0 { return 1; }
+            argument = graph[argument].next_sibling;
+        }
+    } else if values[right].origin_call != 0 {
+        return exclusive_pair(&values[0..values.len()], &graph[0..graph.len()], right, left);
+    }
+    0
+}
+
+pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], values: &mut [CheckedValue], call: u64, point: u64, function: u64) -> i64 {
+    let (nominal, reference) = field_reborrow(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(function));
+    if nominal != 0 {
+        return apply_field_reborrow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], call, point, nominal, reference);
+    }
+    let (field, scalar) = returned_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(function));
+    if field != 0 {
+        return apply_returned_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], call, point, field, scalar);
+    }
+    let (index, element) = returned_array_loan(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(function));
+    if index != 0 {
+        return apply_returned_array_loan(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], function, call, point, index, element);
+    }
+    let callee = graph[call].first_child;
+    let mut result = graph[function].first_child;
+    while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+    if nodes[result].kind != 4 { return 0; }
+    let output = check_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], copy(result));
+    if output < 20 || output >= 60 { return 0; }
+    let mut parameter = graph[function].first_child;
+    let mut argument = graph[callee].next_sibling;
+    let mut first: u64 = 0;
+    while parameter != result {
+        if argument == 0 { return 0 - violation(8, nodes[call].start); }
+        let input = check_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], graph[parameter].first_child);
+        if input == 0 { return -9; }
+        if input >= 20 {
+            if nodes[argument].kind != 7 { return -9; }
+            let binding = graph[argument].binding;
+            if binding == 0 || values[binding].state != 1 || values[binding].ty >= 100
+                || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+                return 0 - violation(4, nodes[argument].start);
+            }
+            let mut previous = graph[callee].next_sibling;
+            while previous != argument {
+                let other = graph[previous].binding;
+                if other != 0 && values[other].target != 0
+                    && (input >= 40 || values[other].exclusive) {
+                    if exclusive_pair(&values[0..values.len()], &graph[0..graph.len()],
+                        copy(binding), other) != 0 {
+                        return 0 - violation(5, nodes[argument].start);
+                    }
+                }
+                previous = graph[previous].next_sibling;
+            }
+            let actual = loan_element(&values[0..values.len()], copy(binding));
+            if input % 20 != actual || values[binding].exclusive != (input >= 40) {
+                return 0 - violation(1, nodes[argument].start);
+            }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+                &graph[0..graph.len()], copy(binding), copy(point), input >= 40);
+            if conflict > 0 { return 0 - violation(5, nodes[argument].start); }
+            if conflict < 0 { return -9; }
+            if values[graph[parameter].first_child].state == 1 {
+                // Argument nodes have no binding state of their own.
+                values[argument] = CheckedValue { ty: 0, state: 1, mutable: false,
+                    target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                if first == 0 { first = binding; }
+            }
+        } else {
+            // Inspect the actual transfer state after evaluating the operand.
+            // Shared reservations allow reads but forbid moving their root.
+            let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), input, 1);
+            if checked < 0 { return checked; }
+            let mut operand: u64 = 1;
+            while operand < nodes.len() as u64 {
+                if nodes[operand].kind == 7 && nodes[operand].start >= nodes[argument].start
+                    && nodes[operand].end <= nodes[argument].end {
+                    let place = graph[operand].binding;
+                    let mut other = graph[callee].next_sibling;
+                    while other != 0 {
+                        let loan = graph[other].binding;
+                        if place != 0 && values[loan].target != 0
+                            && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(loan), copy(place)) {
+                            if values[place].state != 1 { return 0 - violation(5, nodes[operand].start); }
+                            if values[loan].exclusive { return 0 - violation(5, nodes[operand].start); }
+                        }
+                        other = graph[other].next_sibling;
+                    }
+                }
+                operand = operand + 1;
+            }
+        }
+        parameter = graph[parameter].next_sibling;
+        argument = graph[argument].next_sibling;
+    }
+    if argument != 0 { return 0 - violation(8, nodes[call].start); }
+    if first == 0 { return -9; }
+    let target = values[first].target;
+    values[point] = CheckedValue { ty: copy(output), state: 1, mutable: false,
+        target: target, loan_parent: first, origin_call: call, exclusive: output >= 40 };
+    output
+}

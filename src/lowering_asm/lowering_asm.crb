@@ -1,0 +1,190 @@
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::target_c::{byte_text, character};
+use bootstrap::lowering_types::{number, local};
+
+#(if: target.arch == "aarch64")
+    fn arm_target() -> bool { true }
+#(endif)
+#(if: target.arch == "x86_64")
+    fn arm_target() -> bool { false }
+#(endif)
+#(if: target.os == "macos")
+    fn darwin_target() -> bool { true }
+#(endif)
+#(if: target.os == "linux" || target.os == "windows")
+    fn darwin_target() -> bool { false }
+#(endif)
+#(if: target.os == "windows")
+    fn windows_target() -> bool { true }
+#(endif)
+#(if: target.os == "macos" || target.os == "linux")
+    fn windows_target() -> bool { false }
+#(endif)
+
+fn whitespace(value: u8) -> bool { value == 32 || value == 9 || value == 13 }
+fn skip_space(source: &[u8], first: u64, end: u64) -> u64 {
+    let mut at = first;
+    while at < end && whitespace(source[at]) { at = at + 1; }
+    at
+}
+
+fn width(ty: i64) -> u64 {
+    if ty == 4 { return 1; }
+    if ty == 5 { return 2; }
+    if ty == 1 || ty == 6 { return 4; }
+    if ty == 2 || ty == 7 { return 8; }
+    0
+}
+
+fn c_byte(value: u8) {
+    if value == 92 || value == 34 { character(92); character(value as i32); return; }
+    if value >= 32 && value <= 126 { character(value as i32); return; }
+    character(92);
+    character(48 + (value / 64) as i32);
+    character(48 + (value / 8 % 8) as i32);
+    character(48 + (value % 8) as i32);
+}
+
+fn quoted(source: &[u8], start: u64, end: u64) {
+    let mut cursor = start;
+    while cursor < end { c_byte(source[cursor]); cursor = cursor + 1; }
+}
+
+fn symbol(node: u64) {
+    { let code: [u8; 8] = [100,105,110,95,97,115,109,95]; byte_text(&code[..]); }
+    number(node);
+}
+
+fn end_line() {
+    { let code: [u8; 4] = [92,110,34,10]; byte_text(&code[..]); }
+}
+
+// A single slot per binding preserves a write followed by a read inside
+// the same assembly block. The C caller only writes back modified slots.
+fn slot(bindings: &[u64], binding: u64, used: u64) -> u64 {
+    let mut index: u64 = 0;
+    while index < used && bindings[index] != binding { index = index + 1; }
+    index
+}
+
+// modes: validate, emit the call, emit the target ABI routine.
+pub fn lower_asm(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    types: &[i64], node: u64, mode: i64) -> bool {
+    let mut bindings: [u64; 128] = [0; 128];
+    let mut written: [bool; 128] = [false; 128];
+    let mut count: u64 = 0;
+    let mut operand = graph[node].first_child;
+    let limit = nodes[node].end - 1;
+    let mut cursor = nodes[node].start;
+    while cursor < limit && source[cursor] != 123 { cursor = cursor + 1; }
+    if cursor == limit { return false; }
+    cursor = cursor + 1;
+    if mode == 2 {
+        { let code: [u8; 20] = [95,95,97,115,109,95,95,40,10,34,46,116,101,120,116,92,110,34,10,34]; byte_text(&code[..]); }
+        if darwin_target() { character(95); }
+        symbol(copy(node));
+        if arm_target() {
+            { let code: [u8; 41] = [58,92,110,115,116,112,32,120,49,57,44,32,120,51,48,44,32,91,115,112,44,32,35,45,49,54,93,33,92,110,109,111,118,32,120,49,57,44,32,120,48]; byte_text(&code[..]); }
+        } else {
+            { let code: [u8; 46] = [58,92,110,46,105,110,116,101,108,95,115,121,110,116,97,120,32,110,111,112,114,101,102,105,120,92,110,112,117,115,104,32,114,49,50,92,110,109,111,118,32,114,49,50,44,32]; byte_text(&code[..]); }
+            if windows_target() { { let code: [u8; 3] = [114,99,120]; byte_text(&code[..]); } } else { { let code: [u8; 3] = [114,100,105]; byte_text(&code[..]); } }
+        }
+        end_line();
+    }
+    while cursor < limit {
+        let first = copy(cursor);
+        while cursor < limit && source[cursor] != 10 { cursor = cursor + 1; }
+        let mut end = copy(cursor);
+        if cursor < limit { cursor = cursor + 1; }
+        let start = skip_space(&source[0..source.len()], first, copy(end));
+        let mut comment = copy(start);
+        while comment + 1 < end {
+            if source[comment] == 47 && source[comment + 1] == 47 { end = copy(comment); break; }
+            comment = comment + 1;
+        }
+        while end > start && whitespace(source[end - 1]) { end = end - 1; }
+        if start == end { continue; }
+        if operand == 0 || nodes[operand].start >= end {
+            if mode == 2 { character(34); quoted(&source[0..source.len()], start, end); end_line(); }
+            continue;
+        }
+        if end - start < 5 || source[start] != 109 || source[start + 1] != 111
+            || source[start + 2] != 118 || !whitespace(source[start + 3]) { return false; }
+        let binding = graph[operand].binding;
+        let bytes = width(types[binding]);
+        if binding == 0 || bytes == 0 { return false; }
+        let destination = skip_space(&source[0..source.len()], start + 3, copy(end));
+        let mut comma = copy(destination);
+        while comma < end && source[comma] != 44 { comma = comma + 1; }
+        if comma == end { return false; }
+        let input = skip_space(&source[0..source.len()], comma + 1, copy(end));
+        let marker = nodes[operand].start - 2;
+        let after = nodes[operand].end + 1;
+        let store = marker == destination;
+        let mut register_end = if store { copy(end) } else { copy(comma) };
+        let register = if store { copy(input) } else { copy(destination) };
+        while register_end > register && whitespace(source[register_end - 1]) { register_end = register_end - 1; }
+        if register == register_end { return false; }
+        if arm_target() && source[register] != (if bytes == 8 { 120 } else { 119 }) { return false; }
+        let marker_end = if store { copy(comma) } else { copy(end) };
+        if (!store && marker != input) || after > marker_end
+            || skip_space(&source[0..source.len()], after, copy(marker_end)) != marker_end { return false; }
+        let next = graph[operand].next_sibling;
+        if next != 0 && nodes[next].start < end { return false; }
+        let index = slot(&bindings[..], copy(binding), copy(count));
+        if index == count {
+            if count == 128 { return false; }
+            bindings[count] = binding;
+            count = count + 1;
+        }
+        if store { written[index] = true; }
+        if mode == 2 {
+            character(34);
+            if arm_target() {
+                if store { { let code: [u8; 3] = [115,116,114]; byte_text(&code[..]); } } else { { let code: [u8; 3] = [108,100,114]; byte_text(&code[..]); } }
+                if bytes == 1 { character(98); }
+                if bytes == 2 { character(104); }
+                character(32);
+                quoted(&source[0..source.len()], register, register_end);
+                { let code: [u8; 9] = [44,32,91,120,49,57,44,32,35]; byte_text(&code[..]); } number(index * 8); character(93);
+            } else {
+                { let code: [u8; 4] = [109,111,118,32]; byte_text(&code[..]); }
+                if !store { quoted(&source[0..source.len()], copy(register), copy(register_end)); { let code: [u8; 2] = [44,32]; byte_text(&code[..]); } }
+                if bytes == 1 { { let code: [u8; 4] = [66,89,84,69]; byte_text(&code[..]); } }
+                if bytes == 2 { { let code: [u8; 4] = [87,79,82,68]; byte_text(&code[..]); } }
+                if bytes == 4 { { let code: [u8; 5] = [68,87,79,82,68]; byte_text(&code[..]); } }
+                if bytes == 8 { { let code: [u8; 5] = [81,87,79,82,68]; byte_text(&code[..]); } }
+                { let code: [u8; 12] = [32,80,84,82,32,91,114,49,50,32,43,32]; byte_text(&code[..]); } number(index * 8); character(93);
+                if store { { let code: [u8; 2] = [44,32]; byte_text(&code[..]); } quoted(&source[0..source.len()], register, register_end); }
+            }
+            end_line();
+        }
+        operand = next;
+    }
+    if operand != 0 { return false; }
+    if mode == 2 {
+        if arm_target() { { let code: [u8; 36] = [34,108,100,112,32,120,49,57,44,32,120,51,48,44,32,91,115,112,93,44,32,35,49,54,92,110,114,101,116,92,110,34,10,41,59,10]; byte_text(&code[..]); } }
+        else { { let code: [u8; 40] = [34,112,111,112,32,114,49,50,92,110,114,101,116,92,110,46,97,116,116,95,115,121,110,116,97,120,32,112,114,101,102,105,120,92,110,34,10,41,59,10]; byte_text(&code[..]); } }
+    }
+    if mode == 1 {
+        { let code: [u8; 14] = [123,32,101,120,116,101,114,110,32,118,111,105,100,32]; byte_text(&code[..]); } symbol(copy(node)); { let code: [u8; 28] = [40,117,105,110,116,54,52,95,116,32,42,41,59,10,117,105,110,116,54,52,95,116,32,97,114,103,115,91]; byte_text(&code[..]); }
+        number(if count == 0 { 1 } else { copy(count) }); { let code: [u8; 9] = [93,32,61,32,123,48,125,59,10]; byte_text(&code[..]); }
+        let mut index: u64 = 0;
+        while index < count {
+            { let code: [u8; 13] = [109,101,109,99,112,121,40,38,97,114,103,115,91]; byte_text(&code[..]); } number(copy(index)); { let code: [u8; 4] = [93,44,32,38]; byte_text(&code[..]); } local(bindings[index]);
+            { let code: [u8; 9] = [44,32,115,105,122,101,111,102,40]; byte_text(&code[..]); } local(bindings[index]); { let code: [u8; 4] = [41,41,59,10]; byte_text(&code[..]); }
+            index = index + 1;
+        }
+        symbol(node); { let code: [u8; 8] = [40,97,114,103,115,41,59,10]; byte_text(&code[..]); }
+        index = 0;
+        while index < count {
+            if written[index] {
+                { let code: [u8; 8] = [109,101,109,99,112,121,40,38]; byte_text(&code[..]); } local(bindings[index]); { let code: [u8; 8] = [44,32,38,97,114,103,115,91]; byte_text(&code[..]); } number(copy(index));
+                { let code: [u8; 10] = [93,44,32,115,105,122,101,111,102,40]; byte_text(&code[..]); } local(bindings[index]); { let code: [u8; 4] = [41,41,59,10]; byte_text(&code[..]); }
+            }
+            index = index + 1;
+        }
+        { let code: [u8; 2] = [125,10]; byte_text(&code[..]); }
+    }
+    true
+}

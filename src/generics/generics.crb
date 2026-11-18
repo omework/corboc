@@ -1,0 +1,994 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Resolve constrained record templates before ordinary ownership analysis.
+use bootstrap::model::{AstNode, StaticNode, Token, token_at};
+use bootstrap::packages::append;
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::calls::bootstrap_callee;
+use bootstrap::declarations::verification_field;
+use bootstrap::verify::report_violation;
+use bootstrap::loans::borrow_mutable;
+use bootstrap::scalar::{verify_primitive, verify_literal_hint};
+
+struct ConcreteType { node: u64, reference: i64, slice: bool, instance: u64 }
+struct Instance { template: u64, count: u64 }
+struct Dependency { owner: u64, site: u64, template: u64, instance: u64 }
+
+fn put(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
+    if cursor >= output.len() || bytes.len() > output.len() - cursor { return output.len(); }
+    append(output, cursor, bytes)
+}
+
+fn text_equal(source: &[u8], a: &AstNode, b: &AstNode) -> bool {
+    same_bytes(&source[(*a).name_start..(*a).name_end], &source[(*b).name_start..(*b).name_end])
+}
+
+fn template_parameter(nodes: &[AstNode], graph: &[StaticNode], template: u64, index: u64) -> u64 {
+    let mut child = graph[template].first_child;
+    let mut current: u64 = 0;
+    while child != 0 {
+        if nodes[child].kind == 67 {
+            if current == index { return child; }
+            current = current + 1;
+        }
+        child = graph[child].next_sibling;
+    }
+    if current != 0 { return 0; }
+    child = graph[template].first_child;
+    while child != 0 {
+        if nodes[child].kind == 58 {
+            let mut property = graph[child].first_child;
+            while property != 0 {
+                if nodes[property].kind == 67 || nodes[property].kind == 69 || nodes[property].kind == 70 {
+                    if current == index { return property; }
+                    current = current + 1;
+                }
+                property = graph[property].next_sibling;
+            }
+        }
+        child = graph[child].next_sibling;
+    }
+    0
+}
+
+/// Identifies STD templates whose callable field needs concrete capture storage.
+pub fn deferred_iterator(source: &[u8], nodes: &[AstNode], item: u64) -> bool {
+    let prefix: [u8; 13] = [95,95,99,111,114,98,111,95,105,116,101,114,95];
+    let name = &source[nodes[item].name_start..nodes[item].name_end];
+    name.len() >= 13 && same_bytes(&name[0..13], &prefix[..])
+}
+
+fn is_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) -> bool {
+    !deferred_iterator(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) && (nodes[item].kind == 28 || nodes[item].kind == 29) && template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], item, 0) != 0
+}
+
+fn implementation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, item: u64) -> bool {
+    nodes[item].kind == 49 && text_equal(&source[0..source.len()], &nodes[template], &nodes[item])
+}
+
+fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owner: u64, name: u64) -> u64 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(owner), copy(item)) {
+            let mut child = graph[item].first_child;
+            while child != 0 {
+                if (nodes[child].kind == 1 || nodes[child].kind == 35)
+                    && text_equal(&source[0..source.len()], &nodes[child], &nodes[name]) { return child; }
+                child = graph[child].next_sibling;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+fn output(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    let mut child = graph[function].first_child;
+    while child != 0 {
+        if nodes[child].kind == 4 { return child; }
+        child = graph[child].next_sibling;
+    }
+    0
+}
+
+fn concrete(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> ConcreteType {
+    if ty != 0 && source[nodes[ty].start] == 38 {
+        let inner = graph[ty].first_child;
+        let exclusive = borrow_mutable(&source[nodes[ty].start..nodes[inner].start]);
+        return ConcreteType { node: inner, reference: if exclusive { 2 } else { 1 }, slice: false, instance: 0 };
+    }
+    ConcreteType { node: ty, reference: 0, slice: false, instance: 0 }
+}
+
+fn layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> u64 {
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if (nodes[item].kind == 28 || nodes[item].kind == 29)
+            && text_equal(&source[0..source.len()], &nodes[item], &nodes[ty]) { return item; }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+// AST node ids use the upper bits. The low bits encode the reference mode
+// and whether an array has been viewed as a slice. Recursive inference returns
+// this scalar, leaving the ordinary caller-reserved record slots bounded.
+fn packed(ty: &ConcreteType) -> u64 {
+    let reference: u64 = if (*ty).reference == 2 { 2 } else if (*ty).reference == 1 { 1 } else { 0 };
+    ((*ty).node + (*ty).instance * 1048576) * 8 + reference + (if (*ty).slice { 4 } else { 0 })
+}
+
+fn decoded(code: u64) -> ConcreteType {
+    ConcreteType { node: code / 8 % 1048576,
+        reference: if code % 4 == 2 { 2 } else if code % 4 == 1 { 1 } else { 0 },
+        slice: code % 8 >= 4, instance: code / 8388608 }
+}
+
+fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], id: u64, depth: u64) -> u64 {
+    if id == 0 || depth >= 128 { let inferred = ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
+    let kind = nodes[id].kind;
+    let child = graph[id].first_child;
+    if kind == 7 {
+        let binding = graph[id].binding;
+        let ty = graph[binding].type_node;
+        if ty != 0 { let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty); return packed(&inferred); }
+        let self_name: [u8; 4] = [115,101,108,102];
+        let name = &source[nodes[binding].name_start..nodes[binding].name_end];
+        let owner = nodes[nodes[binding].parent].parent;
+        if name.content_eq(&self_name[..]) && nodes[owner].kind == 49 {
+            let exclusive = borrow_mutable(&source[nodes[binding].start..nodes[binding].name_start]);
+            let inferred = ConcreteType { node: owner, reference: if source[nodes[binding].start] == 38 { if exclusive { 2 } else { 1 } } else { 0 }, slice: false, instance: 0 }; return packed(&inferred);
+        }
+        return type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], graph[binding].initializer, depth + 1);
+    }
+    if kind == 9 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
+    if kind == 37 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
+    if kind == 19 || kind == 38 {
+        return type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1);
+    }
+    if kind == 13 || kind == 14 {
+        let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
+        let inferred = ConcreteType { node: ty.node, reference: if kind == 14 { 0 } else if graph[id].mutable { 2 } else { 1 }, slice: ty.slice, instance: ty.instance }; return packed(&inferred);
+    }
+    if kind == 18 {
+        let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(child), depth + 1));
+        let selector = graph[child].next_sibling;
+        if nodes[selector].kind == 46 { let inferred = ConcreteType { node: ty.node, reference: 0, slice: true, instance: 0 }; return packed(&inferred); }
+        let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[ty.node].first_child); return packed(&inferred);
+    }
+    if kind == 39 {
+        let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
+        let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[ty.node].first_child); return packed(&inferred);
+    }
+    if kind == 15 {
+        let mut function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(id));
+        if function == 0 && nodes[child].kind == 7 {
+            let mut candidate = graph[0].first_child;
+            while candidate != 0 {
+                if (nodes[candidate].kind == 1 || nodes[candidate].kind == 35)
+                    && text_equal(&source[0..source.len()], &nodes[child], &nodes[candidate]) { function = copy(candidate); }
+                candidate = graph[candidate].next_sibling;
+            }
+        }
+        if function == 0 && nodes[child].kind == 36 {
+            let token = token_at(&tokens[0..tokens.len()], nodes[child].start);
+            let mut owner = graph[0].first_child;
+            while owner != 0 {
+                if (nodes[owner].kind == 28 || nodes[owner].kind == 29)
+                    && same_bytes(&source[nodes[owner].name_start..nodes[owner].name_end],
+                        &source[tokens[token].start..tokens[token].end]) {
+                    let name = token_at(&tokens[0..tokens.len()], nodes[child].end) - 1;
+                    let mut item = graph[0].first_child;
+                    while item != 0 {
+                        if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(owner), copy(item)) {
+                            let mut candidate = graph[item].first_child;
+                            while candidate != 0 {
+                                if same_bytes(&source[nodes[candidate].name_start..nodes[candidate].name_end],
+                                    &source[tokens[name].start..tokens[name].end]) { function = copy(candidate); }
+                                candidate = graph[candidate].next_sibling;
+                            }
+                        }
+                        item = graph[item].next_sibling;
+                    }
+                }
+                owner = graph[owner].next_sibling;
+            }
+        }
+        let returned = output(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+        let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], returned); return packed(&inferred);
+    }
+    if kind == 16 || kind == 17 {
+        let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
+        let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
+        if kind == 16 {
+            let function = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, id);
+            let returned = output(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+        let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], returned); return packed(&inferred);
+        }
+        let mut field = graph[owner].first_child;
+        while field != 0 {
+            if text_equal(&source[0..source.len()], &nodes[field], &nodes[id]) {
+                let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[field].first_child); return packed(&inferred);
+            }
+            field = graph[field].next_sibling;
+        }
+    }
+    0
+}
+
+fn primitive_type(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
+    if nodes[node].kind == 9 {
+        let first=source[nodes[node].start];
+        if first==116 || first==102{return 3;}
+        return verify_literal_hint(&source[0..source.len()], &nodes[node]);
+    }
+    if nodes[node].kind == 4 {
+        return verify_primitive(&source[0..source.len()], nodes[node].name_start, nodes[node].name_end);
+    }
+    0
+}
+
+fn same_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a: &ConcreteType, b: &ConcreteType, depth: u64) -> bool {
+    if depth >= 128 || (*a).reference != (*b).reference || (*a).slice != (*b).slice { return false; }
+    if (*a).instance != 0 || (*b).instance != 0 { return (*a).instance == (*b).instance; }
+    if (*a).node == (*b).node { return true; }
+    let scalar = primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*a).node);
+    if scalar != 0 { return scalar == primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*b).node); }
+    if !text_equal(&source[0..source.len()], &nodes[(*a).node], &nodes[(*b).node]) { return false; }
+    let mut left = if nodes[(*a).node].kind == 4 { graph[(*a).node].first_child } else { 0 };
+    let mut right = if nodes[(*b).node].kind == 4 { graph[(*b).node].first_child } else { 0 };
+    while left != 0 && right != 0 {
+        let ta = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(left));
+        let tb = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(right));
+        if !same_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &ta, &tb, depth + 1) { return false; }
+        left = graph[left].next_sibling;
+        right = graph[right].next_sibling;
+    }
+    left == right
+}
+
+fn unify(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, pattern: u64,
+    actual: &ConcreteType, types: &mut [ConcreteType], depth: u64) -> bool {
+    if depth >= 128 || pattern == 0 || (*actual).node == 0 { return false; }
+    let expected = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], pattern);
+    let pattern = expected.node;
+    let mut index: u64 = 0;
+    while index < types.len() as u64 {
+        let parameter = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index));
+        if parameter == 0 { break; }
+        if text_equal(&source[0..source.len()], &nodes[parameter], &nodes[pattern]) {
+            if expected.reference != 0 && expected.reference != (*actual).reference { return false; }
+            let resolved = ConcreteType { node: (*actual).node,
+                reference: if expected.reference == 0 { (*actual).reference } else { 0 }, slice: (*actual).slice, instance: (*actual).instance };
+            if types[index].node != 0 {
+                return same_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[index], &resolved, depth + 1);
+            }
+            types[index] = resolved;
+            return true;
+        }
+        index = index + 1;
+    }
+    if expected.reference != (*actual).reference { return false; }
+    let expected_scalar = primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern));
+    if expected_scalar != 0 { return expected_scalar == primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*actual).node); }
+    if !text_equal(&source[0..source.len()], &nodes[pattern], &nodes[(*actual).node]) { return false; }
+    let mut left = graph[pattern].first_child;
+    let mut right = if nodes[(*actual).node].kind == 4 { graph[(*actual).node].first_child } else { 0 };
+    if (*actual).slice && source[nodes[pattern].start] == 91 { right = graph[(*actual).node].first_child; }
+    while left != 0 && right != 0 {
+        let ty = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(right));
+        if !unify(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(left), &ty, &mut types[0..types.len()], depth + 1) { return false; }
+        left = graph[left].next_sibling;
+        right = if (*actual).slice { 0 } else { graph[right].next_sibling };
+    }
+    left == right
+}
+
+fn constraints(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, types: &mut [ConcreteType], instances:&mut [Instance], stored:&mut [ConcreteType], instance_count:&mut [u64]) -> bool {
+    let mut annotation = graph[template].first_child;
+    while annotation != 0 {
+        if nodes[annotation].kind == 58 {
+            let mut property = graph[annotation].first_child;
+            while property != 0 {
+                if nodes[property].kind == 69 || nodes[property].kind == 70 {
+                    let mut index: u64 = 0;
+                    while index < types.len() as u64 {
+                        let parameter = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index));
+                        if parameter == 0 { return false; }
+                        if text_equal(&source[0..source.len()], &nodes[parameter], &nodes[property]) { break; }
+                        index = index + 1;
+                    }
+                    if index == types.len() as u64 { return false; }
+                    let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], types[index].node);
+                    let mut required = graph[property].first_child;
+                    let mut requirement_count: u64 = 0;
+                    while required != 0 {
+                        requirement_count = requirement_count + 1;
+                        let actual = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(owner), copy(required));
+                        if actual == 0 || nodes[required].kind != nodes[actual].kind { return false; }
+                        let mut a = graph[required].first_child;
+                        let mut b = graph[actual].first_child;
+                        while nodes[a].kind == 3 && nodes[b].kind == 3 {
+                            if graph[a].first_child == 0 && graph[b].first_child == 0 {
+                                if !same_bytes(&source[nodes[a].start..nodes[a].end], &source[nodes[b].start..nodes[b].end]) { return false; }
+                            } else {
+                                let raw = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[b].first_child);
+                                let ty=decoded(resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&raw,types[index].instance,&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut instance_count[0..instance_count.len()],0));
+                                if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), graph[a].first_child, &ty, &mut types[0..types.len()], &instances[0..instances.len()],&stored[0..stored.len()],0) { return false; }
+                            }
+                            a = graph[a].next_sibling;
+                            b = graph[b].next_sibling;
+                        }
+                        if nodes[a].kind == 3 || nodes[b].kind == 3 { return false; }
+                        if nodes[a].kind == 4 || nodes[b].kind == 4 {
+                            if nodes[a].kind != 4 || nodes[b].kind != 4 { return false; }
+                            let raw = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(b));
+                            let ty=decoded(resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&raw,types[index].instance,&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut instance_count[0..instance_count.len()],0));
+                            if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), a, &ty, &mut types[0..types.len()], &instances[0..instances.len()],&stored[0..stored.len()],0) { return false; }
+                        }
+                        required = graph[required].next_sibling;
+                    }
+                    if nodes[property].kind == 70 {
+                        let mut actual_count: u64 = 0;
+                        let mut part = graph[0].first_child;
+                        let drop_name: [u8; 4] = [100,114,111,112];
+                        while part != 0 {
+                            if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(owner), copy(part)) {
+                                let mut member = graph[part].first_child;
+                                while member != 0 {
+                                    let name = &source[nodes[member].name_start..nodes[member].name_end];
+                                    if (nodes[member].kind == 1 || nodes[member].kind == 35) && !name.content_eq(&drop_name[..]) {
+                                        actual_count = actual_count + 1;
+                                    }
+                                    member = graph[member].next_sibling;
+                                }
+                            }
+                            part = graph[part].next_sibling;
+                        }
+                        if actual_count != requirement_count { return false; }
+                    }
+                }
+                property = graph[property].next_sibling;
+            }
+        }
+        annotation = graph[annotation].next_sibling;
+    }
+    // Alternatives constrain the resolved value type after required methods
+    // have inferred result parameters.
+    annotation = graph[template].first_child;
+    while annotation != 0 {
+        let mut property = graph[annotation].first_child;
+        while nodes[annotation].kind == 58 && property != 0 {
+            if nodes[property].kind == 68 && graph[property].first_child != 0 {
+                let mut index: u64 = 0;
+                while index < types.len() as u64 {
+                    let parameter = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index));
+                    if parameter == 0 { return false; }
+                    if text_equal(&source[0..source.len()], &nodes[parameter], &nodes[property]) { break; }
+                    index = index + 1;
+                }
+                if index == types.len() as u64 || types[index].node == 0 { return false; }
+                let mut alternative = graph[property].first_child;
+                let mut matches = false;
+                while alternative != 0 {
+                    let candidate = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(alternative));
+                    if same_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[index], &candidate, 0) { matches = true; }
+                    alternative = graph[alternative].next_sibling;
+                }
+                if !matches { return false; }
+            }
+            property = graph[property].next_sibling;
+        }
+        annotation = graph[annotation].next_sibling;
+    }
+    true
+}
+
+fn number(output: &mut [u8], start: usize, n: u64) -> usize {
+    let mut digits: [u8; 20] = [0; 20];
+    let alphabet: [u8; 10] = [48,49,50,51,52,53,54,55,56,57];
+    let mut cursor: usize = 20;
+    let mut value = n;
+    while true {
+        cursor = cursor - 1;
+        digits[cursor] = alphabet[value % 10];
+        value = value / 10;
+        if value == 0 { break; }
+    }
+    let mut written = start;
+    while cursor < 20 {
+        if written >= output.len() { return output.len(); }
+        output[written] = digits[cursor];
+        written = written + 1;
+        cursor = cursor + 1;
+    }
+    written
+}
+
+fn instance_name(source: &[u8], nodes: &[AstNode], template: u64, id: u64, output: &mut [u8], start: usize) -> usize {
+    let prefix: [u8; 20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
+    let separator: [u8; 1] = [95];
+    let cursor = put(&mut output[0..output.len()], start, &prefix[..]);
+    let cursor = put(&mut output[0..output.len()], cursor, &source[nodes[template].name_start..nodes[template].name_end]);
+    let cursor = put(&mut output[0..output.len()], cursor, &separator[..]);
+    number(output, cursor, id)
+}
+
+fn write_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: &ConcreteType, output: &mut [u8], start: usize) -> usize {
+    let mut start = start;
+    if (*ty).reference != 0 {
+        let shared: [u8; 1] = [38];
+        let exclusive: [u8; 5] = [38,109,117,116,32];
+        start = if (*ty).reference == 2 {
+            put(&mut output[0..output.len()], start, &exclusive[..])
+        } else { put(&mut output[0..output.len()], start, &shared[..]) };
+    }
+    if (*ty).instance != 0 { return instance_name(&source[0..source.len()], &nodes[0..nodes.len()], (*ty).node, (*ty).instance - 1, output, start); }
+    if nodes[(*ty).node].kind == 9 {
+        let code = primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*ty).node);
+        let integer: [u8; 3] = [105,54,52];
+        let float: [u8; 3] = [102,54,52];
+        let boolean: [u8; 4] = [98,111,111,108];
+        if code == 3 { return put(output, start, &boolean[..]); }
+        if code == 9 { return put(output, start, &float[..]); }
+        return put(output, start, &integer[..]);
+    }
+    if (*ty).slice {
+        let open: [u8; 1] = [91];
+        let close: [u8; 1] = [93];
+        let item = graph[(*ty).node].first_child;
+        let cursor = put(&mut output[0..output.len()], start, &open[..]);
+        let cursor = put(&mut output[0..output.len()], cursor, &source[nodes[item].start..nodes[item].end]);
+        return put(output, cursor, &close[..]);
+    }
+    if nodes[(*ty).node].kind == 4 { return put(output, start, &source[nodes[(*ty).node].start..nodes[(*ty).node].end]); }
+    put(output, start, &source[nodes[(*ty).node].name_start..nodes[(*ty).node].name_end])
+}
+
+// Keep the generic source method as a recipe until adapter specialization.
+// Substituting an item such as &T into a method's type-parameter declaration
+// would otherwise turn D<V> into a declaration containing a concrete type.
+fn iterator_collect_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) -> u64 {
+    if nodes[item].kind != 49 { return 0; }
+    let name = &source[nodes[item].name_start..nodes[item].name_end];
+    let plain: [u8; 4] = [73,116,101,114];
+    let standard: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
+    if !name.content_eq(&plain[..]) && !name.content_eq(&standard[..]) { return 0; }
+    let collect: [u8; 7] = [99,111,108,108,101,99,116];
+    let mut method = graph[item].first_child;
+    while method != 0 {
+        if nodes[method].kind == 1 && same_bytes(&source[nodes[method].name_start..nodes[method].name_end], &collect[..]) { return method; }
+        method = graph[method].next_sibling;
+    }
+    0
+}
+
+fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], instance: &Instance,
+    id: u64, part: u64, types: &[ConcreteType], dependencies: &[Dependency],
+    output: &mut [u8], start: usize) -> usize {
+    let collector = iterator_collect_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(part));
+    let mut token = token_at(&tokens[0..tokens.len()], nodes[part].start);
+    let mut cursor = nodes[part].start;
+    let mut written = start;
+    let mut annotation = graph[part].first_child;
+    while nodes[annotation].kind == 58 {
+        cursor = nodes[annotation].end;
+        token = token_at(&tokens[0..tokens.len()], copy(cursor));
+        annotation = graph[annotation].next_sibling;
+    }
+    let self_name: [u8; 4] = [83,101,108,102];
+    while tokens[token].start < nodes[part].end {
+        if collector != 0 && tokens[token].start == nodes[collector].start {
+            written = put(&mut output[0..output.len()], written, &source[cursor..nodes[collector].start]);
+            cursor = nodes[collector].end;
+            token = token_at(&tokens[0..tokens.len()], copy(cursor));
+            continue;
+        }
+        let span_start = tokens[token].start;
+        let span_end = tokens[token].end;
+        let word = &source[span_start..span_end];
+        let owner = same_bytes(&word[0..word.len()], &source[nodes[(*instance).template].name_start..nodes[(*instance).template].name_end])
+            || word.content_eq(&self_name[..]);
+        // Resolve the occurrence, not one specialization per template name.
+        let mut dependency = dependencies.len() as u64;
+        let mut candidate: u64 = 0;
+        let mut ambiguous = false;
+        let mut exact = false;
+        while candidate < dependencies.len() as u64 {
+            if dependencies[candidate].owner == id
+                && same_bytes(&word[0..word.len()], &source[nodes[dependencies[candidate].template].name_start..nodes[dependencies[candidate].template].name_end]) {
+                if nodes[dependencies[candidate].site].name_start == span_start {
+                    dependency = copy(candidate); ambiguous = false; exact = true; break;
+                }
+                if dependency < dependencies.len() as u64 && dependencies[dependency].instance != dependencies[candidate].instance { ambiguous = true; }
+                dependency = copy(candidate);
+            }
+            candidate = candidate + 1;
+        }
+        let dependent = dependency < dependencies.len() as u64 && !ambiguous && (!owner || exact);
+        let mut parameter: u64 = 0;
+        while parameter < (*instance).count {
+            let name = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], (*instance).template, copy(parameter));
+            if same_bytes(&word[0..word.len()], &source[nodes[name].name_start..nodes[name].name_end]) { break; }
+            parameter = parameter + 1;
+        }
+        if owner || dependent || parameter < (*instance).count {
+            written = put(&mut output[0..output.len()], written, &source[cursor..span_start]);
+            if dependent {
+                written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], dependencies[dependency].template,
+                    dependencies[dependency].instance, &mut output[0..output.len()], written);
+            } else if owner {
+                written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], (*instance).template, copy(id), &mut output[0..output.len()], written);
+            } else {
+                written = write_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[id * 32 + parameter], &mut output[0..output.len()], written);
+            }
+            cursor = span_end;
+            if (owner || dependent) && tokens[token + 1].kind == 23 {
+                token = token + 2;
+                let mut depth: u64 = 1;
+                while depth != 0 {
+                    if tokens[token].kind == 23 { depth = depth + 1; }
+                    if tokens[token].kind == 24 { depth = depth - 1; }
+                    token = token + 1;
+                }
+                cursor = tokens[token - 1].end;
+                continue;
+            }
+        }
+        token = token + 1;
+    }
+    put(output, written, &source[cursor..nodes[part].end])
+}
+
+fn body_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], template: u64) -> bool {
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        let mut ancestor = copy(point);
+        while nodes[ancestor].parent != 0 { ancestor = nodes[ancestor].parent; }
+        if nodes[point].kind == 16 && implementation(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(template), ancestor) {
+            let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &tokens[0..tokens.len()], graph[point].first_child, 0));
+            let mut index: u64 = 0;
+            let mut generic = false;
+            while index < 32 {
+                let parameter = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index));
+                if parameter == 0 { break; }
+                if text_equal(&source[0..source.len()], &nodes[parameter], &nodes[ty.node]) { generic = true; }
+                index = index + 1;
+            }
+            if generic {
+                let mut annotation = graph[template].first_child;
+                let mut guaranteed = false;
+                while annotation != 0 {
+                    if nodes[annotation].kind == 58 {
+                        let mut property = graph[annotation].first_child;
+                        while property != 0 {
+                            if (nodes[property].kind == 69 || nodes[property].kind == 70)
+                                && text_equal(&source[0..source.len()], &nodes[property], &nodes[ty.node]) {
+                                let mut requirement = graph[property].first_child;
+                                while requirement != 0 {
+                                    if text_equal(&source[0..source.len()], &nodes[requirement], &nodes[point]) { guaranteed = true; }
+                                    requirement = graph[requirement].next_sibling;
+                                }
+                            }
+                            property = graph[property].next_sibling;
+                        }
+                    }
+                    annotation = graph[annotation].next_sibling;
+                }
+                if !guaranteed { return false; }
+            }
+        }
+        point = point + 1;
+    }
+    true
+}
+
+fn matched_instance(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    expression: u64, template: u64, instances: &[Instance], substitutions: &[u64],
+    dependencies: &[Dependency], depth: u64) -> u64 {
+    if expression == 0 || depth >= 128 { return 0; }
+    let kind = nodes[expression].kind;
+    let first = graph[expression].first_child;
+    if kind == 19 || kind == 38 || kind == 16 {
+        return matched_instance(&nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+            first, template, instances, substitutions, dependencies, depth + 1);
+    }
+    if kind == 7 {
+        let binding = graph[expression].binding;
+        if graph[binding].initializer != 0 {
+            return matched_instance(&nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+                graph[binding].initializer, template, instances, substitutions, dependencies, depth + 1);
+        }
+        if graph[binding].type_node != 0 {
+            let token = token_at(&tokens[0..tokens.len()], nodes[graph[binding].type_node].start);
+            if substitutions[token] != 0 {
+                let instance = substitutions[token] - 1;
+                if instances[instance].template == template { return instance + 1; }
+            }
+        }
+        let mut parent = copy(binding);
+        while parent != 0 && nodes[parent].kind != 40 { parent = nodes[parent].parent; }
+        if parent != 0 {
+            let selection = nodes[parent].parent;
+            return matched_instance(&nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+                graph[selection].first_child, template, instances, substitutions, dependencies, depth + 1);
+        }
+    }
+    if kind == 15 {
+        let token = token_at(&tokens[0..tokens.len()], nodes[first].start);
+        if substitutions[token] != 0 {
+            let instance = substitutions[token] - 1;
+            if instances[instance].template == template { return instance + 1; }
+            let mut dependency: u64 = 0;let mut found:u64=0;
+            while dependency < dependencies.len() as u64 {
+                if dependencies[dependency].owner == instance && dependencies[dependency].template == template {
+                    if found!=0 && found!=dependencies[dependency].instance+1{return 0;}
+                    found=dependencies[dependency].instance+1;
+                }
+                dependency = dependency + 1;
+            }return found;
+        }
+    }
+    0
+}
+
+pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    let mut instances: [Instance; 4096] = [Instance { template: 0, count: 0 }; 4096];
+    let mut stored_types: [ConcreteType; 131072] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 131072];
+    let mut count: u64 = 0;
+    let mut instance_count:[u64;1]=[0];
+    let mut substitutions: [u64; 524292] = [0; 524292];
+    let mut substitution_ends: [u64; 524292] = [0; 524292];
+    let mut omitted: [bool; 524289] = [false; 524289];
+    let mut omissions: [u64; 524292] = [0; 524292];
+    let mut template = graph[0].first_child;
+    while template != 0 {
+        if is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template)) {
+            if !body_contracts(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(template)) { return (8, 0); }
+            let mut part = graph[0].first_child;
+            while part != 0 {
+                if part == template || implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(part)) {
+                    omitted[part] = true;
+                    let token = token_at(&tokens[0..tokens.len()], nodes[part].start);
+                    omissions[token] = copy(part);
+                }
+                part = graph[part].next_sibling;
+            }
+        }
+        template = graph[template].next_sibling;
+    }
+    let mut call: u64 = 1;
+    while call < nodes.len() as u64 {
+        let mut ancestor = copy(call);
+        while nodes[ancestor].parent != 0 { ancestor = nodes[ancestor].parent; }
+        if (nodes[call].kind == 15 || nodes[call].kind == 4 || nodes[call].kind == 37) && !omitted[ancestor] {
+            let callee = if nodes[call].kind == 15 { graph[call].first_child } else { copy(call) };
+            if nodes[callee].kind == 36 || nodes[call].kind == 4 || nodes[call].kind == 37 {
+                let first = token_at(&tokens[0..tokens.len()], nodes[callee].start);
+                let mut template = graph[0].first_child;
+                while template != 0 {
+                    if is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template))
+                        && same_bytes(&source[nodes[template].name_start..nodes[template].name_end],
+                            &source[tokens[first].start..tokens[first].end]) {
+                        let direct_call = nodes[call].kind == 15;
+                        let last = token_at(&tokens[0..tokens.len()], nodes[callee].end) - 1;
+                        let mut function: u64 = 0;
+                        let mut part = graph[0].first_child;
+                        while part != 0 {
+                            if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(part)) {
+                                let mut member = graph[part].first_child;
+                                while member != 0 {
+                                    if same_bytes(&source[nodes[member].name_start..nodes[member].name_end], &source[tokens[last].start..tokens[last].end]) { function = copy(member); }
+                                    member = graph[member].next_sibling;
+                                }
+                            }
+                            part = graph[part].next_sibling;
+                        }
+                        if (direct_call && function == 0) { return (9, 0); }
+                        if count == 4096 { return (4, 0); }
+                        let mut types: [ConcreteType; 32] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 32];
+                        if direct_call {
+                            if tokens[first + 1].kind == 23 {
+                                let mut supplied = graph[graph[callee].first_child].first_child;
+                                let mut index: u64 = 0;
+                                while supplied != 0 {
+                                    if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (8, 0); }
+                                    types[index] = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(supplied));
+                                    supplied = graph[supplied].next_sibling;
+                                    index = index + 1;
+                                }
+                                if template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), index) != 0 { return (8, 0); }
+                            }
+                        let mut parameter = graph[function].first_child;
+                        let mut argument = graph[callee].next_sibling;
+                        while nodes[parameter].kind == 3 && argument != 0 {
+                            instance_count[0]=copy(count);
+                            let ty = decoded(resolved_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(argument), 0, &mut instances[..], &mut stored_types[..], &mut instance_count[..], 0));
+                            count=instance_count[0];
+                            if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), graph[parameter].first_child, &ty, &mut types[..], &instances[..], &stored_types[..], 0) { return (8, 0); }
+                            parameter = graph[parameter].next_sibling;
+                            argument = graph[argument].next_sibling;
+                        }
+                        if nodes[parameter].kind == 3 || argument != 0 { return (8, 0); }
+                        } else if nodes[call].kind == 37 {
+                            instance_count[0]=copy(count);
+                            let concrete=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(call),0,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0));
+                            count=instance_count[0];if concrete.instance==0{return (8,0);}
+                            let mut index:u64=0;
+                            while index<instances[concrete.instance-1].count {
+                                let at=(concrete.instance-1)*32+index;
+                                types[index]=ConcreteType{node:stored_types[at].node,reference:stored_types[at].reference,slice:stored_types[at].slice,instance:stored_types[at].instance};index=index+1;
+                            }
+                        } else {
+                            let mut index: u64 = 0;
+                            let mut argument = graph[call].first_child;
+                            while argument != 0 {
+                                if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (8, 0); }
+                                types[index] = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
+                                argument = graph[argument].next_sibling;
+                                index = index + 1;
+                            }
+                        }
+                        let mut resolved_index:u64=0;
+                        while resolved_index<32 && types[resolved_index].node!=0 {
+                            instance_count[0]=copy(count);
+                            let code=resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[resolved_index],0,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0);
+                            count=instance_count[0];
+                            if code==0{return (8,0);}types[resolved_index]=decoded(code);resolved_index=resolved_index+1;
+                        }
+                        instance_count[0]=copy(count);
+                        let valid=constraints(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), &mut types[..], &mut instances[..],&mut stored_types[..],&mut instance_count[..]);
+                        count=instance_count[0];
+                        if !valid {return (report_violation(1, nodes[call].start), 0);}
+                        let mut length: u64 = 0;
+                        while template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(length)) != 0 {
+                            if length == 32 || types[length].node == 0 { return (8, 0); }
+                            length = length + 1;
+                        }
+                        let mut instance: u64 = 0;
+                        while instance < count {
+                            let mut same = instances[instance].template == template;
+                            let mut i: u64 = 0;
+                            while same && i < length {
+                                same = same_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stored_types[instance * 32 + i], &types[i], 0);
+                                i = i + 1;
+                            }
+                            if same { break; }
+                            instance = instance + 1;
+                        }
+                        if instance == count {
+                            let mut index: u64 = 0;
+                            while index < length {
+                                stored_types[instance * 32 + index] = ConcreteType {
+                                    node: types[index].node, reference: types[index].reference, slice: types[index].slice, instance: types[index].instance };
+                                index = index + 1;
+                            }
+                            instances[instance] = Instance { template: copy(template), count: length };
+                            count = count + 1;
+                        }
+                        substitutions[first] = instance + 1;
+                        let mut prefix_end = tokens[first].end;
+                        if direct_call && tokens[first + 1].kind == 23 {
+                            let mut token = first + 2;
+                            let mut depth: u64 = 1;
+                            while depth != 0 {
+                                if tokens[token].kind == 23 { depth = depth + 1; }
+                                if tokens[token].kind == 24 { depth = depth - 1; }
+                                token = token + 1;
+                            }
+                            prefix_end = tokens[token - 1].end;
+                        }
+                        substitution_ends[first] = if direct_call || nodes[call].kind == 37 { prefix_end } else { nodes[call].end };
+                    }
+                    template = graph[template].next_sibling;
+                }
+            }
+        }
+        call = call + 1;
+    }
+    let mut dependencies: [Dependency; 4096] = [Dependency { owner: 0, site: 0, template: 0, instance: 0 }; 4096];
+    let mut dependency_count: u64 = 0;
+    let mut current: u64 = 0;
+    while current < count {
+        let owner = instances[current].template;
+        let mut point: u64 = 1;
+        while point < nodes.len() as u64 {
+            let mut ancestor = copy(point);
+            while nodes[ancestor].parent != 0 { ancestor = nodes[ancestor].parent; }
+            let belongs = ancestor == owner || implementation(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(owner), ancestor);
+            if belongs && (nodes[point].kind==15 || nodes[point].kind==37) {
+                let site=if nodes[point].kind==15{graph[point].first_child}else{copy(point)};
+                let first=token_at(&tokens[0..tokens.len()],nodes[site].start);
+                let mut template=graph[0].first_child;
+                while template!=0 {
+                    if is_template(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template))
+                        && same_bytes(&source[nodes[template].name_start..nodes[template].name_end],&source[tokens[first].start..tokens[first].end]) {
+                        instance_count[0]=copy(count);
+                        let resolved=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(point),current+1,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0));
+                        count=instance_count[0];
+                        if resolved.instance==0 || dependency_count==4096{return (8,0);}
+                        dependencies[dependency_count]=Dependency{owner:copy(current),site:copy(site),template:copy(template),instance:resolved.instance-1};dependency_count=dependency_count+1;
+                    }
+                    template=graph[template].next_sibling;
+                }
+            }
+            if belongs && nodes[point].kind == 4 && graph[point].first_child != 0 {
+                let mut template = graph[0].first_child;
+                while template != 0 {
+                    if is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template))
+                        && text_equal(&source[0..source.len()], &nodes[template], &nodes[point]) {
+                        let mut types: [ConcreteType; 32] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 32];
+                        let mut argument = graph[point].first_child;
+                        let mut length: u64 = 0;
+                        while argument != 0 {
+                            if length == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(length)) == 0 { return (8, 0); }
+                            let input=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(argument));
+                            instance_count[0]=copy(count);
+                            let code=resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&input,current+1,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0);
+                            count=instance_count[0];
+                            if code==0{return (8,0);}types[length]=decoded(code);
+                            argument = graph[argument].next_sibling;
+                            length = length + 1;
+                        }
+                        if template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(length)) != 0 { return (8, 0); }
+                        instance_count[0]=copy(count);
+                        let valid=constraints(&source[0..source.len()], &nodes[0..nodes.len()],&graph[0..graph.len()], copy(template), &mut types[..], &mut instances[..],&mut stored_types[..],&mut instance_count[..]);
+                        count=instance_count[0];if !valid{return (8,0);}
+                        let mut instance: u64 = 0;
+                        while instance < count {
+                            let mut same = instances[instance].template == template;
+                            let mut index: u64 = 0;
+                            while same && index < length {
+                                same = same_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                                    &stored_types[instance * 32 + index], &types[index], 0);
+                                index = index + 1;
+                            }
+                            if same { break; }
+                            instance = instance + 1;
+                        }
+                        if instance == count {
+                            if count == 4096 { return (4, 0); }
+                            let mut index: u64 = 0;
+                            while index < length {
+                                stored_types[instance * 32 + index] = ConcreteType {
+                                    node: types[index].node, reference: types[index].reference, slice: types[index].slice, instance: types[index].instance };
+                                index = index + 1;
+                            }
+                            instances[instance] = Instance { template: copy(template), count: length };
+                            count = count + 1;
+                        }
+                        let mut dependency: u64 = 0;
+                        while dependency < dependency_count {
+                            if dependencies[dependency].owner == current && dependencies[dependency].site == point { break; }
+                            dependency = dependency + 1;
+                        }
+                        if dependency < dependency_count {
+                            if dependencies[dependency].instance != instance { return (8, 0); }
+                        } else {
+                            if dependency_count == 4096 { return (4, 0); }
+                            dependencies[dependency_count] = Dependency { owner: copy(current), site: copy(point), template: copy(template), instance: instance };
+                            dependency_count = dependency_count + 1;
+                        }
+                    }
+                    template = graph[template].next_sibling;
+                }
+            }
+            point = point + 1;
+        }
+        current = current + 1;
+    }
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        let kind = nodes[point].kind;
+        if kind == 53 || kind == 43 {
+            let token = token_at(&tokens[0..tokens.len()], nodes[point].start);
+            let mut template = graph[0].first_child;
+            while template != 0 {
+                if nodes[template].kind == 29 && is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template))
+                    && same_bytes(&source[nodes[template].name_start..nodes[template].name_end],
+                        &source[tokens[token].start..tokens[token].end]) {
+                    let mut arm = copy(point);
+                    while arm != 0 && nodes[arm].kind != 40 { arm = nodes[arm].parent; }
+                    let subject = graph[nodes[arm].parent].first_child;
+                    instance_count[0]=copy(count);
+                    let resolved=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(subject),0,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0));
+                    count=instance_count[0];
+                    let mut selected=if resolved.instance!=0 && instances[resolved.instance-1].template==template{resolved.instance}else{0};
+                    if selected==0 {
+                        selected=matched_instance(&nodes[0..nodes.len()], &graph[0..graph.len()],&tokens[0..tokens.len()],subject,copy(template),&instances[..count],&substitutions[..],&dependencies[..dependency_count],0);
+                    }
+                    if selected == 0 {
+                        let mut instance: u64 = 0;
+                        while instance < count {
+                            if instances[instance].template == template {
+                                if selected != 0 { return (9, 0); }
+                                selected = instance + 1;
+                            }
+                            instance = instance + 1;
+                        }
+                    }
+                    if selected == 0 { return (9, 0); }
+                    substitutions[token] = selected;
+                    substitution_ends[token] = tokens[token].end;
+                }
+                template = graph[template].next_sibling;
+            }
+        }
+        point = point + 1;
+    }
+    let mut cursor: u64 = 0;
+    let mut written: usize = 0;
+    let mut token: u64 = 0;
+    while token < tokens.len() as u64 && tokens[token].kind != 0 {
+        let start = tokens[token].start;
+        let mut end = tokens[token].end;
+        let omitted_node = omissions[token];
+        if omitted_node != 0 { end = nodes[omitted_node].end; }
+        let replacement = substitutions[token];
+        if replacement != 0 { end = substitution_ends[token]; }
+        while cursor < start {
+            offsets[cursor] = written as u64;
+            if written >= output.len() { return (4, 0); }
+            output[written] = source[cursor];
+            cursor = cursor + 1;
+            written = written + 1;
+        }
+        if omitted_node != 0 || replacement != 0 {
+            let previous = written as u64;
+            if replacement != 0 {
+                let instance = replacement - 1;
+                written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], instances[instance].template, instance, &mut output[0..output.len()], written);
+            }
+            while cursor < end { offsets[cursor] = copy(previous); cursor = cursor + 1; }
+            token = token_at(&tokens[0..tokens.len()], end);
+        } else { token = token + 1; }
+    }
+    while cursor < source.len() as u64 {
+        offsets[cursor] = written as u64;
+        output[written] = source[cursor];
+        cursor = cursor + 1;
+        written = written + 1;
+    }
+    offsets[cursor] = written as u64;
+    let mut instance: u64 = 0;
+    let newline: [u8; 1] = [10];
+    while instance < count {
+        let template = instances[instance].template;
+        written = put(&mut output[0..output.len()], written, &newline[..]);
+        written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(template), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], written);
+        let mut part = graph[0].first_child;
+        while part != 0 {
+            if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(part)) {
+                written = put(&mut output[0..output.len()], written, &newline[..]);
+                written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(part), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], written);
+            }
+            part = graph[part].next_sibling;
+        }
+        instance = instance + 1;
+    }
+    let recipe: [u8; 26] = [10,105,109,112,108,32,95,95,99,111,114,98,111,95,105,116,101,114,95,73,116,101,114,32,123,10];
+    let finish: [u8; 3] = [10,125,10];
+    let mut part = graph[0].first_child;
+    while part != 0 {
+        let collector = iterator_collect_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(part));
+        if collector != 0 {
+            written = put(&mut output[0..output.len()], written, &recipe[..]);
+            written = put(&mut output[0..output.len()], written, &source[nodes[collector].start..nodes[collector].end]);
+            written = put(&mut output[0..output.len()], written, &finish[..]);
+        }
+        part = graph[part].next_sibling;
+    }
+    if written >= output.len() { return (4, 0); }
+    return (0, written as u64);
+}
+
+/// Resolves a concrete constructor result for the existing adapter lowering.
+pub fn expression_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], expression: u64) -> u64 {
+    let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &tokens[0..tokens.len()], expression, 0));
+    layout(source, nodes, graph, ty.node)
+}

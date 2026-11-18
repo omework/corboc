@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn main(){let mut memory=pool<Vector<i64>>(1);let mut vector=memory.new();vector.push(7);match vector.pop(){Some(v)=>{print(v);},None=>{}}}

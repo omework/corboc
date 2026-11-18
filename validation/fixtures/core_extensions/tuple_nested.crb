@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn pair()->(i64,i64){(1,2)} fn main(){let yes=true;let other=false;let t=if yes{(1,2)}else if other{(3,4)}else{(5,6)};let (a,b)=t;print(a);print(b);}

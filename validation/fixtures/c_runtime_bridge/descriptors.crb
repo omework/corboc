@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Point{x:i64}
+struct Holder{point:Point,borrowed:&i64}
+fn main(){
+ let target:i64=3;let holder=Holder{point:Point{x:4},borrowed:&target};
+ let mut array:[u8;4]=[1,2,3,4];let mut slice=&mut array[..];
+ let mut vectors=pool<Vector<i64>>(1);let mut vector=vectors.new();vector.push(5);
+ let mut map=HashMap<i64,i64>::new();drop(map.insert(6,7));
+ @unchecked{
+  @c(includes={"assert.h"}){
+   corbo_type_holder copy=${holder};assert(copy.f_point.f_x==4&&*copy.f_borrowed==3);
+   ${slice}.data[1]=12;assert(${slice}.len==4);
+   CorboVector *v=corbo_allocation_data(&${vector});assert(v->len==1);assert(((int64_t*)v->data)[0]==5);
+   CorboHashMap *m=${map};assert(*(int64_t*)corbo_map_get(m,6)==7);
+   int64_t incoming=8,previous=0;assert(corbo_map_insert(m,6,&incoming,&previous)&&previous==7);
+   assert(${holder}.f_point.f_x==4);
+  }
+ }
+ print(array[1]);print(vector[0]);let key:i64=6;match map.get(&key){Some(value)=>{print(*value);},None=>{}}
+}

@@ -1,0 +1,568 @@
+use bootstrap::runtime_sources::c_runtime_api;
+use bootstrap::lowering_c::emit_c_declarations;
+use bootstrap::socket_runtime::emit_completion_runtime;
+use bootstrap::lowering_c::emit_c_headers;
+use bootstrap::socket_runtime::emit_socket_runtime;
+use bootstrap::calls::{destructor_method, next_declaration};
+use bootstrap::model::{result_type, result_payload};
+use bootstrap::places::inline_array;
+use bootstrap::lowering::result_definition;
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::scalar::integer_value;
+use bootstrap::tasks::thread_block;
+use bootstrap::lowering::{Lowering, header, block, poll_function, emit_native_body,
+    drop_value, needs_cleanup, record_types};
+use bootstrap::lowering_types::slice_element;
+use bootstrap::lowering_types::{number, signed, unsigned, c_type, declaration,
+    consume, array_shape, wide_array, placed_array, array_item, array_length, array_name,
+    array_has_owners, is_tuple, tuple_count, tuple_part, tuple_has_owners, future_type,
+    handle_type, completion, task_payload, optional, option_payload, option_code, option_base};
+use bootstrap::lowering_annotations::{word, nominal};
+use bootstrap::lowering_regions::{stack_region, free_pages};
+use bootstrap::lowering_runtime::{emit_pools, emit_task_value_runtime, emit_native_runtime, emit_reclaim_runtime};
+use bootstrap::lowering_maps::emit_map_runtime;
+use bootstrap::lowering_asm::lower_asm;
+use bootstrap::lowering_frames::{emit_frame, native_frame, prototype};
+use bootstrap::lowering_records::{record_definition, destroy_fields, array_definition};
+use bootstrap::codegen::{datastack_property, emit_size};
+use bootstrap::target_c::{byte_text, character, emit_runtime, emit_task_runtime};
+
+fn emit_inline_array(ty: i64, declared: &mut [bool]) {
+    let index = unsigned(copy(ty) - 10000);
+    if declared[index] { return; }
+    declared[index] = true;
+    { let code: [u8;15] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123]; byte_text(&code[..]); }
+    c_type(ty % 100); { let code: [u8;7] = [32,105,116,101,109,115,91]; byte_text(&code[..]); }
+    let length = (copy(ty) - 10000) / 100;
+    number(if length == 0 { 1 } else { unsigned(copy(length)) });
+    { let code: [u8;4] = [93,59,125,32]; byte_text(&code[..]); }
+    c_type(ty); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+}
+
+fn emit_option(kind: i64) {
+    let payload = option_payload(copy(kind));
+    { let code: [u8;25] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123,98,111,111,108,32,115,111,109,101,59]; byte_text(&code[..]); } c_type(copy(payload)); { let code: [u8;9] = [32,118,97,108,117,101,59,125,32]; byte_text(&code[..]); }
+    c_type(copy(kind)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+    { let code: [u8;54] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,114,111,112,95,111,112,116,105,111,110]; byte_text(&code[..]); }
+    number(unsigned(copy(payload))); character(40); c_type(copy(kind)); { let code: [u8;24] = [42,118,41,123,105,102,40,33,118,45,62,115,111,109,101,41,114,101,116,117,114,110,59,10]; byte_text(&code[..]); }
+    declaration(copy(payload), 0); { let code: [u8;25] = [61,118,45,62,118,97,108,117,101,59,118,45,62,115,111,109,101,61,102,97,108,115,101,59,10]; byte_text(&code[..]); }
+    drop_value(payload, 0, false); { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
+}
+
+pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool) -> bool {
+    let mut types: [i64;524289] = [0;524289];
+    let mut point: u64 = 1;
+    let mut storage = false;
+    let mut foreign_c=false;
+    let mut tasks = false;
+    let mut natives = false;
+    let mut regional = false;
+    let mut records = false;
+    let mut maps = false;
+    let mut assembly = false;
+    let map_name: [u8;7] = [72,97,115,104,77,97,112];
+    while point < nodes.len() as u64 {
+        if nodes[point].kind==77{foreign_c=true;storage=true;regional=true;maps=true;}
+        if nodes[point].kind == 66 || nodes[point].kind == 49 { storage = true; }
+        if (nodes[point].kind == 44 || nodes[point].kind == 45)
+            && nodes[graph[point].first_child].kind == 37 { storage = true; }
+        if nodes[point].kind == 45 {
+            let length = graph[graph[point].first_child].next_sibling;
+            let atom = integer_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], length);
+            if atom.known && !atom.negative && atom.magnitude > 4096 { storage = true; }
+        }
+        if nodes[point].kind == 4
+            && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(point), &map_name[..]) {
+            maps = true; storage = true;
+        }
+        if nodes[point].kind == 28 || nodes[point].kind == 29 { records = true; }
+        if nodes[point].kind == 51 { assembly = true; }
+        if stack_region(&source[0..source.len()], &nodes[0..nodes.len()], copy(point))
+            || free_pages(&source[0..source.len()], &nodes[0..nodes.len()], copy(point)) { regional = true; }
+        if nodes[point].kind == 35 { tasks = true; }
+        if thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) != 0 { natives = true; }
+        point = point + 1;
+    }
+    // Nominal payloads in Option/Result also need the common destruction entry points.
+    storage = storage || records;
+    tasks = tasks || natives;
+    let root = graph[0].first_child;
+    let classic_key: [u8;4] = [115,105,122,101];
+    let classic = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &classic_key[..]);
+    if classic != 0 { storage = true; }
+    let region_size: [u8;11] = [114,101,103,105,111,110,95,115,105,122,101];
+    let region_capacity: [u8;17] = [114,101,103,105,111,110,95,115,116,97,99,107,95,115,105,122,101];
+    let region_width = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &region_size[..]);
+    let region_budget = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &region_capacity[..]);
+    let fixed_reclaim_name: [u8;17] = [114,101,99,108,97,105,109,95,116,104,114,101,115,104,111,108,100];
+    let region_reclaim_name: [u8;24] = [114,101,103,105,111,110,95,114,101,99,108,97,105,109,95,116,104,114,101,115,104,111,108,100];
+    let fixed_reclaim = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &fixed_reclaim_name[..]);
+    let region_reclaim = datastack_property(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &region_reclaim_name[..]);
+    if fixed_reclaim != 0 { storage = true; }
+    if region_reclaim != 0 { regional = true; }
+    let mut first = copy(root);
+    if nodes[root].kind == 58 {
+        if !tasks && !storage && !regional { return false; }
+        let mut property = graph[root].first_child;
+        while property != 0 {
+            if property != region_width && property != region_budget && property != classic && property != fixed_reclaim && property != region_reclaim { return false; }
+            property = graph[property].next_sibling;
+        }
+        first = graph[root].next_sibling;
+    }
+    let main_name: [u8;4] = [109,97,105,110];
+    let mut function = copy(first);
+    while function != 0 {
+        if nodes[function].kind == 28 || nodes[function].kind == 29 {
+            if !record_types(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[..], copy(function)) {
+                return false;
+            }
+            function = graph[function].next_sibling;
+            continue;
+        }
+        if nodes[function].kind == 76 {
+            function = graph[function].next_sibling;
+            continue;
+        }
+        if nodes[function].kind == 49 {
+            let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+            if record == 0 { return false; }
+            let mut method = graph[function].first_child;
+            while method != 0 {
+                if nodes[method].kind == 76 {
+                    method = graph[method].next_sibling;
+                    continue;
+                }
+                if nodes[method].kind != 1 && nodes[method].kind != 35 { return false; }
+                if destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(method)) {
+                    let receiver = graph[method].first_child;
+                    let mut body = graph[receiver].next_sibling;
+                    if nodes[body].kind == 4 { body = graph[body].next_sibling; }
+                    if nodes[receiver].kind != 3 || nodes[body].kind != 2 { return false; }
+                    types[record] = signed(copy(method));
+                    types[receiver] = 4000000 + signed(copy(record));
+                } else if !header(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[..], copy(method)) { return false; }
+                method = graph[method].next_sibling;
+            }
+            function = graph[function].next_sibling;
+            continue;
+        }
+        if (nodes[function].kind != 1 && nodes[function].kind != 35) || !header(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[..], copy(function)) {
+            return false;
+        }
+        function = graph[function].next_sibling;
+    }
+    if emit {
+        function = copy(first);
+        while function != 0 {
+        if nodes[function].kind == 49 && graph[function].first_child != 0 {
+            function = graph[function].first_child;
+            continue;
+        }
+            if (nodes[function].kind != 1 && nodes[function].kind != 35)
+                || destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(function)) { function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function); continue; }
+            let mut body = graph[function].first_child;
+            while nodes[body].kind == 3 || nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            if nodes[function].kind == 35 {
+                if !poll_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[..], copy(function), body, false, copy(storage)) { return false; }
+                function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+                continue;
+            }
+            let result = types[function];
+            let ctx = Lowering { emit: false, result: copy(result), function: copy(function), loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: 0 };
+            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[..],
+                &ctx, body, result, 0) < 0 { return false; }
+            function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+        }
+        if storage || tasks || regional { emit_runtime(); }
+        if tasks { emit_task_runtime(); emit_task_value_runtime(); emit_native_runtime(); }
+        else if regional || storage {
+            { let code: [u8;86] = [35,100,101,102,105,110,101,32,115,99,111,112,101,100,95,114,101,103,105,111,110,95,101,110,116,101,114,32,114,101,103,105,111,110,95,101,110,116,101,114,10,35,100,101,102,105,110,101,32,115,99,111,112,101,100,95,114,101,103,105,111,110,95,114,101,115,116,111,114,101,32,114,101,103,105,111,110,95,114,101,115,116,111,114,101,10]; byte_text(&code[..]); }
+            { let code: [u8;110] = [35,100,101,102,105,110,101,32,118,97,108,117,101,95,114,101,103,105,111,110,95,110,101,119,32,114,101,103,105,111,110,95,110,101,119,10,35,100,101,102,105,110,101,32,118,97,108,117,101,95,114,101,103,105,111,110,95,97,100,100,32,114,101,103,105,111,110,95,97,100,100,10,35,100,101,102,105,110,101,32,118,97,108,117,101,95,114,101,103,105,111,110,95,100,114,111,112,32,114,101,103,105,111,110,95,100,114,111,112,10]; byte_text(&code[..]); }
+        }
+        { let code: [u8;98] = [35,105,110,99,108,117,100,101,32,60,115,116,100,98,111,111,108,46,104,62,10,35,105,110,99,108,117,100,101,32,60,115,116,100,105,110,116,46,104,62,10,35,105,110,99,108,117,100,101,32,60,115,116,100,105,111,46,104,62,10,35,105,110,99,108,117,100,101,32,60,115,116,100,108,105,98,46,104,62,10,35,105,110,99,108,117,100,101,32,60,109,97,116,104,46,104,62,10]; byte_text(&code[..]); }
+        { let code: [u8;132] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,118,111,105,100,41,123,102,112,117,116,115,40,34,99,111,114,98,111,58,32,101,114,114,101,117,114,32,97,114,105,116,104,109,101,116,105,113,117,101,92,110,34,44,115,116,100,101,114,114,41,59,101,120,105,116,40,69,88,73,84,95,70,65,73,76,85,82,69,41,59,125,10]; byte_text(&code[..]); }
+        { let code: [u8;20] = [35,105,110,99,108,117,100,101,32,60,115,116,114,105,110,103,46,104,62,10]; byte_text(&code[..]); }
+        emit_process_types();
+        if process_args { emit_process_runtime(); }
+        if assembly {
+            point = 1;
+            while point < nodes.len() as u64 {
+                if nodes[point].kind == 51 && !lower_asm(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], &types[..], copy(point), 2) { return false; }
+                point = point + 1;
+            }
+        }
+        if storage {
+            { let code: [u8;40] = [35,105,110,99,108,117,100,101,32,60,115,116,100,100,101,102,46,104,62,10,35,105,110,99,108,117,100,101,32,60,115,116,114,105,110,103,46,104,62,10]; byte_text(&code[..]); }
+            emit_pools();
+        }
+        if storage || tasks || regional { emit_reclaim_runtime(copy(tasks)); }
+        if maps { emit_map_runtime(); }
+        if foreign_c {
+            if tasks{{ let bytes:[u8;30]=[35,100,101,102,105,110,101,32,67,79,82,66,79,95,82,85,78,84,73,77,69,95,84,65,83,75,83,32,49,10];byte_text(&bytes[..]); };}
+            c_runtime_api();
+        }
+        function = copy(first);
+        while function != 0 {
+            if nodes[function].kind == 28 || nodes[function].kind == 29 {
+                { let code: [u8;16] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,32,115]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [32,115]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            function = graph[function].next_sibling;
+        }
+        let mut inline_layouts: [bool; 410100] = [false; 410100];
+        point = 1;
+        while point < nodes.len() as u64 {
+            // A record declaration stores its destructor node, not a value type.
+            if nodes[point].kind == 28 || nodes[point].kind == 29 {
+                point = point + 1;
+                continue;
+            }
+            let stored = types[point];
+            let ty = array_shape(copy(stored));
+            if future_type(copy(stored)) || handle_type(copy(stored)) || completion(copy(stored)) {
+                point = point + 1;
+                continue;
+            }
+            if result_type(copy(stored)) {
+                let left = result_payload(copy(stored), true);
+                let right = result_payload(copy(stored), false);
+                if inline_array(copy(left)) { emit_inline_array(left, &mut inline_layouts[..]); }
+                if inline_array(copy(right)) { emit_inline_array(right, &mut inline_layouts[..]); }
+            }
+            if stored == 2000138 || stored == 2000139 { point = point + 1; continue; }
+            if stored >= 3000000 { point = point + 1; continue; }
+            if stored >= 2000000 {
+                let element = slice_element(copy(stored));
+                if inline_array(copy(element)) { emit_inline_array(element, &mut inline_layouts[..]); }
+                let mut duplicate = false;
+                let mut previous: u64 = 1;
+                while previous < point {
+                    if types[previous] == stored { duplicate = true; break; }
+                    previous = previous + 1;
+                }
+                if !duplicate {
+                    { let code: [u8;15] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123]; byte_text(&code[..]); } c_type(slice_element(copy(stored))); { let code: [u8;22] = [32,42,100,97,116,97,59,117,105,110,116,54,52,95,116,32,108,101,110,59,125,32]; byte_text(&code[..]); }
+                    c_type(stored); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+            } else if ty >= 10000 {
+                emit_inline_array(ty, &mut inline_layouts[..]);
+            }
+            point = point + 1;
+        }
+        let mut seen = [false;524289];
+        point = 1;
+        while point < nodes.len() as u64 {
+            if wide_array(types[point]) {
+                array_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], &mut seen[..], types[point]);
+            }
+            point = point + 1;
+        }
+        function = copy(first);
+        while function != 0 {
+            if nodes[function].kind == 28 || nodes[function].kind == 29 {
+                record_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], &mut seen[..], copy(function));
+            }
+            function = graph[function].next_sibling;
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            let stored = types[point];
+            if is_tuple(copy(stored)) {
+                let mut seen = false;
+                let mut previous: u64 = 1;
+                while previous < point {
+                    if types[previous] == stored { seen = true; break; }
+                    previous = previous + 1;
+                }
+                if !seen {
+                    { let code: [u8;15] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123]; byte_text(&code[..]); }
+                    let count = tuple_count(copy(stored));
+                    let mut i: u64 = 0;
+                    while i < count {
+                        c_type(tuple_part(copy(stored), copy(i), copy(count))); { let code: [u8;2] = [32,109]; byte_text(&code[..]); } number(copy(i)); { let code: [u8;1] = [59]; byte_text(&code[..]); }
+                        i = i + 1;
+                    }
+                    { let code: [u8;2] = [125,32]; byte_text(&code[..]); } c_type(stored); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+
+            }
+            point = point + 1;
+        }
+        function = copy(first);
+        while function != 0 {
+            if nodes[function].kind == 49 {
+                let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+                let method = unsigned(types[record]);
+                if method != 0 && nodes[method].parent == function {
+                    prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], method, false);
+                    { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+            }
+            function = graph[function].next_sibling;
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            let ty = types[point];
+            if array_has_owners(copy(ty)) {
+                let mut previous: u64 = 1;
+                while previous < point && types[previous] != ty { previous = previous + 1; }
+                if previous == point {
+                    { let code: [u8;48] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,114,111,112,95]; byte_text(&code[..]); } array_name(copy(ty)); character(40);
+                    c_type(ty); { let code: [u8;4] = [42,41,59,10]; byte_text(&code[..]); }
+                }
+            }
+            point = point + 1;
+        }
+        if storage {
+            function = copy(first);
+            while function != 0 {
+                if nodes[function].kind == 28 || nodes[function].kind == 29 {
+                    { let code: [u8;50] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;9] = [40,118,111,105,100,42,41,59,10]; byte_text(&code[..]); }
+                }
+                function = graph[function].next_sibling;
+            }
+            function = copy(first);
+            while function != 0 {
+                if nodes[function].kind == 28 || nodes[function].kind == 29 {
+                    destroy_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(function));
+                    { let code: [u8;57] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,101,115,116,114,111,121,95,118,101,99,116,111,114]; byte_text(&code[..]); } number(copy(function));
+                    { let code: [u8;24] = [40,118,111,105,100,42,114,97,119,41,123,82,101,103,105,111,110,42,114,61,114,97,119,59]; byte_text(&code[..]); } c_type(3000000+signed(copy(function)));
+                    { let code: [u8;55] = [42,105,116,101,109,115,61,40,118,111,105,100,42,41,114,45,62,100,97,116,97,59,102,111,114,40,115,105,122,101,95,116,32,105,61,114,45,62,108,101,110,59,105,59,45,45,105,41,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(function));
+                    { let code: [u8;37] = [40,38,105,116,101,109,115,91,105,45,49,93,41,59,118,97,108,117,101,95,114,101,103,105,111,110,95,100,114,111,112,40,114,41,59,125,10]; byte_text(&code[..]); }
+                }
+                function = graph[function].next_sibling;
+            }
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            let ty = types[point];
+            if array_has_owners(copy(ty)) {
+                let mut previous: u64 = 1;
+                while previous < point && types[previous] != ty { previous = previous + 1; }
+                if previous == point {
+                    let element = array_item(copy(ty));
+                    { let code: [u8;48] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,114,111,112,95]; byte_text(&code[..]); } array_name(copy(ty)); character(40);
+                    c_type(copy(ty)); { let code: [u8;5] = [42,118,41,123,10]; byte_text(&code[..]); }
+                    if placed_array(copy(ty)) { { let code: [u8;15] = [105,102,40,33,42,118,41,114,101,116,117,114,110,59,10]; byte_text(&code[..]); } }
+                    { let code: [u8;13] = [102,111,114,40,115,105,122,101,95,116,32,105,61]; byte_text(&code[..]); } number(array_length(copy(ty))); { let code: [u8;9] = [59,105,59,45,45,105,41,123,10]; byte_text(&code[..]); }
+                    declaration(copy(element), 0);
+                    if placed_array(copy(ty)) { { let code: [u8;19] = [61,40,42,118,41,45,62,105,116,101,109,115,91,105,45,49,93,59,10]; byte_text(&code[..]); } }
+                    else { { let code: [u8;16] = [61,118,45,62,105,116,101,109,115,91,105,45,49,93,59,10]; byte_text(&code[..]); } }
+                    drop_value(element, 0, false); { let code: [u8;27] = [125,10,109,101,109,115,101,116,40,118,44,48,44,115,105,122,101,111,102,32,42,118,41,59,32,125,10]; byte_text(&code[..]); }
+                }
+            }
+            point = point + 1;
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            let ty = types[point];
+            if tuple_has_owners(copy(ty)) {
+                let mut previous: u64 = 1;
+                while previous < point && types[previous] != ty { previous = previous + 1; }
+                if previous == point {
+                    { let code: [u8;53] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,114,111,112,95,116,117,112,108,101]; byte_text(&code[..]); } number(unsigned(copy(ty)));
+                    character(40); c_type(copy(ty)); { let code: [u8;5] = [42,118,41,123,10]; byte_text(&code[..]); }
+                    let arity = tuple_count(copy(ty));
+                    let mut field = copy(arity);
+                    while field > 0 {
+                        field = field - 1;
+                        let element = tuple_part(copy(ty), copy(field), copy(arity));
+                        if needs_cleanup(copy(element), copy(storage)) {
+                            declaration(copy(element), copy(field)); { let code: [u8;5] = [61,118,45,62,109]; byte_text(&code[..]); } number(copy(field)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                            drop_value(element, copy(field), false);
+                        }
+                    }
+                    { let code: [u8;25] = [109,101,109,115,101,116,40,118,44,48,44,115,105,122,101,111,102,32,42,118,41,59,32,125,10]; byte_text(&code[..]); }
+                }
+            }
+            point = point + 1;
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            let kind = types[point];
+            if result_type(copy(kind)) {
+                let mut previous: u64 = 1;
+                while previous < point && types[previous] != kind { previous = previous + 1; }
+                if previous == point {
+                    result_definition(copy(kind), copy(storage));
+                }
+            }
+            if optional(copy(kind)) {
+                let mut previous: u64 = 1;
+                let leaf = option_base(copy(kind));
+                while previous < point && (!optional(types[previous]) || option_base(types[previous]) != leaf) {
+                    previous = previous + 1;
+                }
+                if previous == point {
+                    let mut greatest = copy(kind);
+                    let mut candidate = point + 1;
+                    while candidate < nodes.len() as u64 {
+                        let other = types[candidate];
+                        if optional(copy(other)) && option_base(copy(other)) == leaf && other > greatest {
+                            greatest = other;
+                        }
+                        candidate = candidate + 1;
+                    }
+                    let mut envelope = option_code(leaf);
+                    while envelope <= greatest {
+                        emit_option(copy(envelope));
+                        if envelope == greatest { break; }
+                        envelope = option_code(envelope);
+                    }
+                }
+            }
+            point = point + 1;
+        }
+        // Completion records contain the payload by value. Define all
+        // ordinary Result records before emitting these wrappers.
+        point = 1;
+        while point < nodes.len() as u64 {
+            let kind = types[point];
+            if completion(copy(kind)) && task_payload(copy(kind)) > 9 {
+                let mut previous: u64 = 1;
+                while previous < point && types[previous] != kind { previous = previous + 1; }
+                if previous == point {
+                    { let code: [u8;23] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123,98,111,111,108,32,111,107,59]; byte_text(&code[..]); } c_type(task_payload(copy(kind))); { let code: [u8;9] = [32,118,97,108,117,101,59,125,32]; byte_text(&code[..]); }
+                    c_type(kind); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+            }
+            point = point + 1;
+        }
+        if foreign_c{emit_c_declarations(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()]);}
+        emit_c_headers(&source[0..source.len()],&nodes[0..nodes.len()]);
+        function = copy(first);
+        while function != 0 {
+            if nodes[function].kind == 49 && graph[function].first_child != 0 {
+                function = graph[function].first_child;
+                continue;
+            }
+            if nodes[function].kind == 35 {
+                emit_frame(&nodes[0..nodes.len()], &types[..], copy(function));
+            } else if nodes[function].kind == 1 && !destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(function)) {
+                let entry = nodes[function].parent == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(function), &main_name[..]);
+                prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(function), entry);
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+        }
+        emit_socket_runtime(&nodes[0..nodes.len()], &graph[0..graph.len()]);
+        emit_completion_runtime(&nodes[0..nodes.len()], &graph[0..graph.len()]);
+        point = 1;
+        while point < nodes.len() as u64 {
+            if nodes[point].kind == 2 && handle_type(types[point]) {
+                native_frame(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(point));
+            }
+            point = point + 1;
+        }
+        point = 1;
+        while point < nodes.len() as u64 {
+            if nodes[point].kind == 2 && handle_type(types[point])
+                && !emit_native_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut types[..], copy(point), copy(storage)) { return false; }
+            point = point + 1;
+        }
+    }
+    function = copy(first);
+    while function != 0 {
+            if nodes[function].kind == 49 && graph[function].first_child != 0 {
+                function = graph[function].first_child;
+                continue;
+            }
+        if nodes[function].kind == 35 {
+            let mut body = graph[function].first_child;
+            while nodes[body].kind == 3 || nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            if !poll_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[..], copy(function), body, copy(emit), copy(storage)) { return false; }
+            function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+            continue;
+        }
+        if destructor_method(&source[0..source.len()], &nodes[0..nodes.len()], copy(function)) {
+            let method = copy(function);
+            let receiver = graph[method].first_child;
+            let mut body = graph[receiver].next_sibling;
+            if nodes[body].kind == 4 { body = graph[body].next_sibling; }
+            let ctx = Lowering { emit: copy(emit), result: 0, function: copy(method), loop_result: 0,
+                loop_slot: 0, loop_node: 0, storage: true, poll_body: 0 };
+            if emit {
+                prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], method, false);
+                { let code: [u8;2] = [123,10]; byte_text(&code[..]); } consume(types[receiver], receiver, true);
+            }
+            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[..],
+                &ctx, body, 0, 0) < 0 { return false; }
+            if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+            function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+            continue;
+        }
+        if nodes[function].kind != 1 { function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function); continue; }
+        let main = nodes[function].parent == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(function), &main_name[..]);
+        let mut body = graph[function].first_child;
+        while nodes[body].kind == 3 || nodes[body].kind == 4 { body = graph[body].next_sibling; }
+        let result = types[function];
+        let ctx = Lowering { emit: copy(emit), result: copy(result), function: if main { 0 } else { copy(function) },
+            loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: 0 };
+        if emit {
+            prototype(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[..], copy(function), copy(main));
+            { let code: [u8;2] = [123,10]; byte_text(&code[..]); }
+            if main { { let code: [u8;19] = [105,110,116,32,109,97,105,110,95,115,116,97,116,117,115,61,48,59,10]; byte_text(&code[..]); } }
+            if main && (storage || tasks || regional) {
+                if classic != 0 {
+                    { let code: [u8;20] = [103,108,111,98,97,108,95,102,105,120,101,100,95,98,117,100,103,101,116,61]; byte_text(&code[..]); }
+                    emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(classic));
+                    { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                }
+                { let code: [u8;30] = [114,101,115,101,114,118,101,40,103,108,111,98,97,108,95,102,105,120,101,100,95,98,117,100,103,101,116,41,59,10]; byte_text(&code[..]); }
+            }
+            if main && fixed_reclaim != 0 {
+                { let code: [u8;24] = [102,105,120,101,100,95,114,101,99,108,97,105,109,95,116,104,114,101,115,104,111,108,100,61]; byte_text(&code[..]); }
+                emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(fixed_reclaim));
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            if main && region_reclaim != 0 {
+                { let code: [u8;25] = [114,101,103,105,111,110,95,114,101,99,108,97,105,109,95,116,104,114,101,115,104,111,108,100,61]; byte_text(&code[..]); }
+                emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(region_reclaim));
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            if main && region_width != 0 {
+                { let code: [u8;13] = [103,108,111,98,97,108,95,108,105,109,105,116,61]; byte_text(&code[..]); }
+                emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(region_width));
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            if main && region_budget != 0 {
+                { let code: [u8;14] = [103,108,111,98,97,108,95,98,117,100,103,101,116,61]; byte_text(&code[..]); }
+                emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(region_budget));
+                { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            }
+            let mut formal = graph[function].first_child;
+            while nodes[formal].kind == 3 {
+                consume(types[formal], copy(formal), true);
+                formal = graph[formal].next_sibling;
+            }
+        }
+        if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[..], &ctx, body, result, 0) < 0 { return false; }
+        if emit {
+            if storage {
+                let mut formal = graph[function].first_child;
+                while nodes[formal].kind == 3 {
+                    let ty = types[formal];
+                    if needs_cleanup(copy(ty), copy(storage)) { drop_value(ty, copy(formal), true); }
+                    formal = graph[formal].next_sibling;
+                }
+            }
+            if main {
+                { let code: [u8;34] = [103,111,116,111,32,109,97,105,110,95,99,108,101,97,110,117,112,59,10,109,97,105,110,95,99,108,101,97,110,117,112,58,59,10]; byte_text(&code[..]); }
+                if tasks { { let code: [u8;27] = [110,97,116,105,118,101,95,100,114,97,105,110,40,41,59,116,97,115,107,95,101,110,100,40,41,59,10]; byte_text(&code[..]); } }
+                if storage || tasks || regional { { let code: [u8;49] = [40,118,111,105,100,41,114,101,103,105,111,110,95,114,101,115,116,111,114,101,59,114,101,103,105,111,110,95,114,101,108,101,97,115,101,40,41,59,114,101,108,101,97,115,101,40,41,59,10]; byte_text(&code[..]); } }
+                { let code: [u8;20] = [114,101,116,117,114,110,32,109,97,105,110,95,115,116,97,116,117,115,59,10]; byte_text(&code[..]); }
+            }
+            { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
+        }
+        function = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
+    }
+    if emit && process_args { emit_process_entry(); }
+    true
+}

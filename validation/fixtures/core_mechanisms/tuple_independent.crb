@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct View{value:&mut i64}
+fn pair(left:&mut i64,right:&mut i64)->(View,View){(View{value:left},View{value:right})}
+impl View{fn get(&self)->i64{*(*self).value}}
+fn main(){
+ let mut a:i64=1;let mut b:i64=2;let mut c:i64=3;let mut d:i64=4;
+ let tuple=pair(&mut a,&mut b);let other=pair(&mut c,&mut d);
+ let (x,y)=tuple;let (z,w)=other;
+ print(x.get());print(y.get());print(z.get());print(w.get());
+ drop(x);drop(y);drop(z);drop(w);print(a);print(d);
+}

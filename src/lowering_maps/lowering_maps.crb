@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Native HashMap source: /runtime/collections/hashmap.c.inc.
+use bootstrap::runtime_sources::map_runtime;
+
+pub fn emit_map_runtime() { map_runtime(); }

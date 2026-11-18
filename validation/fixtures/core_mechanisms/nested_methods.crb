@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+#(type: T *)
+struct Boxed<T>{value:T}
+impl Boxed<T>{fn new(value:T)->Boxed<T>{Boxed{value:value}}}
+#(type: L *)
+#(type: R *)
+struct Pair<L,R>{left:Boxed<L>,right:Boxed<R>}
+impl Pair<L,R>{fn new(left:L,right:R)->Pair<L,R>{Pair{left:Boxed::new(left),right:Boxed::new(right)}}}
+fn main(){let pair=Pair::new(11,true);print(pair.left.value);print(pair.right.value);}

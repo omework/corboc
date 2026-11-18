@@ -1,0 +1,433 @@
+use bootstrap::model::{summary_value,summary_next};
+use bootstrap::model::constructor_argument_retained;
+use bootstrap::declarations::{nominal_declaration, verification_field};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, constructor_arguments, constructor_field_value};
+use bootstrap::places::{is_scalar_array, slice_view};
+use bootstrap::loans::live_roots;
+use bootstrap::collections::map_value;
+use bootstrap::map_entries::{dependent_map, dependent_option, entry_targets};
+use bootstrap::tasks::task_value;
+use bootstrap::stored::{stored_loan_array, stored_array_view, vector_reference_owner};
+use bootstrap::task_vectors::handle_vector;
+
+pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u64) -> bool {
+    let ty = values[owner].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut summary_entry = values[owner].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],copy(owner),copy(argument))
+                && !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(argument)) {
+                return false;
+            }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return true;
+    }
+    if slice_view(copy(ty)) {
+        return live_roots(&values[0..values.len()], &graph[0..graph.len()], owner);
+    }
+    if ty == 470 {
+        let mut member = graph[values[owner].origin_call].first_child;
+        while member != 0 {
+            if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(member)) { return false; }
+            member = graph[member].next_sibling;
+        }
+        return true;
+    }
+    if (ty >= 710 && ty <= 729) || stored_array_view(copy(ty)) || ty == 734 || vector_reference_owner(copy(ty)) { return values[values[owner].target].state == 1; }
+    if ty >= 81 && ty <= 87 {
+        let mut root = values[owner].origin_call;
+        while root != 0 {
+            if values[values[root].target].state != 1 { return false; }
+            root = values[root].origin_call;
+        }
+        return true;
+    }
+    if (ty > 20 && ty < 60) || ty == 752 { return values[values[owner].target].state == 1; }
+    if handle_vector(copy(ty)) { return values[values[owner].target].state == 1; }
+    if ty < 200 || stored_loan_array(copy(ty)) || is_scalar_array(copy(ty)) || task_value(copy(ty)) || map_value(copy(ty)) { return true; }
+    if ty == 296 {
+        if values[values[owner].target].state != 1 { return false; }
+        let mut entry = values[owner].origin_call;
+        while entry != 0 {
+            let mut field = graph[values[entry].origin_call].first_child;
+            while field != 0 {
+                if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(field)) { return false; }
+                field = graph[field].next_sibling;
+            }
+            entry = values[entry].loan_parent;
+        }
+        return true;
+    }
+    if ty < 300 { return values[values[owner].target].state == 1; }
+    if ty == 301 && values[values[owner].target].state != 1 { return false; }
+    if (ty == 300 || ty == 301 || ty == 475) && values[owner].loan_parent != 0 {
+        return live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], values[owner].loan_parent);
+    }
+    let constructor = values[owner].origin_call;
+    if constructor == 0 { return true; }
+    let mut field = graph[constructor].first_child;
+    if ty == 310 || (ty == 301 && graph[field].binding == values[owner].target) {
+        field = graph[field].next_sibling;
+    }
+    while field != 0 {
+        if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(field)) {
+            return false;
+        }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, pool: u64) -> bool {
+    let ty = values[holder].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut summary_entry = values[holder].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],copy(holder),copy(argument))
+                && holds_pool(&graph[0..graph.len()], &values[0..values.len()], copy(argument), copy(pool)) {
+                return true;
+            }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return false;
+    }
+    if slice_view(copy(ty)) {
+        let root = values[holder].target;
+        let storage = values[root].ty;
+        return (storage == 294 || storage == 298 || storage == 299) && values[root].target == pool;
+    }
+    if ty == 752 { return false; }
+    if ty == 470 {
+        let mut member = graph[values[holder].origin_call].first_child;
+        while member != 0 {
+            if holds_pool(&graph[0..graph.len()], &values[0..values.len()], copy(member), copy(pool)) { return true; }
+            member = graph[member].next_sibling;
+        }
+        return false;
+    }
+    if dependent_map(copy(ty)) {
+        return ty >= 1200 && entry_targets(&values[0..values.len()], holder, pool);
+    }
+    if dependent_option(copy(ty)) {
+        let payload = values[holder].origin_call;
+        return ty >= 1500 && values[holder].target == 0 && values[payload].target == pool;
+    }
+    if task_value(copy(ty)) {
+        if values[holder].target == pool { return true; }
+        let mut capture = values[holder].origin_call;
+        while capture != 0 {
+            if ((values[capture].ty >= 201 && values[capture].ty <= 207)
+                || (values[capture].ty >= 297 && values[capture].ty <= 299) || values[capture].ty == 301)
+                && values[capture].target == pool { return true; }
+            if values[capture].ty == 301 {
+                let mut field = graph[values[capture].loan_parent].first_child;
+                while field != 0 {
+                    if holds_pool(&graph[0..graph.len()], &values[0..values.len()], copy(field), copy(pool)) { return true; }
+                    field = graph[field].next_sibling;
+                }
+            }
+            if values[capture].ty == 5010 && holds_pool(&graph[0..graph.len()], &values[0..values.len()],
+                values[capture].loan_parent, copy(pool)) { return true; }
+            capture = values[capture].origin_call;
+        }
+        return false;
+    }
+    if ty < 200 || stored_loan_array(copy(ty)) || is_scalar_array(copy(ty)) || map_value(copy(ty)) || (ty >= 710 && ty <= 729) || stored_array_view(copy(ty)) || ty == 734 { return false; }
+    if values[holder].target == pool { return true; }
+    if ty >= 201 && ty <= 207 {
+        let mut edge = values[holder].loan_parent;
+        while edge != 0 {
+            if values[edge].target == pool { return true; }
+            edge = values[edge].origin_call;
+        }
+        return false;
+    }
+    if ty >= 2701 && ty <= 2708 {
+        let mut edge = values[holder].origin_call;
+        while edge != 0 {
+            if values[edge].target == pool { return true; }
+            edge = values[edge].origin_call;
+        }
+        return false;
+    }
+    if ty == 296 {
+        let mut entry = values[holder].origin_call;
+        while entry != 0 {
+            let mut field = graph[values[entry].origin_call].first_child;
+            while field != 0 {
+                if holds_pool(&graph[0..graph.len()], &values[0..values.len()], copy(field), copy(pool)) { return true; }
+                field = graph[field].next_sibling;
+            }
+            entry = values[entry].loan_parent;
+        }
+        return false;
+    }
+    if ty != 300 && ty != 301 && ty != 310 { return false; }
+    if ty != 310 && values[holder].loan_parent != 0 {
+        return holds_pool(&graph[0..graph.len()], &values[0..values.len()], values[holder].loan_parent, pool);
+    }
+    let origin = values[holder].origin_call;
+    if origin == 0 { return false; }
+    let mut field = graph[origin].first_child;
+    while field != 0 {
+        if holds_pool(&graph[0..graph.len()], &values[0..values.len()], copy(field), copy(pool)) { return true; }
+        field = graph[field].next_sibling;
+    }
+    false
+}
+
+pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) -> bool {
+    let mut current = scope;
+    while current != 0 {
+        if current == parent { return true; }
+        current = graph[current].scope_parent;
+    }
+    false
+}
+
+pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner: u64, scope: u64) -> bool {
+    let ty = values[owner].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut summary_entry = values[owner].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],copy(owner),copy(argument))
+                && !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(argument), copy(scope)) {
+                return false;
+            }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return true;
+    }
+    if slice_view(copy(ty)) || ty == 734 || (ty>20 && ty<60) {
+        if values[values[owner].target].ty==5018{return true;}
+        let parent = values[owner].loan_parent;
+        return scope_contains(&graph[0..graph.len()], graph[values[owner].target].scope, copy(scope))
+            && (parent == 0 || scope_contains(&graph[0..graph.len()], graph[parent].scope, scope));
+    }
+    if ty == 470 {
+        let mut member = graph[values[owner].origin_call].first_child;
+        while member != 0 {
+            if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(member), copy(scope)) { return false; }
+            member = graph[member].next_sibling;
+        }
+        return true;
+    }
+    if stored_loan_array(copy(ty)) {
+        let mut item = graph[values[owner].origin_call].first_child;
+        while item != 0 {
+            if !scope_contains(&graph[0..graph.len()], graph[values[item].target].scope, copy(scope)) { return false; }
+            item = graph[item].next_sibling;
+        }
+        return true;
+    }
+
+    if vector_reference_owner(copy(ty)) {
+        if !scope_contains(&graph[0..graph.len()], graph[values[owner].target].scope, copy(scope)) { return false; }
+        let mut item = values[owner].origin_call;
+        while item != 0 {
+            if !scope_contains(&graph[0..graph.len()], graph[values[item].target].scope, copy(scope)) { return false; }
+            item = values[item].origin_call;
+        }
+        return true;
+    }
+    if dependent_map(copy(ty)) {
+        let mut entry = values[owner].origin_call;
+        while entry != 0 {
+            let root = values[values[entry].target].target;
+            if values[entry].state == 1
+                && !scope_contains(&graph[0..graph.len()], graph[root].scope, copy(scope)) { return false; }
+            entry = values[entry].origin_call;
+        }
+        return true;
+    }
+    if dependent_option(copy(ty)) {
+        let root = values[values[owner].origin_call].target;
+        if root != 0 && !scope_contains(&graph[0..graph.len()], graph[root].scope, copy(scope)) { return false; }
+        let map = values[owner].target;
+        return map == 0 || scope_contains(&graph[0..graph.len()], graph[map].scope, scope);
+    }
+    if ty >= 81 && ty <= 87 {
+        let mut root = values[owner].origin_call;
+        while root != 0 {
+            if !scope_contains(&graph[0..graph.len()], graph[values[root].target].scope, copy(scope)) { return false; }
+            root = values[root].origin_call;
+        }
+        return true;
+    }
+    if (ty > 20 && ty < 60) || ty == 734 || ty == 752 {
+        return scope_contains(&graph[0..graph.len()], graph[values[owner].target].scope, scope);
+    }
+    if ty < 200 || is_scalar_array(copy(ty)) || task_value(copy(ty)) || map_value(copy(ty)) { return true; }
+    let pool = values[owner].target;
+    if ty != 300 && ty != 310 && !scope_contains(&graph[0..graph.len()], graph[pool].scope, copy(scope)) { return false; }
+    if ty == 296 {
+        let mut entry = values[owner].origin_call;
+        while entry != 0 {
+            let mut field = graph[values[entry].origin_call].first_child;
+            while field != 0 {
+                if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(field), copy(scope)) { return false; }
+                field = graph[field].next_sibling;
+            }
+            entry = values[entry].loan_parent;
+        }
+        return true;
+    }
+    if ty < 300 || (ty >= 710 && ty <= 729) { return true; }
+    let member = if ty == 300 || ty == 301 || ty == 310 { values[owner].loan_parent } else { 0 };
+    if (ty == 300 || ty == 301 || ty == 475) && member != 0 {
+        return owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], member, scope);
+    }
+    let constructor = values[owner].origin_call;
+    if constructor == 0 { return true; }
+    let mut field = graph[constructor].first_child;
+    if ty == 310 || (ty == 301 && graph[field].binding == pool) {
+        field = graph[field].next_sibling;
+    }
+    while field != 0 {
+        if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(field), copy(scope)) {
+            return false;
+        }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+
+// The constructor retains the field dependencies. A function can export a
+// dependency originating in one of its inputs, including a source pool.
+pub fn result_fields_external(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    owner: u64, function: u64) -> bool {
+    let ty = values[owner].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut summary_entry = values[owner].origin_call;
+        while summary_entry != 0 {
+            let argument=summary_value(&values[0..values.len()],copy(summary_entry));
+            if constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],copy(owner),copy(argument))
+                && !result_fields_external(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], copy(argument), copy(function)) {
+                return false;
+            }
+            summary_entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],summary_entry);
+        }
+        return true;
+    }
+    if ty == 470 {
+        let mut member = graph[values[owner].origin_call].first_child;
+        while member != 0 {
+            if !result_fields_external(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], copy(member), copy(function)) { return false; }
+            member = graph[member].next_sibling;
+        }
+        return true;
+    }
+    let root = values[owner].target;
+    if slice_view(copy(ty)) {
+        let parent = values[owner].loan_parent;
+        if parent != 0 && (nodes[parent].kind != 3 || nodes[parent].parent != function) { return false; }
+    }
+    if (ty > 20 && ty < 60) || (ty >= 201 && ty <= 207) || ty == 301 || ty == 734 || slice_view(copy(ty)) {
+        let external=values[root].ty==5018;
+        let formal = if external{values[root].target}else if nodes[root].kind == 4 { nodes[root].parent } else { copy(root) };
+        if !external && values[formal].ty==300 && values[formal].target==0{return false;}
+        if formal == 0 || nodes[formal].kind != 3 || nodes[formal].parent != function { return false; }
+    }
+    if ty != 300 && ty != 301 && ty != 310 && ty != 475 { return true; }
+    if (ty == 300 || ty == 475) && values[owner].loan_parent != 0 {
+        return result_fields_external(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &values[0..values.len()], values[owner].loan_parent, function);
+    }
+    let shape = values[owner].origin_call;
+    let mut field = graph[shape].first_child;
+    if ty == 310 { field = graph[field].next_sibling; }
+    while field != 0 {
+        if !result_fields_external(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &values[0..values.len()], copy(field), copy(function)) { return false; }
+        field = graph[field].next_sibling;
+    }
+    return true;
+}
+
+// Compare alternatives by nominal field, not by constructor position. A
+// common shape may stand for both paths only if every dependency agrees.
+pub fn equivalent_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], left: u64, right: u64, depth: u64) -> bool {
+    let ty = values[left].ty;
+    if depth >= 64 || ty != values[right].ty || values[left].target != values[right].target
+        || values[left].exclusive != values[right].exclusive { return false; }
+    if ty >= 1 && ty <= 9 { return true; }
+    if ty > 20 && ty < 60 {
+        return values[left].loan_parent == 0 && values[right].loan_parent == 0
+            && values[left].origin_call == 0 && values[right].origin_call == 0;
+    }
+    if ty >= 201 && ty <= 207 {
+        return values[left].loan_parent == 0 && values[right].loan_parent == 0
+            && values[left].origin_call == 0 && values[right].origin_call == 0;
+    }
+    if ty != 300 { return false; }
+    let a = values[left].origin_call;
+    let b = values[right].origin_call;
+    if nodes[a].kind != 37 || nodes[b].kind != 37 { return false; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(a));
+    if nominal == 0 || nominal != nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(b)) { return false; }
+    let mut member = graph[nominal].first_child;
+    while member != 0 {
+        let first_template = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(a), copy(member));
+        let second_template = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(b), copy(member));
+        let left_parent = values[left].loan_parent;
+        let right_parent = values[right].loan_parent;
+        let first = if constructor_arguments(values[left_parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], left_parent, first_template)
+        } else if first_template != 0 && left_parent != 0
+            && graph[graph[a].first_child].next_sibling == 0 { left_parent } else { first_template };
+        let second = if constructor_arguments(values[right_parent].ty) {
+            constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], right_parent, second_template)
+        } else if second_template != 0 && right_parent != 0
+            && graph[graph[b].first_child].next_sibling == 0 { right_parent } else { second_template };
+        if first == 0 || second == 0 || !equivalent_result(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &values[0..values.len()], first, second, copy(depth) + 1) { return false; }
+        member = graph[member].next_sibling;
+    }
+    true
+}
+
+pub fn plain_enum_payload(graph: &[StaticNode], values: &[CheckedValue], allocation: u64) -> bool {
+    let name = graph[values[allocation].origin_call].first_child;
+    let mut field = graph[name].next_sibling;
+    while field != 0 {
+        if values[field].ty < 1 || values[field].ty > 9 { return false; }
+        field = graph[field].next_sibling;
+    }
+    true
+}
+
+// Whether a value graph retains storage outside its owned inline fields.
+// Immutable caller summaries and source constructors use the same edge walk.
+pub fn external_dependencies(graph:&[StaticNode],values:&[CheckedValue],owner:u64,depth:u64)->bool {
+    if owner==0{return false;}if depth>=128{return true;}
+    let ty=values[owner].ty;
+    if ty>=1 && ty<=9{return false;}
+    if constructor_arguments(copy(ty)) {
+        let mut entry=values[owner].origin_call;
+        while entry!=0 {
+            if external_dependencies(&graph[0..graph.len()],&values[0..values.len()],summary_value(&values[0..values.len()],copy(entry)),depth+1){return true;}
+            entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],entry);
+        }return false;
+    }
+    if ty==300 || ty==310 || ty==475 {
+        let parent=values[owner].loan_parent;
+        if constructor_arguments(values[parent].ty){return external_dependencies(&graph[0..graph.len()],&values[0..values.len()],parent,depth+1);}
+        let mut field=graph[values[owner].origin_call].first_child;
+        if ty==310{field=graph[field].next_sibling;}
+        while field!=0 {
+            if external_dependencies(&graph[0..graph.len()],&values[0..values.len()],copy(field),depth+1){return true;}
+            field=graph[field].next_sibling;
+        }return false;
+    }
+    values[owner].target!=0 || values[owner].loan_parent!=0 || task_value(ty)
+}

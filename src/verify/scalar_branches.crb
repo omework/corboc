@@ -1,0 +1,142 @@
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::scalar::{scalar_hint, verify_primitive};
+use bootstrap::loans::loan_conflict;
+use bootstrap::places::{slice_parameter, shared_record_parameter};
+use bootstrap::calls::bootstrap_callee;
+
+// A scalar used in a larger expression can be read from a conditional
+// without merging binding states if its test and both arms are pure.
+pub fn readonly_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) -> bool {
+    if depth >= 128 || node == 0 { return false; }
+    let kind = nodes[node].kind;
+    if kind != 2 && kind != 4 && kind != 7 && kind != 9 && kind != 10
+        && kind != 11 && kind != 12 && kind != 14 && kind != 17 && kind != 18
+        && kind != 19 && kind != 26 && kind != 15 && kind != 46 && kind != 16
+        && kind != 13 { return false; }
+    if kind == 13 && graph[node].mutable { return false; }
+    if kind == 16 {
+        let len: [u8; 3] = [108,101,110];
+        let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+        if !spelling.content_eq(&len[..]) { return false; }
+        let receiver = graph[node].first_child;
+        if nodes[receiver].kind != 7 || graph[receiver].next_sibling != 0 { return false; }
+    }
+    if kind == 15 && !readonly_scalar_call(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(node)) { return false; }
+    let mut child = graph[node].first_child;
+    while child != 0 {
+        if !readonly_scalar(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child), copy(depth) + 1) {
+            return false;
+        }
+        child = graph[child].next_sibling;
+    }
+    true
+}
+
+pub fn scalar_arm(nodes: &[AstNode], graph: &[StaticNode], arm: u64) -> u64 {
+    if nodes[arm].kind == 26 { return arm; }
+    let tail = graph[arm].first_child;
+    if nodes[arm].kind != 2 || nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return 0; }
+    graph[tail].first_child
+}
+
+fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], branch: u64, expected: i64, consume: bool) -> i64 {
+    if !readonly_scalar(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(branch), 0) { return -9; }
+    let condition = graph[branch].first_child;
+    let yes = graph[condition].next_sibling;
+    let left = scalar_arm(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(yes));
+    let right = scalar_arm(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[yes].next_sibling);
+    if left == 0 || right == 0 { return -9; }
+    let test = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], condition, 3, 0);
+    if test < 0 { return test; }
+    if test != 3 { return 0 - violation(1, nodes[branch].start); }
+    let hint = scalar_hint(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &values[0..values.len()], copy(left), copy(right), expected);
+    let result = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(left), hint, 0);
+    if result <= 0 { return result; }
+    if result > 9 { return -9; }
+    let other = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(right), copy(result), 0);
+    if other < 0 { return other; }
+    if result != other { return 0 - violation(1, nodes[branch].start); }
+    if consume {
+        let conflict = scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(branch), false);
+        if conflict != 0 { return conflict; }
+        let moves = scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], branch, true);
+        if moves != 0 { return moves; }
+    }
+    result
+}
+
+// A bare name in a value-producing tail can move. Validate both alternatives
+// against the incoming state before marking bindings possibly moved at the join.
+pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    expression: u64, merge: bool) -> i64 {
+    let mut node = expression;
+    while nodes[node].kind == 19 { node = graph[node].first_child; }
+    if nodes[node].kind == 26 {
+        let condition = graph[node].first_child;
+        let yes = graph[condition].next_sibling;
+        let left = scalar_arm(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(yes));
+        let right = scalar_arm(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[yes].next_sibling);
+        let checked = scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], left, copy(merge));
+        if checked != 0 { return checked; }
+        return scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], right, merge);
+    }
+    if nodes[node].kind != 7 { return 0; }
+    let binding = graph[node].binding;
+    if merge {
+        let ty = values[binding].ty;
+        let mutable = values[binding].mutable;
+        values[binding] = CheckedValue { ty: ty, state: 4, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+        return 0;
+    }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
+        binding, copy(node), true);
+    if conflict < 0 { return -9; }
+    if conflict > 0 { return 0 - violation(5, nodes[node].start); }
+    0
+}
+
+// A scalar call is safe in the read-only expression walk when its arguments
+// cannot move bindings. The caller still verifies the argument expressions.
+pub fn readonly_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+    let callee = graph[call].first_child;
+    let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], call);
+    if function == 0 {
+        let copying: [u8; 4] = [99,111,112,121];
+        let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+        return nodes[callee].kind == 7 && graph[callee].binding == 0 && spelling.content_eq(&copying[..]);
+    }
+    if nodes[function].kind != 1 { return false; }
+    let mut parameter = graph[function].first_child;
+    let mut argument = graph[callee].next_sibling;
+    while nodes[parameter].kind == 3 {
+        let annotation = graph[parameter].first_child;
+        if argument == 0 { return false; }
+        let mut operand = copy(argument);
+        while nodes[operand].kind == 19 { operand = graph[operand].first_child; }
+        if graph[annotation].first_child == 0 {
+            if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0
+                || nodes[operand].kind == 7 || nodes[operand].kind == 26 { return false; }
+        } else {
+            if nodes[operand].kind != 13 || graph[operand].mutable { return false; }
+            let (slice, shape, exclusive) = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(annotation));
+            drop(shape);
+            if exclusive || (slice == 0 && shared_record_parameter(&source[0..source.len()],
+                &nodes[0..nodes.len()], &graph[0..graph.len()], annotation) == 0) { return false; }
+        }
+        argument = graph[argument].next_sibling;
+        parameter = graph[parameter].next_sibling;
+    }
+    argument == 0 && nodes[parameter].kind == 4 && graph[parameter].first_child == 0
+        && verify_primitive(&source[0..source.len()], nodes[parameter].name_start, nodes[parameter].name_end) != 0
+}

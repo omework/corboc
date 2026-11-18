@@ -1,0 +1,116 @@
+# corboc
+
+The self-hosted compiler for [Corbo](https://github.com/omework/din-lang), an
+experimental systems language built around explicit intent, predictable memory
+management and static verification.
+
+This repository owns the lexer, parser, static representations, verifier,
+placement analysis, code generation and package build command. The compiler
+currently emits C11 and invokes a host C compiler. The internal source package
+is still named `bootstrap`; the executable and repository are named `corboc`.
+
+## Shared sources
+
+The language repository owns the grammar, rules, STD, C runtime, examples and
+editor support. [corbo.lock](corbo.lock) pins one exact Git commit for all those
+inputs. There is no floating branch dependency or second maintained runtime.
+
+```sh
+python3 scripts/corbo_sources.py
+python3 scripts/corbo_sources.py --check
+```
+
+The first command clones the source into the ignored `.deps/corbo/` cache and
+checks out the locked revision. The check rejects a different revision or local
+changes to STD, runtime code or normative inputs. SSH access to the language
+repository is required. A local Git checkout can supply the same commit offline:
+
+```sh
+python3 scripts/corbo_sources.py --from-repo ../crust
+```
+
+That option clones Git objects at the locked commit, not the source checkout's
+uncommitted working files. It retains the canonical remote from the lock.
+
+## Build and self-rebuild
+
+Prerequisites: Python 3.11+, Git, a C11/pthread toolchain and an existing
+self-hosted Corbo seed supporting the current grammar. The frozen Rust frontend
+cannot compile the current compiler source. A seed binary is not committed here;
+provide its path explicitly or set `CORBOC_SEED`.
+
+```sh
+python3 scripts/build.py --seed /path/to/corboc --verify-self
+export PATH="$PWD/build/install/bin:$PATH"
+```
+
+The script checks the runtime resource against the locked source, installs the
+pinned STD beside the compiler, builds two compiler generations, compares their
+emitted C byte for byte, performs a normal package self-build and runs an external
+two-module import program. Artifacts and a machine-readable report are retained
+in `build/bootstrap/`. Omit `--verify-self` for a routine development build.
+Use `--prefix`, `--cc` and `--cflags` to choose the installation and staged C
+compilation. The normal `corboc build` command uses `cc` from `PATH`.
+
+The installed layout is:
+
+```text
+build/install/
+  bin/corboc
+  include/corbo_runtime.h
+  share/corbo/corbo.lock
+  share/corbo/stdlib/src/
+```
+
+`corboc build` automatically finds the STD relative to its installed executable:
+
+```sh
+corboc build /path/to/package -o program
+./program
+corboc build . -o build/install/bin/corboc-next
+```
+
+The C header is installed for external helpers. The standalone C memory library
+build remains owned by the locked language repository's `scripts/build_c_runtime.py`.
+
+## Runtime resources
+
+Readable native runtime implementations remain in the language repository.
+The compiler tracks one generated resource file so installed compilers do not
+need the source cache when building user packages.
+
+```sh
+python3 scripts/runtime_sources.py
+python3 scripts/runtime_sources.py --check
+```
+
+To update shared inputs: deliberately update the full commit in `corbo.lock`,
+remove or replace the ignored cache, prepare the new pinned checkout, regenerate
+the resource, rebuild and validate. A cache with the wrong revision is rejected;
+it is never silently switched or reset. `--source /path/to/checkout` can verify
+and use a local checkout only when it matches the lock and has unchanged inputs.
+
+## Validation
+
+```sh
+python3 validation/check_core_extensions.py --corboc build/install/bin/corboc --keep build/check-core
+python3 validation/check_core_mechanisms.py --corboc build/install/bin/corboc --keep build/check-mechanisms
+python3 validation/check_c_runtime_bridge.py --corboc build/install/bin/corboc --keep build/check-c
+python3 -m unittest discover -s validation -p 'test_*.py'
+```
+
+Compiler regression scripts and their fixtures live here. Historical language
+repository entry points forward to these implementations; STD integration and
+Rust-reference corpus tools remain in the language repository. Set
+`CORBOC_SOURCE_ROOT` there if this checkout is not the default sibling `corboc/`.
+
+[Checklist](docs/IMPLEMENTATION_CHECKLIST.md) ·
+[Verification matrix](docs/VERIFICATION_MATRIX.md) ·
+[Migration report](docs/REPOSITORY_SPLIT.md).
+
+Native compiler self-hosting for this extraction is validated on macOS ARM64.
+Generated-program platform evidence and the Wine/native Windows distinction
+remain documented in the pinned language repository. This migration does not
+establish native compiler execution on every target. Windows ARM64 remains deferred.
+
+Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

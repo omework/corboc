@@ -1,0 +1,8 @@
+#(if: target.family == "unix")
+fn selected()->i64{7}
+#(if: target.os == "never")
+use missing::invalid;
+fn selected()->i64{99}
+#(endif)
+#(endif)
+fn main(){let mut value:i64=0;@unchecked{@c(includes={"stdint.h", "stdint.h"}){ ${value} = (int64_t) 42; /* } */ }}print(value);print(selected());}

@@ -1,0 +1,222 @@
+use bootstrap::scalar_options::option_variant;
+use bootstrap::process_arguments::{is_process_arguments_call, is_process_arguments_result};
+use bootstrap::model::{AstNode, StaticNode, result_type};
+use bootstrap::calls::{associated_callee, bootstrap_callee, lookup_record_method, value_receiver};
+use bootstrap::tasks::thread_block;
+use bootstrap::lowering_annotations::{annotation_type, same_bytes, word};
+use bootstrap::lowering_types::{
+    array_has_owners, c_type, consume, declaration, future_type, handle_type,
+    local, map_type, map_value, nominal_type, number, task_code, task_payload, temporary, optional, option_payload,
+};
+use bootstrap::target_c::{byte_text, character};
+use bootstrap::native_checks::address_argument;
+use bootstrap::scalar::pointer_integer_type;
+use bootstrap::results::result_variant;
+
+fn call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    let name = graph[node].first_child;
+    let first = graph[name].next_sibling;
+    let emit = (*ctx).emit;
+    if is_process_arguments_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if !is_process_arguments_result(copy(expected)) { return -1; }
+        return lower_process_arguments(&nodes[0..nodes.len()], &graph[0..graph.len()], ctx, node, expected);
+    }
+    let address = address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(node));
+    if address != 0 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(node)) == 0 {
+        let operand = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(address), 0);
+        if operand <= 0 { return -1; }
+        let ty = pointer_integer_type();
+        if emit {
+            declaration(copy(ty), node);
+            { let code: [u8;17] = [61,40,117,105,110,116,112,116,114,95,116,41,40,118,111,105,100]; byte_text(&code[..]); }
+            { let code: [u8;2] = [42,41]; byte_text(&code[..]); }
+            temporary(address); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+        }
+        return ty;
+    }
+    let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+    if worker != 0 {
+        return native_invoke(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, worker, expected);
+    }
+    let map: [u8;7] = [72,97,115,104,77,97,112];
+    let new: [u8;3] = [110,101,119];
+    let type_argument = graph[name].first_child;
+    if nodes[name].kind == 36 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(name), &new[..])
+        && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(type_argument), &map[..]) {
+        if first != 0 { return -1; }
+        let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], type_argument);
+        if !map_type(copy(ty)) { return -1; }
+        if emit {
+            let data = map_value(copy(ty));
+            declaration(copy(ty), node); { let code: [u8;16] = [61,109,97,112,95,110,101,119,40,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(copy(data)); { let code: [u8;2] = [41,44]; byte_text(&code[..]); }
+            if data >= 6000000 && data < 7000000 { { let code: [u8;13] = [100,105,115,112,111,115,101,95,111,119,110,101,100]; byte_text(&code[..]); } }
+            else if data >= 3000000 && data < 4000000 { { let code: [u8;7] = [100,101,115,116,114,111,121]; byte_text(&code[..]); } number(nominal_type(data)); }
+            else { { let code: [u8;4] = [78,85,76,76]; byte_text(&code[..]); } }
+            { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        }
+        return ty;
+    }
+    let associated = associated_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(node));
+    if nodes[name].kind == 36 && associated == 0 {
+        let keyword: [u8;14] = [114,117,110,116,105,109,101,58,58,115,112,97,119,110];
+        let blocking_name: [u8;23] = [114,117,110,116,105,109,101,58,58,115,112,97,119,110,95,98,108,111,99,107,105,110,103];
+        let qualified = &source[nodes[name].start..nodes[name].end];
+        let blocking = same_bytes(&qualified[0..qualified.len()], &blocking_name[..]);
+        if (!blocking && !same_bytes(&qualified[0..qualified.len()], &keyword[..]))
+            || first == 0 || graph[first].next_sibling != 0 { return -1; }
+        let future = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(first), 0);
+        if !future_type(copy(future)) { return -1; }
+        let handle = task_code(if blocking { 4 } else { 2 }, task_payload(future));
+        if emit {
+            declaration(copy(handle), node);
+            if blocking { { let code: [u8;16] = [61,115,116,97,114,116,95,98,108,111,99,107,105,110,103,40]; byte_text(&code[..]); } } else { { let code: [u8;12] = [61,115,116,97,114,116,95,116,97,115,107,40]; byte_text(&code[..]); } }
+            temporary(first); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        }
+        return handle;
+    }
+    let async_function = if nodes[associated].kind == 35 { copy(associated) }
+        else { async_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(name)) };
+    if async_function != 0 {
+        return async_invoke(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, async_function, first, 0);
+    }
+    if optional(copy(expected)) && graph[name].binding == 0
+        && option_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(name)) == 1
+        && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(node)) == 0 {
+        if first == 0 || graph[first].next_sibling != 0 { return -1; }
+        let payload = option_payload(copy(expected));
+        let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(first), copy(payload));
+        if actual != payload { return -1; }
+        if emit {
+            declaration(copy(expected), node);
+            { let code: [u8; 3] = [61,123,49]; byte_text(&code[..]); }
+            character(44); temporary(first);
+            { let code: [u8; 3] = [125,59,10]; byte_text(&code[..]); }
+        }
+        return expected;
+    }
+    if result_type(copy(expected)) && graph[name].binding == 0
+        && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(node)) == 0 {
+        let variant = result_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(name));
+        if variant != 0 {
+            return lower_result_constructor(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, node, expected, variant == 1);
+        }
+    }
+    let copy_name: [u8;4] = [99,111,112,121];
+    let print_name: [u8;5] = [112,114,105,110,116];
+    let drop_name: [u8;4] = [100,114,111,112];
+    let copying = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(name), &copy_name[..]);
+    let printing = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(name), &print_name[..]);
+    let dropping = word(&source[0..source.len()], &nodes[0..nodes.len()], name, &drop_name[..]);
+    if dropping && nodes[first].kind == 7 {
+        let binding = graph[first].binding;
+        let ty = types[binding];
+        if ty >= 5000000 && ty < 6000000 {
+            if emit { consume(ty, binding, true); }
+            return 0;
+        }
+    }
+    if copying || printing || dropping {
+        if first == 0 || graph[first].next_sibling != 0 { return -1; }
+        let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(first), if copying { expected } else { 0 });
+        if ty <= 0 || (printing && ty > 9) { return -1; }
+        if emit {
+            if copying {
+                declaration(copy(ty), copy(node)); character(61); temporary(copy(first)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            } else if dropping {
+                if future_type(copy(ty)) || handle_type(copy(ty)) || (*ctx).storage {
+                    drop_value(copy(ty), copy(first), false);
+                }
+                else { consume(copy(ty), copy(first), false); }
+            } else {
+                if ty == 3 { { let code: [u8;5] = [112,117,116,115,40]; byte_text(&code[..]); } }
+                else if ty >= 8 { { let code: [u8;25] = [112,114,105,110,116,102,40,34,37,46,49,55,103,92,110,34,44,40,100,111,117,98,108,101,41]; byte_text(&code[..]); } }
+                else if ty >= 4 { { let code: [u8;36] = [112,114,105,110,116,102,40,34,37,108,108,117,92,110,34,44,40,117,110,115,105,103,110,101,100,32,108,111,110,103,32,108,111,110,103,41]; byte_text(&code[..]); } }
+                else { { let code: [u8;27] = [112,114,105,110,116,102,40,34,37,108,108,100,92,110,34,44,40,108,111,110,103,32,108,111,110,103,41]; byte_text(&code[..]); } }
+                temporary(copy(first));
+                if ty == 3 { { let code: [u8;15] = [63,34,116,114,117,101,34,58,34,102,97,108,115,101,34]; byte_text(&code[..]); } }
+                { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            }
+        }
+        return if copying { ty } else { 0 };
+    }
+    let callee = if associated != 0 { associated } else {
+        bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node))
+    };
+    compile_function_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, node, callee, first, 0)
+}
+
+fn compile_function_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    types: &mut [i64], ctx: &Lowering, node: u64, callee: u64, first: u64, receiver: u64) -> i64 {
+    let emit = (*ctx).emit;
+    if callee == 0 || nodes[callee].kind != 1 { return -1; }
+    let ty = types[callee];
+    let mut formal = graph[callee].first_child;
+    if receiver != 0 { formal = graph[formal].next_sibling; }
+    let mut arg = copy(first);
+    while nodes[formal].kind == 3 {
+        if arg == 0 { return -1; }
+        let formal_type = types[formal];
+        let checked = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(arg), copy(formal_type));
+        if checked != formal_type { return -1; }
+        formal = graph[formal].next_sibling;
+        arg = graph[arg].next_sibling;
+    }
+    if arg != 0 || ty < 0 { return -1; }
+    if emit {
+        if ty != 0 { declaration(copy(ty), node); character(61); }
+        character(102); number(callee); character(40);
+        if receiver != 0 {
+            if types[receiver] < 4000000 { character(38); }
+            local(receiver);
+            if first != 0 { character(44); }
+        }
+        arg = first;
+        while arg != 0 {
+            temporary(copy(arg)); arg = graph[arg].next_sibling;
+            if arg != 0 { character(44); }
+        }
+        { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+    }
+    ty
+}
+
+fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
+    ctx: &Lowering, node: u64) -> i64 {
+    let receiver = graph[node].first_child;
+    let binding = graph[receiver].binding;
+    let ty = types[binding];
+    if nodes[receiver].kind != 7 || ty < 3000000 || ty >= 5000000 { return -2; }
+    let record = nominal_type(ty);
+    if nodes[record].kind != 28 { return -2; }
+    let owner = &source[nodes[record].name_start..nodes[record].name_end];
+    let name = &source[nodes[node].name_start..nodes[node].name_end];
+    let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &owner[0..owner.len()], &name[0..name.len()], true);
+    if method == 0 { return -2; }
+    if nodes[method].kind == 35 {
+        let by_value = value_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(method));
+        let first = if by_value { copy(receiver) } else { graph[receiver].next_sibling };
+        return async_invoke(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, method, first, if by_value { 0 } else { binding });
+    }
+    if value_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(method)) {
+        return compile_function_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, node, method, receiver, 0);
+    }
+    compile_function_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut types[0..types.len()], ctx, node, method, graph[receiver].next_sibling, binding)
+}

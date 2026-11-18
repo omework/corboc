@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Intern concrete nominal identities and resolve their arguments in an instance environment.
+use bootstrap::model::{AstNode, StaticNode, Token, token_at};
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::declarations::verification_field;
+use bootstrap::calls::bootstrap_callee;
+
+fn intern_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64,args:&[ConcreteType],
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64])->u64 {
+    let mut index:u64=0;
+    while index<count[0] {
+        let mut same=instances[copy(index)].template==template && instances[copy(index)].count==args.len() as u64;
+        let mut arg:u64=0;
+        while same && arg<args.len() as u64 {
+            same=same_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&stored[index*32+arg],&args[copy(arg)],0);
+            arg=arg+1;
+        }
+        if same{return index+1;}index=index+1;
+    }
+    if count[0]>=instances.len() as u64{return 0;}
+    let index=count[0];let mut arg:u64=0;
+    while arg<args.len() as u64 {
+        stored[index*32+arg]=ConcreteType{node:args[copy(arg)].node,reference:args[copy(arg)].reference,slice:args[copy(arg)].slice,instance:args[copy(arg)].instance};
+        arg=arg+1;
+    }
+    instances[copy(index)]=Instance{template:copy(template),count:args.len() as u64};count[0]=count[0]+1;index+1
+}
+
+// An environment is a concrete instance id plus one; zero denotes ordinary source.
+fn resolved_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],ty:&ConcreteType,environment:u64,
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)->u64 {
+    if (*ty).node==0 || depth>=128{return 0;}
+    if (*ty).instance!=0{return packed(ty);}
+    if environment!=0 {
+        let owner=instances[environment-1].template;let mut param:u64=0;
+        while param<instances[environment-1].count {
+            let name=template_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(owner),copy(param));
+            if text_equal(&source[0..source.len()],&nodes[copy(name)],&nodes[(*ty).node]) {
+                let at=(environment-1)*32+param;
+                if (*ty).reference!=0 && stored[at].reference!=0{return 0;}
+                let resolved=ConcreteType{node:stored[at].node,reference:if (*ty).reference==0{stored[at].reference}else{(*ty).reference},slice:stored[at].slice,instance:stored[at].instance};
+                return packed(&resolved);
+            }param=param+1;
+        }
+    }
+    let nominal=layout(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],(*ty).node);
+    if nominal==0 || !is_template(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal)){return packed(ty);}
+    let mut args:[ConcreteType;32]=[ConcreteType{node:0,reference:0,slice:false,instance:0};32];
+    let mut argument=graph[(*ty).node].first_child;let mut length:u64=0;
+    while argument!=0 {
+        if length>=32{return 0;}
+        let input=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(argument));
+        let code=resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&input,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+        if code==0{return 0;}args[copy(length)]=decoded(code);length=length+1;argument=graph[copy(argument)].next_sibling;
+    }
+    if template_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),copy(length))!=0{return 0;}
+    let id=intern_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),&args[..length],&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()]);
+    if id==0{return 0;}
+    let resolved=ConcreteType{node:copy(nominal),reference:(*ty).reference,slice:(*ty).slice,instance:id};packed(&resolved)
+}
+
+fn unify_instance(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64,pattern:u64,actual:&ConcreteType,
+    types:&mut [ConcreteType],instances:&[Instance],stored:&[ConcreteType],depth:u64)->bool {
+    if depth>=128{return false;}
+    if (*actual).instance==0{return unify(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(pattern),actual,&mut types[0..types.len()],copy(depth));}
+    let expected=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(pattern));
+    let mut param:u64=0;
+    while param<types.len() as u64 {
+        let name=template_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(param));
+        if name==0{break;}
+        if text_equal(&source[0..source.len()],&nodes[copy(name)],&nodes[expected.node]) {
+            return unify(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(pattern),actual,&mut types[0..types.len()],copy(depth));
+        }param=param+1;
+    }
+    let index=(*actual).instance-1;
+    if expected.reference!=(*actual).reference || !text_equal(&source[0..source.len()],&nodes[expected.node],&nodes[instances[copy(index)].template]){return false;}
+    let mut argument=graph[expected.node].first_child;let mut i:u64=0;
+    while argument!=0 && i<instances[copy(index)].count {
+        if !unify_instance(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(argument),&stored[index*32+i],&mut types[0..types.len()],&instances[0..instances.len()],&stored[0..stored.len()],depth+1){return false;}
+        argument=graph[copy(argument)].next_sibling;i=i+1;
+    }
+    argument==0 && i==instances[copy(index)].count
+}
+
+
+// Locate the concrete variant layout without interpreting any payload value.
+fn variant_layout(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],template:u64,expression:u64)->u64 {
+    if nodes[template].kind!=29{return template;}
+    let first=token_at(&tokens[0..tokens.len()],nodes[expression].start);
+    let mut variant=graph[template].first_child;
+    while variant!=0 {
+        if nodes[variant].kind==30 && same_bytes(&source[nodes[variant].name_start..nodes[variant].name_end],&source[tokens[first+2].start..tokens[first+2].end]){return variant;}
+        variant=graph[variant].next_sibling;
+    }0
+}
+
+fn contextual_nominal(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64,template:u64,depth:u64)->u64 {
+    if annotation==0 || depth>=128{return 0;}
+    if nodes[annotation].kind==4 && text_equal(&source[0..source.len()],&nodes[annotation],&nodes[template]){return annotation;}
+    let mut child=graph[annotation].first_child;let mut found:u64=0;
+    while child!=0 {
+        let candidate=contextual_nominal(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(child),copy(template),depth+1);
+        if candidate!=0 {if found!=0{return 0;}found=candidate;}child=graph[child].next_sibling;
+    }found
+}
+
+// Infer values before rewriting, so a constructor's concrete identity survives
+// through bindings, nested constructors and projected fields.
+fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],expression:u64,environment:u64,
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)->u64 {
+    if expression==0 || depth>=128{return 0;}
+    let kind=nodes[copy(expression)].kind;let child=graph[copy(expression)].first_child;
+    if kind==7 {
+        let binding=graph[copy(expression)].binding;let annotation=graph[binding].type_node;
+        if annotation!=0 {
+            let ty=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
+            return resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&ty,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+        }
+        return resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],graph[binding].initializer,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+    }
+    if kind==19 || kind==38 || kind==13 || kind==14 {
+        let ty=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(child),copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1));
+        let resolved=ConcreteType{node:ty.node,reference:if kind==14{0}else if kind==13{if graph[copy(expression)].mutable{2}else{1}}else{ty.reference},slice:ty.slice,instance:ty.instance};return packed(&resolved);
+    }
+    if kind==17 || kind==16 {
+        let owner=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(child),copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1));
+        if owner.instance!=0 {
+            let nominal=instances[owner.instance-1].template;
+            let annotation=if kind==17 {
+                let field=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),copy(expression));graph[copy(field)].first_child
+            }else{let method=method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),copy(expression));output(&nodes[0..nodes.len()],&graph[0..graph.len()],method)};
+            let ty=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
+            return resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&ty,owner.instance,&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+        }
+    }
+    if kind==15 || kind==37 {
+        let name=if kind==15{copy(child)}else{copy(expression)};
+        let token=token_at(&tokens[0..tokens.len()],nodes[copy(name)].start);let mut template=graph[0].first_child;
+        while template!=0 {
+            if is_template(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template)) && same_bytes(&source[nodes[copy(template)].name_start..nodes[copy(template)].name_end],&source[tokens[copy(token)].start..tokens[copy(token)].end]){break;}
+            template=graph[copy(template)].next_sibling;
+        }
+        if template!=0 {
+            if nodes[template].kind==29 {
+                let mut context=nodes[expression].parent;let mut expected:u64=0;
+                while context!=0 {
+                    if nodes[context].kind==5 && graph[context].type_node!=0{expected=graph[context].type_node;break;}
+                    if nodes[context].kind==1 || nodes[context].kind==35{expected=output(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(context));break;}
+                    context=nodes[context].parent;
+                }
+                let annotation=contextual_nominal(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],expected,copy(template),0);
+                if annotation!=0 {
+                    let ty=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
+                    return resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&ty,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+                }
+            }
+            let mut types:[ConcreteType;32]=[ConcreteType{node:0,reference:0,slice:false,instance:0};32];
+            let mut function:u64=0;
+            if kind==15 {
+                let last=token_at(&tokens[0..tokens.len()],nodes[copy(name)].end)-1;let mut part=graph[0].first_child;
+                while part!=0 {
+                    if implementation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(part)) {
+                        let mut item=graph[copy(part)].first_child;
+                        while item!=0{if same_bytes(&source[nodes[item].name_start..nodes[item].name_end],&source[tokens[last].start..tokens[last].end]){function=copy(item);}item=graph[item].next_sibling;}
+                    }part=graph[copy(part)].next_sibling;
+                }
+                if function==0{return 0;}
+                let mut formal=graph[function].first_child;let mut argument=graph[copy(name)].next_sibling;
+                while nodes[copy(formal)].kind==3 && argument!=0 {
+                    let actual=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(argument),copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1));
+                    if !unify_instance(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),graph[copy(formal)].first_child,&actual,&mut types[..],&instances[0..instances.len()],&stored[0..stored.len()],depth+1){return 0;}
+                    formal=graph[copy(formal)].next_sibling;argument=graph[copy(argument)].next_sibling;
+                }
+                if argument!=0 || nodes[copy(formal)].kind==3{return 0;}
+            }else {
+                let layout=variant_layout(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(template),copy(expression));
+                let mut field=copy(child);
+                if nodes[field].kind!=31{field=graph[field].next_sibling;}
+                while field!=0 {
+                    let member=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(layout),copy(field));
+                    let value=graph[copy(field)].first_child;
+                    let hint=graph[member].first_child;
+                    let literal=nodes[value].kind==9 && primitive_type(&source[0..source.len()],&nodes[0..nodes.len()],copy(hint))!=0;
+                    let code=if literal {
+                        let expected=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(hint));packed(&expected)
+                    }else{resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],value,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1)};
+                    let actual=decoded(code);
+                    if member==0 || !unify_instance(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),graph[member].first_child,&actual,&mut types[..],&instances[0..instances.len()],&stored[0..stored.len()],depth+1){return 0;}
+                    field=graph[copy(field)].next_sibling;
+                }
+            }
+            if !constraints(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),&mut types[..],&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()]){return 0;}
+            let mut length:u64=0;
+            while template_parameter(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(length))!=0 {
+                if length>=32 || types[copy(length)].node==0{return 0;}length=length+1;
+            }
+            let id=intern_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),&types[..length],&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()]);
+            let resolved=ConcreteType{node:copy(template),reference:0,slice:false,instance:id};return packed(&resolved);
+        }
+    }
+    let ty=decoded(type_code(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(expression),depth+1));
+    resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&ty,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1)
+}

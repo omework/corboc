@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Point{x:i64,y:i64}
+enum Choice{Empty,Number{value:i64}}
+fn main(){
+ let mut point=Point{x:1,y:2};
+ let mut row:[i64;3]=[3,4,5];
+ let mut pair=(6,7);
+ let mut choice=Choice.Number{value:8};
+ let mut memory=pool<i64>(2);let mut number=memory.new(9);
+ let view=&mut point;let width:usize=8;
+ @unchecked{
+  @c(includes={"corbo_runtime.h","assert.h"}){
+   Corbo_Point value = *${view};
+   assert(${width} == sizeof(int64_t));
+   assert(sizeof(Corbo_usize) == sizeof(void*));
+   assert(value.f_x == 1 && value.f_y == 2);
+   ${view}->f_x = 11;
+   assert(offsetof(Corbo_Point, f_x) == 0);
+   assert(sizeof(Corbo_Point) == sizeof(int64_t)*2);
+   assert(corbo_runtime_abi_version() == CORBO_RUNTIME_ABI_VERSION);
+  }
+ }
+ @unchecked{
+  @c{
+   ${point}.f_y = 12;
+   ${row}.items[1] = 14;
+   ${pair}.m1 = 17;
+   assert(${choice}.tag == corbo_tag_Choice_v_Number);
+   ${choice}.v_Number_f_value = 18;
+   assert(${number}.pool == ${memory});
+   *(int64_t*)corbo_allocation_data(&${number}) = 19;
+   CorboStackMark saved = corbo_datastack_mark();
+   CorboPool *temporary = corbo_pool_create(1,sizeof(Corbo_Point),1);
+   CorboAllocation cell=corbo_pool_take(temporary,0);
+   Corbo_Point *p=corbo_allocation_data(&cell);p->f_x=20;p->f_y=21;
+   assert(p->f_x+p->f_y==41);
+   corbo_allocation_drop(&cell);
+   corbo_datastack_rewind(saved);
+   assert(corbo_datastack_info().position==saved.position);
+  }
+ }
+ print(point.x);print(point.y);print(row[1]);
+ let (left,right)=pair;print(left);print(right);
+ match choice {Choice.Empty=>{},Choice.Number{value:value}=>{print(value);}}
+ print(*number);
+}

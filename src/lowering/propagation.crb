@@ -1,0 +1,64 @@
+use bootstrap::lowering_regions::unwind_regions;
+use bootstrap::model::{AstNode,StaticNode,result_type,result_payload};
+use bootstrap::propagation::error_conversion;
+use bootstrap::lowering_types::{optional,option_payload,c_type,temporary,number,declaration};
+use bootstrap::results::scalar_result_payload;
+use bootstrap::target_c::{character,byte_text};
+
+// Values already evaluated for a containing call/aggregate must be dropped if a later operand returns early.
+fn drop_partial_evaluation(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64,storage:bool) {
+    let mut current=node;let mut parent=nodes[current].parent;
+    while parent!=0 && nodes[parent].kind!=5 && nodes[parent].kind!=6 && nodes[parent].kind!=8 && nodes[parent].kind!=10 {
+        let first=graph[parent].first_child;let mut end=copy(current);
+        while end!=first {
+            let mut earlier=copy(first);while earlier!=0 && graph[earlier].next_sibling!=end{earlier=graph[earlier].next_sibling;}
+            if earlier==0{break;}
+            let value=if nodes[earlier].kind==31{graph[earlier].first_child}else{copy(earlier)};
+            let ty=types[value];if needs_cleanup(copy(ty),copy(storage)){drop_value(ty,value,false);}
+            end=earlier;
+        }current=parent;parent=nodes[current].parent;
+    }
+}
+
+// The error arm uses the same visible-binding cleanup and region unwind as an explicit return.
+fn lower_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)->i64 {
+    let child=graph[node].first_child;let outer=(*ctx).result;let emit=(*ctx).emit;
+    let inner=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(child),0);
+    let result=result_type(copy(inner));let mut conversion:u64=0;
+    let mut payload:i64=0;
+    if result {
+        if !result_type(copy(outer)){return -1;}
+        let from=result_payload(copy(inner),false);let to=result_payload(copy(outer),false);
+        if from!=to {
+            conversion=error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],from,to);
+            if conversion==0{return -1;}
+        }payload=result_payload(inner,true);
+    }else{if !optional(copy(inner)) || !optional(copy(outer)){return -1;}payload=option_payload(inner);}
+    let scalar=scalar_result_payload(copy(payload));let actual=if scalar!=0{scalar}else{copy(payload)};
+    types[node]=copy(actual);
+    if emit {
+        {let code:[u8;4]=[105,102,40,33];byte_text(&code[..]);}temporary(copy(child));{let code:[u8;1]=[46];byte_text(&code[..]);}
+        if result{{let code:[u8;2]=[111,107];byte_text(&code[..]);}}else{{let code:[u8;4]=[115,111,109,101];byte_text(&code[..]);}}{let code:[u8;3]=[41,123,10];byte_text(&code[..]);}
+        c_type(copy(outer));{let code:[u8;18]=[32,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;6]=[61,123,48,125,59,10];byte_text(&code[..]);}
+        if result {
+            {let code:[u8;17]=[112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;28]=[46,108,105,118,101,61,116,114,117,101,59,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;15]=[46,112,97,121,108,111,97,100,46,101,114,114,111,114,61];byte_text(&code[..]);}
+            if conversion!=0{character(102);number(copy(conversion));character(40);}
+            temporary(copy(child));{let code:[u8;14]=[46,112,97,121,108,111,97,100,46,101,114,114,111,114];byte_text(&code[..]);}if conversion!=0{character(41);}{let code:[u8;2]=[59,10];byte_text(&code[..]);}
+            temporary(copy(child));{let code:[u8;13]=[46,108,105,118,101,61,102,97,108,115,101,59,10];byte_text(&code[..]);}
+        }
+        let function=(*ctx).function;let mut root=graph[function].first_child;
+        while nodes[root].kind==3 || nodes[root].kind==4{root=graph[root].next_sibling;}
+        drop_partial_evaluation(&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(node),(*ctx).storage);
+        drop_visible(&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(node),function,true,(*ctx).storage);
+        if (*ctx).poll_body==0 {
+            unwind_regions(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node),copy(root));
+            if (*ctx).storage{{let code:[u8;11]=[99,117,114,115,111,114,61,109,97,114,107];byte_text(&code[..]);}number(root);{let code:[u8;2]=[59,10];byte_text(&code[..]);}}
+            {let code:[u8;24]=[114,101,116,117,114,110,32,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;2]=[59,10];byte_text(&code[..]);}
+        }else{
+            {let code:[u8;67]=[102,114,97,109,101,45,62,115,116,97,116,101,46,112,97,121,108,111,97,100,61,38,102,114,97,109,101,45,62,114,101,115,117,108,116,59,102,114,97,109,101,45,62,114,101,115,117,108,116,61,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;14]=[59,114,101,116,117,114,110,32,116,114,117,101,59,10];byte_text(&code[..]);}
+        }
+        {let code:[u8;2]=[125,10];byte_text(&code[..]);}declaration(copy(actual),copy(node));character(61);temporary(copy(child));
+        if result{{let code:[u8;18]=[46,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,59,10];byte_text(&code[..]);}temporary(copy(child));{let code:[u8;13]=[46,108,105,118,101,61,102,97,108,115,101,59,10];byte_text(&code[..]);}}
+        else{{let code:[u8;8]=[46,118,97,108,117,101,59,10];byte_text(&code[..]);}temporary(child);{let code:[u8;13]=[46,115,111,109,101,61,102,97,108,115,101,59,10];byte_text(&code[..]);}}
+    }actual
+}

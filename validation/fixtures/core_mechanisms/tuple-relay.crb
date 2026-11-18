@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Source{left:i64,right:i64}
+struct View{value:&mut i64}
+impl Source{fn split(&mut self)->(View,View){let a=&mut (*self).left;let b=&mut (*self).right;(View{value:a},View{value:b})}}
+impl View{fn get(&self)->i64{*(*self).value}}
+fn relay(source:&mut Source)->(View,View){source.split()}
+fn main(){let mut source=Source{left:1,right:2};let (a,b)=relay(&mut source);print(a.get());print(b.get());}

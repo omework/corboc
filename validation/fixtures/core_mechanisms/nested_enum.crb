@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+#(type: T *)
+enum Maybe<T>{No,Yes{value:T}}
+#(type: L *)
+#(type: R *)
+struct Pair<L,R>{left:Maybe<L>,right:Maybe<R>}
+fn main(){
+ let left:Maybe<i64> = Maybe.Yes{value:7};let right:Maybe<bool> = Maybe.Yes{value:true};
+ let pair:Pair<i64,bool> = Pair{left:left,right:right};drop(pair);
+}

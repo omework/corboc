@@ -1,0 +1,332 @@
+use bootstrap::tasks::record_capture;
+use bootstrap::signatures::{move_slice_argument,check_slice_argument};
+use bootstrap::value_summaries::annotation_kind;
+use bootstrap::places::{record_parameter,check_record_argument,slice_parameter,bind_slice};
+use bootstrap::model::{constructor_arguments,constructor_field_value};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::scalar::{verify_primitive, scalar_hint};
+use bootstrap::verify::{scalar_arm, readonly_scalar, scalar_moves};
+use bootstrap::ownership::{plain_structure, check_owned_struct};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::calls::bootstrap_callee;
+
+pub fn tuple_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+    nodes[annotation].kind == 4 && source[nodes[annotation].start] == 40 && graph[annotation].first_child != 0
+}
+
+pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], expression: u64, annotation: u64) -> i64 {
+    if nodes[expression].kind == 26 {
+        return scalar_tuple_if(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], expression, annotation);
+    }
+    let mut member = graph[expression].first_child;
+    let mut field: u64 = if annotation == 0 { 0 } else { graph[annotation].first_child };
+    if nodes[expression].kind == 20 {
+        let mut exclusive = false;
+        while member != 0 {
+            if annotation != 0 && field == 0 { return 0 - violation(1, nodes[expression].start); }
+            let ty = if field == 0 { 0 } else {
+                verify_primitive(&source[0..source.len()], nodes[field].name_start, nodes[field].name_end)
+            };
+            let declared=if field==0{0}else{annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field))};
+            if declared==734 || (declared>=741 && declared<=749) || (declared>20 && declared<60) {
+                let actual=if declared==734 {
+                    let record=record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field),false);
+                    let mutable=source[nodes[field].start+1]==109;
+                    let status=check_record_argument(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),record,mutable,true);
+                    if status<0{return status;}734
+                }else if declared>=741 && declared<=749 {
+                    let (slice,shape,mutable)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field));
+                    let status=check_slice_argument(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),slice,shape,mutable);
+                    if status<0{return status;}copy(declared)
+                }else{
+                    let status=if nodes[member].kind==7{move_slice_argument(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),copy(declared))}
+                        else{record_capture(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),copy(declared),0)};
+                    if status<0{return status;}copy(declared)
+                };
+                if actual<0{return actual;}if actual!=declared{return 0-violation(1,nodes[member].start);}
+                exclusive=exclusive || values[member].exclusive;
+                if field!=0{field=graph[field].next_sibling;}member=graph[member].next_sibling;continue;
+            }
+            if field != 0 && graph[field].first_child != 0 { return -9; }
+            if ty == 0 && (field != 0 || nodes[member].kind == 37) {
+                let name = if field == 0 { copy(member) } else { copy(field) };
+                let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], name);
+                if nodes[nominal].kind != 28 { return -9; }
+                if !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(nominal), 0) { exclusive = true; }
+                if nodes[member].kind==7 {
+                    let status=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),300,1);
+                    if status<0{return status;}
+                    if nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],values[member].origin_call)!=nominal{return 0-violation(1,nodes[member].start);}
+                    if field!=0{field=graph[field].next_sibling;}member=graph[member].next_sibling;continue;
+                }
+                if nodes[member].kind != 37 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(member)) != nominal { return -9; }
+                let status = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut values[0..values.len()], copy(member), copy(member));
+                if status < 0 { return status; }
+            } else {
+                let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut values[0..values.len()], copy(member), ty, 1);
+                if actual < 0 { return actual; }
+                if actual < 1 || actual > 9 { return -9; }
+                values[member] = CheckedValue { ty: actual, state: 1, mutable: false, target: 0,
+                    loan_parent: 0, origin_call: 0, exclusive: false };
+            }
+            if field != 0 { field = graph[field].next_sibling; }
+            member = graph[member].next_sibling;
+        }
+        if field != 0 { return 0 - violation(1, nodes[expression].start); }
+        values[expression] = CheckedValue { ty: 475, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: copy(expression), exclusive: exclusive };
+        return 475;
+    }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(expression), 0, 1);
+    if ty < 0 { return ty; }
+    if ty != 475 { return 0 - violation(1, nodes[expression].start); }
+    if annotation == 0 { return ty; }
+    member = graph[values[expression].origin_call].first_child;
+    while member != 0 && field != 0 {
+        let marker=values[expression].loan_parent;
+        let actual_member=if constructor_arguments(values[marker].ty){constructor_field_value(&graph[0..graph.len()],&values[0..values.len()],marker,copy(member))}else{copy(member)};
+        let expected=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field));
+        if expected==0{return -9;}
+        if values[actual_member].ty!=expected{return 0-violation(1,nodes[expression].start);}
+        if expected==300 || expected==310 || expected==734 {
+            let annotation=if expected==734{graph[field].first_child}else{copy(field)};
+            let nominal=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
+            if nominal==0 || nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],values[actual_member].origin_call)!=nominal{return 0-violation(1,nodes[expression].start);}
+        }
+        member = graph[member].next_sibling;
+        field = graph[field].next_sibling;
+    }
+    if field != 0 || member != 0 { return 0 - violation(1, nodes[expression].start); }
+    ty
+}
+
+pub fn symbolic_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    point: u64, annotation: u64) -> i64 {
+    let mut field: u64 = if annotation == 0 { 0 } else { graph[annotation].first_child };
+    while field != 0 {
+        if graph[field].first_child != 0 { return -9; }
+        let mut ty = verify_primitive(&source[0..source.len()], nodes[field].name_start, nodes[field].name_end);
+        let mut shape: u64 = 0;
+        if ty == 0 {
+            let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], copy(field));
+            if !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], nominal, 0) { return -9; }
+            ty = 300;
+            shape = copy(field);
+        }
+        values[field] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: shape, exclusive: false };
+        field = graph[field].next_sibling;
+    }
+    values[point] = CheckedValue { ty: 475, state: 1, mutable: graph[point].mutable, target: 0,
+        loan_parent: 0, origin_call: annotation, exclusive: false };
+    475
+}
+
+pub fn destructure_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64) -> i64 {
+    let first = graph[statement].first_child;
+    let annotation = if nodes[first].kind == 4 { copy(first) } else { 0 };
+    let expression = if annotation != 0 { graph[first].next_sibling } else { first };
+    let checked = tuple_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(expression), annotation);
+    if checked < 0 { return 0 - checked; }
+    let shape = values[expression].origin_call;
+    let mut member = graph[shape].first_child;
+    let mut binding = graph[expression].next_sibling;
+    while member != 0 && binding != 0 {
+        let marker=values[expression].loan_parent;
+        let actual=if constructor_arguments(values[marker].ty){constructor_field_value(&graph[0..graph.len()],&values[0..values.len()],marker,copy(member))}else{copy(member)};
+        let ty = values[actual].ty;
+        let shape = values[actual].origin_call;
+        let target = values[actual].target;
+        let parent = values[actual].loan_parent;
+        let exclusive = values[actual].exclusive;
+        values[binding] = CheckedValue { ty: ty, state: 1, mutable: graph[binding].mutable,
+            target: target, loan_parent: parent, origin_call: shape, exclusive: exclusive };
+        member = graph[member].next_sibling;
+        binding = graph[binding].next_sibling;
+    }
+    if member != 0 || binding != 0 { return violation(1, nodes[statement].start); }
+    0
+}
+
+fn scalar_tuple_binding(nodes: &[AstNode], graph: &[StaticNode], operand: u64) -> u64 {
+    let mut node = operand;
+    while nodes[node].kind == 19 { node = graph[node].first_child; }
+    if nodes[node].kind == 7 { return graph[node].binding; }
+    0
+}
+
+fn scalar_tuple_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
+    tuple: u64, merge: bool) -> i64 {
+    let mut item = graph[tuple].first_child;
+    while item != 0 {
+        let binding = scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(item));
+        if binding != 0 {
+            if !merge {
+                let mut previous = graph[tuple].first_child;
+                while previous != item {
+                    if scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous)) == binding {
+                        return 0 - violation(6, nodes[item].start);
+                    }
+                    previous = graph[previous].next_sibling;
+                }
+            }
+            let status = scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(item), copy(merge));
+            if status != 0 { return status; }
+        } else {
+            let mut at = copy(item);
+            while nodes[at].kind == 19 { at = graph[at].first_child; }
+            if nodes[at].kind == 26 { return -9; }
+            if !merge {
+                // A computed field cannot read a binding consumed by an earlier field.
+                let mut previous = graph[tuple].first_child;
+                while previous != item {
+                    let moved = scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous));
+                    if moved != 0 {
+                        let mut at = copy(item);
+                        while at < nodes.len() as u64 && nodes[at].start < nodes[item].end {
+                            if graph[at].binding == moved { return 0 - violation(6, nodes[at].start); }
+                            at = at + 1;
+                        }
+                    }
+                    previous = graph[previous].next_sibling;
+                }
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+// Each leaf is checked against the incoming state; moves merge only after every alternative is valid.
+fn scalar_tuple_if(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64)->i64 {
+    let checked=tuple_alternative(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],
+        &mut values[0..values.len()],copy(expression),annotation,0);
+    if checked<0{return checked;}
+    let moved=tuple_alternative_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],expression);
+    if moved!=0{return moved;}475
+}
+
+fn tuple_alternative(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64,hint:u64)->i64 {
+    if expression==0{return -9;}
+    if nodes[expression].kind==26 {
+        let test=graph[expression].first_child;let yes=graph[test].next_sibling;
+        if !readonly_scalar(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(test),0){return -9;}
+        let checked=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],test,3,0);
+        if checked<0{return checked;}if checked!=3{return 0-violation(1,nodes[expression].start);}
+        let left=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(yes));
+        let right=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],graph[yes].next_sibling);
+        let first=tuple_alternative(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(left),copy(annotation),hint);
+        if first<0{return first;}let shape=values[left].origin_call;
+        let second=tuple_alternative(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],right,annotation,copy(shape));
+        if second<0{return second;}
+        values[expression]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:0,origin_call:shape,exclusive:false};return 475;
+    }
+    if nodes[expression].kind==15 {
+        if !scalar_tuple_call(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression)){return -9;}
+        let checked=tuple_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),annotation);
+        if checked<0{return checked;}
+        // Validate a scalar argument move on this path, then restore the incoming
+        // binding until the alternatives are merged. Other resource moves stay
+        // outside this scalar tuple summary.
+        let mut argument=graph[graph[expression].first_child].next_sibling;
+        while argument!=0 {
+            let binding=scalar_tuple_binding(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(argument));
+            if binding!=0 {
+                if values[binding].ty<1 || values[binding].ty>9{return -9;}
+                let ty=values[binding].ty;let mutable=values[binding].mutable;
+                values[binding]=CheckedValue{ty:ty,state:1,mutable:mutable,target:0,loan_parent:0,origin_call:0,exclusive:false};
+            }
+            argument=graph[argument].next_sibling;
+        }
+    } else if nodes[expression].kind==20 {
+        let mut member=graph[expression].first_child;
+        let mut field:u64=if annotation==0{0}else{graph[annotation].first_child};let mut reference:u64=if hint==0{0}else{graph[hint].first_child};
+        while member!=0 {
+            if (annotation!=0 && field==0) || (hint!=0 && reference==0){return 0-violation(1,nodes[expression].start);}
+            if !readonly_scalar(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(member),0){return -9;}
+            let expected:i64=if field!=0 {verify_primitive(&source[0..source.len()],nodes[field].name_start,nodes[field].name_end)}
+                else if reference!=0{values[reference].ty}else{0};
+            let actual=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),expected,0);
+            if actual<0{return actual;}if actual<1 || actual>9{return -9;}
+            values[member]=CheckedValue{ty:actual,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};
+            member=graph[member].next_sibling;if field!=0{field=graph[field].next_sibling;}if reference!=0{reference=graph[reference].next_sibling;}
+        }
+        if field!=0 || reference!=0{return 0-violation(1,nodes[expression].start);}
+        let checked=scalar_tuple_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),false);
+        if checked!=0{return checked;}
+        values[expression]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:0,origin_call:copy(expression),exclusive:false};
+    } else {return -9;}
+    let mut member=graph[values[expression].origin_call].first_child;let mut reference:u64=if hint==0{0}else{graph[hint].first_child};
+    while member!=0 {
+        if values[member].ty<1 || values[member].ty>9{return -9;}
+        if hint!=0 && (reference==0 || values[member].ty!=values[reference].ty){return 0-violation(1,nodes[expression].start);}
+        member=graph[member].next_sibling;if reference!=0{reference=graph[reference].next_sibling;}
+    }
+    if reference!=0{return 0-violation(1,nodes[expression].start);}475
+}
+
+fn tuple_alternative_moves(nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64)->i64 {
+    if nodes[expression].kind==26 {
+        let test=graph[expression].first_child;let yes=graph[test].next_sibling;
+        let left=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(yes));
+        let right=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],graph[yes].next_sibling);
+        let first=tuple_alternative_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],left);
+        if first!=0{return first;}return tuple_alternative_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],right);
+    }
+    if nodes[expression].kind==20{return scalar_tuple_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],expression,true);}
+    if nodes[expression].kind==15 {
+        let mut argument=graph[graph[expression].first_child].next_sibling;
+        while argument!=0 {
+            let status=scalar_moves(&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(argument),true);
+            if status!=0{return status;}
+            argument=graph[argument].next_sibling;
+        }
+    }0
+}
+
+fn scalar_tuple_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+    let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call));
+    if function == 0 || nodes[function].kind != 1 { return false; }
+    let mut argument = graph[graph[call].first_child].next_sibling;
+    while argument != 0 {
+        let mut operand = copy(argument);
+        while nodes[operand].kind == 19 { operand = graph[operand].first_child; }
+        if nodes[operand].kind == 13 { operand = graph[operand].first_child; }
+        else if nodes[operand].kind == 26 { return false; }
+        if !readonly_scalar(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], operand, 0) {
+            return false;
+        }
+        argument = graph[argument].next_sibling;
+    }
+    true
+}
+
+// Identifies the tuple-producing alternatives without evaluating any expression.
+pub fn tuple_conditional(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],expression:u64)->bool {
+    if nodes[expression].kind==20{return true;}
+    if nodes[expression].kind==15 {
+        let callee=bootstrap_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
+        let mut output=graph[callee].first_child;while nodes[output].kind==3{output=graph[output].next_sibling;}
+        return callee!=0 && tuple_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],output);
+    }
+    if nodes[expression].kind!=26{return false;}
+    let test=graph[expression].first_child;let yes=graph[test].next_sibling;
+    let left=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(yes));
+    let right=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],graph[yes].next_sibling);
+    tuple_conditional(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],left)
+        && tuple_conditional(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],right)
+}

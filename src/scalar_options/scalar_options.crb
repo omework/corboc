@@ -1,0 +1,628 @@
+use bootstrap::results::payload_type;
+use bootstrap::places::inline_array;
+use bootstrap::lowering_types::{option_code, optional, option_payload};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::loans::{borrow_mutable, live_roots, loan_conflict, loan_element};
+use bootstrap::places::{check_scalar_projection, record_parameter, scalar_place};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::lowering_types::{signed, unsigned};
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::regional_calls::region_signature;
+use bootstrap::tasks::{scalar_handle_type, copy_task_summary, dependent_handle, native_worker_contract};
+use bootstrap::calls::{bootstrap_callee, lookup_record_method};
+use bootstrap::ownership::{check_pool_new, plain_structure};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::places::{slice_parameter, bind_slice, inline_array_type};
+use bootstrap::signatures::move_slice_argument;
+use bootstrap::declarations::{verification_field, layout_visible};
+use bootstrap::places::record_with_shared_fields;
+
+// Scalar collection operations already use these verifier type codes.
+pub fn scalar_option_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    annotation: u64) -> i64 {
+    let name: [u8; 6] = [79,112,116,105,111,110];
+    let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+    if !spelling.content_eq(&name[..]) { return 0; }
+    let payload = graph[annotation].first_child;
+    if payload == 0 || graph[payload].next_sibling != 0 { return 0; }
+    let inner = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(payload));
+    if inner != 0 { return option_code(inner); }
+    let reference = reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(payload));
+    if reference != 0 { return option_code(reference); }
+    let owned = resource_payload_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(payload));
+    if owned != 0 { return option_code(owned); }
+    let ty = payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(payload));
+    if ty >= 1 && ty <= 9 { return 910 + ty; }
+    if ty == 11 { return 910 + verify_primitive(&source[0..source.len()], nodes[payload].name_start, nodes[payload].name_end); }
+    if inline_array(copy(ty)) || (ty >= 3000000 && ty < 4000000) { return option_code(ty); }
+    0
+}
+
+pub fn scalar_option(ty: i64) -> bool { ty > 910 && ty < 920 || optional(ty) }
+
+pub fn nested_checked_option(ty: i64) -> i64 {
+    if optional(copy(ty)) && scalar_option(option_payload(copy(ty))) { return option_payload(ty); }
+    0
+}
+
+fn option_leaf(ty: i64) -> i64 {
+    let mut current = ty;
+    while optional(copy(current)) {
+        current = option_payload(current);
+    }
+    current
+}
+
+pub fn checked_option_payload(ty: i64) -> i64 {
+    if optional(copy(ty)) { return option_payload(ty); }
+    ty - 910
+}
+
+pub fn option_variant(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
+    let some: [u8; 4] = [83,111,109,101];
+    let none: [u8; 4] = [78,111,110,101];
+    let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+    if spelling.content_eq(&some[..]) { return 1; }
+    if spelling.content_eq(&none[..]) { return 2; }
+    0
+}
+
+pub fn scalar_reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let inner = graph[annotation].first_child;
+    if inner == 0 || source[nodes[annotation].start] != 38 || graph[inner].first_child != 0 { return 0; }
+    let element = verify_primitive(&source[0..source.len()], nodes[inner].name_start, nodes[inner].name_end);
+    if element == 0 { return 0; }
+    if borrow_mutable(&source[nodes[annotation].start..nodes[inner].start]) { return 40 + element; }
+    return 20 + element;
+}
+
+// The node id identifies the type, while the low bit distinguishes &mut.
+pub fn record_borrow(ty: i64) -> bool { ty > 20000000 && ty <= 21048577 }
+
+pub fn slice_borrow(ty: i64) -> bool {
+    (ty >= 30000002 && ty <= 30000015) || (ty > 31000000 && ty <= 32048577)
+        || (ty >= 33020202 && ty <= 33839219)
+}
+
+pub fn slice_borrow_type(ty: i64) -> i64 {
+    if ty >= 33000000 { return 749; }
+    if ty > 31000000 { return 748; }
+    740 + (ty - 30000000) / 2
+}
+
+pub fn borrow_shape(ty: i64) -> u64 {
+    if record_borrow(copy(ty)) { return unsigned((ty - 20000000) / 2); }
+    if ty > 31000000 && ty <= 32048577 { return unsigned((ty - 31000000) / 2); }
+    0
+}
+
+pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let scalar = scalar_reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if scalar != 0 { return scalar; }
+    let (slice, shape, exclusive) = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if slice >= 741 && slice <= 747 && shape == 0 {
+        return 30000000 + (slice - 740) * 2 + (if exclusive { 1 } else { 0 });
+    }
+    if slice == 748 {
+        let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], shape);
+        return 31000000 + signed(nominal) * 2 + (if exclusive { 1 } else { 0 });
+    }
+    if slice == 749 {
+        let row = inline_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], shape);
+        return 33000000 + row * 2 + (if exclusive { 1 } else { 0 });
+    }
+    let inner = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation), false);
+    if inner == 0 { return 0; }
+    let mutable = borrow_mutable(&source[nodes[annotation].start..nodes[inner].start]);
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], inner);
+    20000000 + 2 * signed(nominal) + (if mutable { 1 } else { 0 })
+}
+
+pub fn borrow_exclusive(ty: i64) -> bool {
+    if record_borrow(copy(ty)) || slice_borrow(copy(ty)) { return ty % 2 == 1; }
+    ty >= 40
+}
+
+fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) -> i64 {
+    let start = nodes[expression].start;
+    let exclusive = borrow_exclusive(copy(reference));
+    let nominal = unsigned((reference - 20000000) / 2);
+    let kind = nodes[expression].kind;
+    let mut parent: u64 = 0;
+    let mut target: u64 = 0;
+    let mut shape: u64 = 0;
+    let binding = if kind == 7 {
+        let binding = graph[expression].binding;
+        if values[binding].state != 1 { return 0 - violation(6, start); }
+        if values[binding].ty != 734 || values[binding].exclusive != exclusive {
+            return 0 - violation(1, start);
+        }
+        if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+            return 0 - violation(4, start);
+        }
+        target = values[binding].target;
+        shape = values[binding].origin_call;
+        parent = values[binding].loan_parent;
+        binding
+    } else if kind == 13 {
+        let place = graph[expression].first_child;
+        if graph[expression].mutable != exclusive { return 0 - violation(1, start); }
+        let (actual, root, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &mut values[0..values.len()], place);
+        if actual < 0 { return actual; }
+        if actual != 300 || (values[root].ty != 300 && values[root].ty != 734) {
+            return 0 - violation(1, start);
+        }
+        let reborrow = values[root].ty == 734;
+        if exclusive && !(if reborrow { values[root].exclusive } else { values[root].mutable }) {
+            return 0 - violation(5, start);
+        }
+        target = if reborrow { values[root].target } else { copy(root) };
+        parent = if reborrow { copy(root) } else { 0 };
+        shape = layout;
+        root
+    } else { return -9; };
+    if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(shape)) != nominal {
+        return 0 - violation(1, start);
+    }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], copy(binding), expression, copy(exclusive) || kind == 7);
+    if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+    if kind == 7 {
+        let mutable = values[binding].mutable;
+        values[binding] = CheckedValue { ty: 734, state: 2, mutable: mutable, target: copy(target),
+            loan_parent: copy(parent), origin_call: copy(shape), exclusive: copy(exclusive) };
+    }
+    values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: shape, exclusive: exclusive };
+    return ty;
+}
+
+pub fn option_borrow(ty: i64) -> i64 {
+    if !optional(copy(ty)) { return 0; }
+    let payload = option_leaf(ty);
+    if (payload > 20 && payload <= 29) || (payload > 40 && payload <= 49)
+        || record_borrow(copy(payload)) || slice_borrow(copy(payload)) { return payload; }
+    0
+}
+
+// Resolve the selected field of a stored shared reference reborrow. This
+// path denotes the pointee, rather than the storage of the field itself.
+pub fn shared_field_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    expression: u64, binding: u64, layout: u64, reference: i64) -> u64 {
+    if reference <= 20 || reference >= 28 || nodes[expression].kind != 13
+        || graph[expression].mutable { return 0; }
+    let dereference = graph[expression].first_child;
+    let projection = graph[dereference].first_child;
+    if nodes[dereference].kind != 14 || nodes[projection].kind != 17 { return 0; }
+    let mut base = graph[projection].first_child;
+    while nodes[base].kind == 19 { base = graph[base].first_child; }
+    if nodes[base].kind != 14 || graph[graph[base].first_child].binding != binding { return 0; }
+    if !record_with_shared_fields(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(layout)) { return 0; }
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), copy(projection)) { return 0; }
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], layout, projection);
+    if field == 0 || scalar_reference_annotation(&source[0..source.len()],
+        &nodes[0..nodes.len()], &graph[0..graph.len()], graph[field].first_child) != reference { return 0; }
+    field
+}
+
+// A result can name the storage of a parameter, or a reference already
+// stored in that parameter. Record the latter only when every Some path
+// selects the same field.
+pub fn shared_option_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    function: u64, reference: i64, depth: u64) -> u64 {
+    if depth >= 128 || reference <= 20 || reference >= 28 || nodes[function].kind != 1 { return 0; }
+    let formal = graph[function].first_child;
+    let output = graph[formal].next_sibling;
+    let body = graph[output].next_sibling;
+    if nodes[formal].kind != 3 || nodes[output].kind != 4 || nodes[body].kind != 2 { return 0; }
+    let owner = nodes[function].parent;
+    let parameter = graph[formal].first_child;
+    let named = if nodes[owner].kind == 49 { owner } else { graph[parameter].first_child };
+    let layout = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], named);
+    if nodes[layout].kind != 28 { return 0; }
+    let mut tail = graph[body].first_child;
+    while graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+    if nodes[tail].kind != 10 && nodes[tail].kind != 6 { return 0; }
+    let mut current = body + 1;
+    while current < nodes.len() as u64 && nodes[current].start < nodes[body].end {
+        if nodes[current].kind == 6 && current != tail {
+            let value = graph[current].first_child;
+            if nodes[value].kind != 7 || graph[value].binding != 0
+                || option_variant(&source[0..source.len()], &nodes[0..nodes.len()], value) != 2 { return 0; }
+        }
+        current = current + 1;
+    }
+    let value = graph[tail].first_child;
+    let first = graph[value].first_child;
+    if nodes[value].kind == 15 && nodes[first].kind == 7 && graph[first].binding == 0
+        && option_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(first)) == 1 {
+        let borrow = graph[first].next_sibling;
+        let selected = shared_field_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            copy(borrow), copy(formal), copy(layout), reference);
+        if selected == 0 { return 0; }
+        // A call may change the pointee stored in a mutable receiver. Keep
+        // the original field binding only when all other uses go through
+        // different scalar fields, with no access to the whole record.
+        let returned_projection = graph[graph[borrow].first_child].first_child;
+        current = body + 1;
+        while current < nodes.len() as u64 && nodes[current].start < nodes[body].end {
+            if nodes[current].kind == 7 && graph[current].binding == formal {
+                let dereference = nodes[current].parent;
+                let mut projection = nodes[dereference].parent;
+                while nodes[projection].kind == 19 { projection = nodes[projection].parent; }
+                if nodes[dereference].kind != 14 || nodes[projection].kind != 17 { return 0; }
+                if projection != returned_projection {
+                    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(layout), projection);
+                    let annotation = graph[field].first_child;
+                    if field == 0 || graph[annotation].first_child != 0
+                        || verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
+                        return 0;
+                    }
+                }
+            }
+            current = current + 1;
+        }
+        return selected;
+    }
+    // A two-statement forwarding method can reborrow a nominal field,
+    // then return the inner method's independently stored shared reference.
+    if nodes[value].kind == 16 && nodes[first].kind == 7 && graph[first].next_sibling == 0 {
+        let local = graph[first].binding;
+        let statement = graph[body].first_child;
+        let initializer = graph[local].initializer;
+        let dereference = graph[initializer].first_child;
+        let projection = graph[dereference].first_child;
+        let mut base = graph[projection].first_child;
+        while nodes[base].kind == 19 { base = graph[base].first_child; }
+        if statement == local && nodes[local].kind == 5 && graph[local].next_sibling == tail
+            && nodes[initializer].kind == 13 && nodes[dereference].kind == 14 && nodes[projection].kind == 17
+            && nodes[base].kind == 14 && graph[graph[base].first_child].binding == formal {
+            let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), projection);
+            let annotation = graph[field].first_child;
+            let inner = graph[annotation].first_child;
+            if field != 0 && source[nodes[annotation].start] == 38 && inner != 0 {
+                let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], inner);
+                let name = &source[nodes[nested].name_start..nodes[nested].name_end];
+                let member = &source[nodes[value].name_start..nodes[value].name_end];
+                let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name, member, true);
+                return shared_option_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], method, reference, depth + 1);
+            }
+        }
+    }
+    if nodes[value].kind == 16 && nodes[first].kind == 7 && graph[first].binding == formal
+        && graph[first].next_sibling == 0 {
+        let name = &source[nodes[layout].name_start..nodes[layout].name_end];
+        let member = &source[nodes[value].name_start..nodes[value].name_end];
+        let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &name[0..name.len()], &member[0..member.len()], true);
+        return shared_option_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            method, reference, depth + 1);
+    }
+    if nodes[value].kind == 15 && nodes[first].kind == 7 && graph[first].binding == 0 {
+        let argument = graph[first].next_sibling;
+        let deref = graph[argument].first_child;
+        let binding = graph[deref].first_child;
+        // Forwarding through a stored owned aggregate preserves the identity
+        // of an independently stored shared-reference field in the callee.
+        if nodes[argument].kind == 13 && graph[argument].next_sibling == 0 && nodes[deref].kind == 17 {
+            let mut base = graph[deref].first_child;
+            while nodes[base].kind == 19 { base = graph[base].first_child; }
+            if nodes[base].kind == 14 && graph[graph[base].first_child].binding == formal {
+                let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(layout), copy(deref));
+                let annotation = graph[field].first_child;
+                let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+                if field != 0 && nodes[nested].kind == 28 {
+                    let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(value));
+                    return shared_option_field(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], callee, reference, depth + 1);
+                }
+            }
+        }
+        if nodes[argument].kind != 13 || graph[argument].next_sibling != 0
+            || nodes[deref].kind != 14 || graph[binding].binding != formal {
+            return 0;
+        }
+        let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], value);
+        return shared_option_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            callee, reference, depth + 1);
+    }
+    0
+}
+
+pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) -> i64 {
+    let start = nodes[expression].start;
+    let mutable = reference >= 40;
+    let element = reference % 20;
+    let kind = nodes[expression].kind;
+    let child = graph[expression].first_child;
+    if kind == 19 {
+        return check_option_reference(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], child, reference, result, ty);
+    }
+    if kind == 15 || kind == 16 {
+        let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(expression), copy(reference), 1);
+        if actual < 0 { return actual; }
+        if actual != reference || values[expression].target == 0 { return -9; }
+        copy_option_borrow(&mut values[0..values.len()], expression, result, copy(ty), false);
+        return ty;
+    }
+    if slice_borrow(copy(reference)) {
+        let expected = slice_borrow_type(copy(reference));
+        let checked = if kind == 7 {
+            move_slice_argument(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(expression), copy(expected))
+        } else if kind == 13 {
+            bind_slice(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(expression), copy(expression), 0)
+        } else { return -9; };
+        if checked < 0 { return checked; }
+        if checked == 0 || values[expression].ty != expected
+            || values[expression].exclusive != borrow_exclusive(copy(reference)) { return 0 - violation(1, start); }
+        if expected == 748 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], values[expression].origin_call) != borrow_shape(copy(reference)) {
+            return 0 - violation(1, start);
+        }
+        if expected == 749 && inline_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], values[expression].origin_call) != (reference - 33000000) / 2 {
+            return 0 - violation(1, start);
+        }
+        copy_option_borrow(&mut values[0..values.len()], expression, result, copy(ty), false);
+        return ty;
+    }
+    if record_borrow(copy(reference)) {
+        return check_option_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], expression, reference, result, ty);
+    }
+    if kind == 13 && nodes[child].kind == 14 && nodes[graph[child].first_child].kind == 17 {
+        let projection = graph[child].first_child;
+        let mut base = graph[projection].first_child;
+        while nodes[base].kind == 19 { base = graph[base].first_child; }
+        let binding = graph[graph[base].first_child].binding;
+        if values[binding].ty != 734 || values[binding].state != 1 { return -9; }
+        let formal = values[binding].target;
+        if nodes[formal].kind != 3 || formal != binding { return -9; }
+        let layout = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], values[binding].origin_call);
+        let field = shared_field_place(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(expression), binding, layout, reference);
+        if field == 0 { return 0 - violation(1, start); }
+        let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+            &graph[0..graph.len()], copy(formal), expression, false);
+        if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+        values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
+            target: formal, loan_parent: 0, origin_call: field, exclusive: false };
+        return ty;
+    }
+    let mut parent: u64 = 0;
+    let mut binding: u64 = 0;
+    let mut target: u64 = 0;
+    if kind == 7 || (kind == 13 && nodes[child].kind == 14) {
+        let operand = if kind == 7 { copy(expression) } else { graph[child].first_child };
+        if nodes[operand].kind != 7 { return -9; }
+        binding = graph[operand].binding;
+        if values[binding].state != 1 { return 0 - violation(6, start); }
+        if values[binding].ty >= 60 || loan_element(&values[0..values.len()], copy(binding)) != element
+            || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+            return 0 - violation(1, start);
+        }
+        target = values[binding].target;
+        if kind == 7 {
+            if values[binding].exclusive != mutable { return 0 - violation(1, start); }
+            parent = values[binding].loan_parent;
+        } else {
+            if graph[expression].mutable != mutable { return 0 - violation(1, start); }
+            if mutable && !values[binding].exclusive { return 0 - violation(5, start); }
+            parent = copy(binding);
+        }
+    } else if kind == 13 {
+        if graph[expression].mutable != mutable { return 0 - violation(1, start); }
+        if nodes[child].kind == 7 {
+            binding = graph[child].binding;
+            if values[binding].state != 1 || values[binding].target != 0 { return 0 - violation(4, start); }
+            if values[binding].ty != element { return 0 - violation(1, start); }
+            if mutable && !values[binding].mutable { return 0 - violation(5, start); }
+            target = copy(binding);
+        } else {
+            let (actual, root) = check_scalar_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], child, copy(mutable), true);
+            if actual < 0 { return actual; }
+            if actual != element { return 0 - violation(1, start); }
+            binding = root;
+            target = if values[binding].target == 0 { copy(binding) } else { values[binding].target };
+            if target != binding || values[binding].target == binding { parent = copy(binding); }
+        }
+    } else { return -9; }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+        &graph[0..graph.len()], copy(binding), expression, kind == 7 || copy(mutable));
+    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict < 0 { return -9; }
+    if kind == 7 {
+        let old_ty = values[binding].ty;
+        let old_target = values[binding].target;
+        let old_parent = values[binding].loan_parent;
+        let old_origin = values[binding].origin_call;
+        let old_mutable = values[binding].mutable;
+        values[binding] = CheckedValue { ty: old_ty, state: 2, mutable: old_mutable,
+            target: old_target, loan_parent: old_parent, origin_call: old_origin, exclusive: copy(mutable) };
+    }
+    values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: 0, exclusive: mutable };
+    return ty;
+}
+
+pub fn option_borrow_return(nodes: &[AstNode], values: &[CheckedValue], value: u64) -> bool {
+    let root = values[value].target;
+    root == 0 || (nodes[root].kind == 3 && values[root].target == root)
+}
+
+pub fn copy_option_borrow(values: &mut [CheckedValue], from: u64, to: u64, ty: i64, mutable: bool) {
+    let target = values[from].target;
+    let parent = values[from].loan_parent;
+    let exclusive = values[from].exclusive;
+    let origin = values[from].origin_call;
+    values[to] = CheckedValue { ty: ty, state: 1, mutable: mutable, target: target,
+        loan_parent: parent, origin_call: origin, exclusive: exclusive };
+}
+
+pub fn resource_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let allocation = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation), false);
+    if allocation >= 201 && allocation <= 207 { return allocation; }
+    if allocation == 301 {
+        let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], graph[annotation].first_child);
+        if plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(nominal), 0) {
+            return 40000000 + signed(nominal);
+        }
+    }
+    let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], annotation);
+    if (handle >= 620 && handle <= 629) || (handle >= 640 && handle <= 649) { return handle; }
+    0
+}
+
+pub fn option_allocation(ty: i64) -> i64 {
+    if !optional(copy(ty)) { return 0; }
+    let payload = option_leaf(ty);
+    if (payload >= 201 && payload <= 207) || nominal_allocation(copy(payload)) { return payload; }
+    0
+}
+
+pub fn nominal_allocation(ty: i64) -> bool { ty > 40000000 && ty <= 40524288 }
+
+pub fn allocation_shape(ty: i64) -> u64 { unsigned(ty - 40000000) }
+
+pub fn allocation_kind(ty: i64) -> i64 { if nominal_allocation(copy(ty)) { 301 } else { ty } }
+
+pub fn allocation_pool_type(ty: i64) -> i64 { if nominal_allocation(copy(ty)) { 99 } else { ty - 100 } }
+
+pub fn option_handle(ty: i64) -> i64 {
+    if !optional(copy(ty)) { return 0; }
+    let payload = option_leaf(ty);
+    if (payload >= 620 && payload <= 629) || (payload >= 640 && payload <= 649) { return payload; }
+    0
+}
+
+pub fn check_option_resource(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], expression: u64, result: u64, ty: i64) -> i64 {
+    let payload = option_payload(copy(ty));
+    let allocation = option_allocation(copy(ty)) != 0;
+    let actual = if allocation && nodes[expression].kind == 16 {
+        check_pool_new(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(expression), copy(expression))
+    } else {
+        verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(expression), allocation_kind(copy(payload)), 1)
+    };
+    if actual < 0 { return actual; }
+    if actual != allocation_kind(copy(payload)) || values[expression].state != 1 {
+        return 0 - violation(1, nodes[expression].start);
+    }
+    if nominal_allocation(copy(payload)) {
+        let shape = values[expression].origin_call;
+        if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], shape)
+            != allocation_shape(payload) { return 0 - violation(1, nodes[expression].start); }
+    }
+    if allocation {
+        copy_task_summary(&mut values[0..values.len()], expression, result, copy(ty), false);
+    } else {
+        values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: expression,
+            loan_parent: 0, origin_call: 0, exclusive: false };
+    }
+    return ty;
+}
+
+
+// When an envelope returns a worker built by an ordinary call, the
+// worker's explicitly moved reference formal can reach Some. The caller
+// reserves the actual source for the lifetime of that returned handle.
+pub fn option_handle_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> bool {
+    option_handle_capture_at(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], function, 0)
+}
+
+fn option_handle_capture_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64, depth: u64) -> bool {
+    if function == 0 || depth >= 128 { return false; }
+    let mut node = function + 1;
+    while node < nodes.len() as u64 && nodes[node].start < nodes[function].end {
+        if nodes[node].kind == 15 {
+            let some = graph[node].first_child;
+            let payload = graph[some].next_sibling;
+            if nodes[some].kind == 7 && graph[some].binding == 0 && nodes[payload].kind == 15
+                && option_variant(&source[0..source.len()], &nodes[0..nodes.len()], some) == 1 {
+                let mapper = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], payload);
+                let formal = graph[mapper].first_child;
+                if nodes[formal].kind == 3 && scalar_reference_annotation(&source[0..source.len()],
+                    &nodes[0..nodes.len()], &graph[0..graph.len()], graph[formal].first_child) != 0 {
+                    let output = graph[formal].next_sibling;
+                    if nodes[output].kind == 4 && option_handle(scalar_option_annotation(
+                        &source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], output)) != 0
+                        && option_handle_capture_at(&source[0..source.len()], &nodes[0..nodes.len()],
+                            &graph[0..graph.len()], copy(mapper), copy(depth) + 1) { return true; }
+                    let (contract, worker) = native_worker_contract(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], mapper);
+                    let captured_formal = graph[contract].first_child;
+                    let mut entry = graph[worker].first_child;
+                    while worker != 0 && nodes[entry].kind == 58 { entry = graph[entry].next_sibling; }
+                    while worker != 0 && nodes[entry].kind == 57 {
+                        if graph[entry].binding == captured_formal { return true; }
+                        entry = graph[entry].next_sibling;
+                    }
+                }
+            }
+        }
+        node = node + 1;
+    }
+    false
+}
+
+pub fn option_resource_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &[CheckedValue], node: u64, ty: i64) -> bool {
+    let root = values[node].target;
+    if option_allocation(copy(ty)) != 0 {
+        if root == 0 || nodes[root].kind == 3 { return true; }
+        let mut function = nodes[node].parent;
+        while function != 0 && nodes[function].kind != 1 { function = nodes[function].parent; }
+        let formal = values[root].target;
+        return formal != 0 && nodes[formal].kind == 3 && nodes[formal].parent == function;
+    }
+    if option_handle(ty) == 0 || !dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(root)) { return true; }
+    let mut function = nodes[node].parent;
+    while function != 0 && nodes[function].kind != 1 && nodes[function].kind != 35 {
+        function = nodes[function].parent;
+    }
+    let formal = graph[function].first_child;
+    if nodes[function].kind != 1 || nodes[nodes[function].parent].kind == 49
+        || nodes[formal].kind != 3 || nodes[graph[formal].next_sibling].kind != 4
+        || !option_handle_capture(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function) {
+        return false;
+    }
+    let mut capture = values[root].origin_call;
+    while capture != 0 {
+        let ty = values[capture].ty;
+        if ty <= 20 || ty >= 60 || values[capture].target != formal || values[formal].target != formal {
+            return false;
+        }
+        capture = values[capture].origin_call;
+    }
+    true
+}

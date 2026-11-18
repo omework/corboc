@@ -1,0 +1,2 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+fn unit()->Result<Void,bool>{Ok(())} fn outer()->Result<i64,bool>{unit()?;Ok(7)} fn main(){match outer(){Ok(x)=>{print(x);},Err(e)=>{drop(e);}}}

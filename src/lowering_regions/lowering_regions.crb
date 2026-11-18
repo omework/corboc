@@ -1,0 +1,82 @@
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::codegen::emit_size;
+use bootstrap::lowering_types::number;
+use bootstrap::scalar::integer_value;
+use bootstrap::target_c::{byte_text, character};
+
+pub fn stack_region(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+    if nodes[node].kind != 58 { return false; }
+    let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+    let name: [u8;12] = [115,116,97,99,107,95,114,101,103,105,111,110];
+    spelling.content_eq(&name[..])
+}
+
+fn region_mark(body: u64) {
+    { let code: [u8;11] = [114,101,103,105,111,110,95,109,97,114,107]; byte_text(&code[..]); }
+    number(body);
+}
+
+pub fn enter_region(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], body: u64, emit: bool, resumed: bool) -> bool {
+    let announcement = graph[body].first_child;
+    let maximum = graph[announcement].first_child;
+    let next = graph[maximum].next_sibling;
+    if maximum == 0 || (next != 0 && graph[next].next_sibling != 0) { return false; }
+    let count = if next != 0 {
+        let value = integer_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[next].first_child);
+        if !value.known || value.negative || value.magnitude == 0 { return false; }
+        value.magnitude
+    } else { 0 };
+    if emit {
+        if !resumed { { let code: [u8;12] = [82,101,103,105,111,110,66,97,110,100,32,42]; byte_text(&code[..]); } }
+        region_mark(body); { let code: [u8;35] = [61,99,117,114,114,101,110,116,95,98,97,110,100,59,10,115,99,111,112,101,100,95,114,101,103,105,111,110,95,101,110,116,101,114,40]; byte_text(&code[..]); }
+        emit_size(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], maximum);
+        character(44); number(count); { let code: [u8;5] = [44,48,41,59,10]; byte_text(&code[..]); }
+    }
+    true
+}
+
+pub fn exit_region(body: u64) {
+    { let code: [u8;22] = [115,99,111,112,101,100,95,114,101,103,105,111,110,95,114,101,115,116,111,114,101,40]; byte_text(&code[..]); } region_mark(body); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+}
+
+pub fn unwind_regions(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], statement: u64, boundary: u64) {
+    let mut outer: u64 = 0;
+    let mut ancestor = nodes[statement].parent;
+    while ancestor != 0 {
+        if nodes[ancestor].kind == 2 && stack_region(&source[0..source.len()], &nodes[0..nodes.len()], graph[ancestor].first_child) {
+            outer = copy(ancestor);
+        }
+        if ancestor == boundary { break; }
+        ancestor = nodes[ancestor].parent;
+    }
+    if outer != 0 { exit_region(outer); }
+}
+
+pub fn free_pages(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+    if nodes[node].kind != 58 { return false; }
+    let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+    let name: [u8;10] = [102,114,101,101,95,112,97,103,101,115];
+    spelling.content_eq(&name[..])
+}
+
+pub fn reclaim_scope(force: bool) {
+    if force { { let code: [u8;21] = [114,101,99,108,97,105,109,95,115,99,111,112,101,40,116,114,117,101,41,59,10]; byte_text(&code[..]); } }
+    else { { let code: [u8;22] = [114,101,99,108,97,105,109,95,115,99,111,112,101,40,102,97,108,115,101,41,59,10]; byte_text(&code[..]); } }
+}
+
+pub fn forced_reclaim(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], statement: u64, boundary: u64) -> bool {
+    let mut ancestor = nodes[statement].parent;
+    while ancestor != 0 {
+        if nodes[ancestor].kind == 2 {
+            let mut first = graph[ancestor].first_child;
+            if stack_region(&source[0..source.len()], &nodes[0..nodes.len()], copy(first)) {
+                first = graph[first].next_sibling;
+            }
+            if free_pages(&source[0..source.len()], &nodes[0..nodes.len()], first) { return true; }
+        }
+        if ancestor == boundary { break; }
+        ancestor = nodes[ancestor].parent;
+    }
+    false
+}

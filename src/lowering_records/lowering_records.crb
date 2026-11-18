@@ -1,0 +1,92 @@
+use bootstrap::lowering_c::c_identifier;
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::lowering_types::{c_type, number, signed, nominal_type, handle_type, unsigned, wide_array, array_item, array_length, array_name, array_has_owners};
+use bootstrap::target_c::{byte_text, character};
+
+pub fn record_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], types: &[i64], seen: &mut [bool], record: u64) {
+    if seen[record] { return; }
+    seen[record] = true;
+    let tagged = nodes[record].kind == 29;
+    let mut group = if tagged { graph[record].first_child } else { copy(record) };
+    while group != 0 {
+        let mut field = graph[group].first_child;
+        while field != 0 {
+            let ty = types[field];
+            if wide_array(copy(ty)) {
+                array_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                    &mut seen[0..seen.len()], copy(ty));
+            } else if ty >= 3000000 && ty < 4000000 {
+                record_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                    &mut seen[0..seen.len()], nominal_type(ty));
+            }
+            field = graph[field].next_sibling;
+        }
+        group = if tagged { graph[group].next_sibling } else { 0 };
+    }
+    { let code: [u8;8] = [115,116,114,117,99,116,32,115]; byte_text(&code[..]); } number(copy(record)); { let code: [u8;2] = [123,10]; byte_text(&code[..]); }
+    if types[record] > 0 { { let code: [u8;11] = [98,111,111,108,32,108,105,118,101,59,10]; byte_text(&code[..]); } }
+    if tagged { { let code: [u8;14] = [117,105,110,116,54,52,95,116,32,116,97,103,59,10]; byte_text(&code[..]); } }
+    else if graph[record].first_child == 0 { { let code: [u8;21] = [117,110,115,105,103,110,101,100,32,99,104,97,114,32,101,109,112,116,121,59,10]; byte_text(&code[..]); } }
+    group = if tagged { graph[record].first_child } else { record };
+    while group != 0 {
+        let mut field = graph[group].first_child;
+        while field != 0 {
+            { let bytes:[u8;6]=[117,110,105,111,110,123];byte_text(&bytes[..]); };c_type(types[field]);{ let bytes:[u8;2]=[32,109];byte_text(&bytes[..]); };number(copy(field));character(59);
+            c_type(types[field]);character(32);
+            if tagged{{ let bytes:[u8;2]=[118,95];byte_text(&bytes[..]); };c_identifier(&source[0..source.len()],nodes[group].name_start,nodes[group].name_end);character(95);}
+            { let bytes:[u8;2]=[102,95];byte_text(&bytes[..]); };byte_text(&source[nodes[field].name_start..nodes[field].name_end]);{ let bytes:[u8;4]=[59,125,59,10];byte_text(&bytes[..]); };
+            field = graph[field].next_sibling;
+        }
+        group = if tagged { graph[group].next_sibling } else { 0 };
+    }
+    { let code: [u8;3] = [125,59,10]; byte_text(&code[..]); }
+}
+
+pub fn destroy_fields(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], record: u64) {
+    let enumeration = nodes[record].kind == 29;
+    { let code: [u8;50] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(record));
+    { let code: [u8;11] = [40,118,111,105,100,42,114,97,119,41,123]; byte_text(&code[..]); } c_type(3000000 + signed(copy(record))); { let code: [u8;16] = [42,118,61,114,97,119,59,40,118,111,105,100,41,118,59,10]; byte_text(&code[..]); }
+    if types[record] > 0 {
+        { let code: [u8;34] = [105,102,40,33,118,45,62,108,105,118,101,41,114,101,116,117,114,110,59,118,45,62,108,105,118,101,61,102,97,108,115,101,59,102]; byte_text(&code[..]); } number(unsigned(types[record])); { let code: [u8;5] = [40,118,41,59,10]; byte_text(&code[..]); }
+    }
+    if enumeration { { let code: [u8;16] = [115,119,105,116,99,104,40,118,45,62,116,97,103,41,123,10]; byte_text(&code[..]); } }
+    let mut group = if enumeration { graph[record].first_child } else { record };
+    while group != 0 {
+        if enumeration { { let code: [u8;5] = [99,97,115,101,32]; byte_text(&code[..]); } number(copy(group)); { let code: [u8;2] = [58,10]; byte_text(&code[..]); } }
+        let mut field = graph[group].first_child;
+        while field != 0 {
+            let ty = types[field];
+            if array_has_owners(copy(ty)) {
+                { let code: [u8;5] = [100,114,111,112,95]; byte_text(&code[..]); } array_name(copy(ty)); { let code: [u8;6] = [40,38,118,45,62,109]; byte_text(&code[..]); } number(copy(field)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            } else if handle_type(copy(ty)) {
+                { let code: [u8;19] = [100,105,115,99,97,114,100,95,104,97,110,100,108,101,40,118,45,62,109]; byte_text(&code[..]); } number(copy(field)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            } else if ty >= 6000000 && ty < 7000000 {
+                { let code: [u8;9] = [112,117,116,40,38,118,45,62,109]; byte_text(&code[..]); } number(copy(field)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            } else if ty >= 3000000 && ty < 4000000 {
+                { let code: [u8;7] = [100,101,115,116,114,111,121]; byte_text(&code[..]); } number(nominal_type(ty)); { let code: [u8;6] = [40,38,118,45,62,109]; byte_text(&code[..]); } number(copy(field)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+            }
+            field = graph[field].next_sibling;
+        }
+        if enumeration { { let code: [u8;7] = [98,114,101,97,107,59,10]; byte_text(&code[..]); } }
+        group = if enumeration { graph[group].next_sibling } else { 0 };
+    }
+    if enumeration { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
+    { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
+}
+
+
+pub fn array_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], types: &[i64], seen: &mut [bool], ty: i64) {
+    let mut index: u64 = 1;
+    while index < nodes.len() as u64 && types[index] != ty { index = index + 1; }
+    if index == nodes.len() as u64 || seen[index] { return; }
+    seen[index] = true;
+    let item = array_item(copy(ty));
+    if item >= 3000000 && item < 4000000 {
+        record_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+            &mut seen[0..seen.len()], nominal_type(copy(item)));
+    }
+    { let code: [u8;15] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123]; byte_text(&code[..]); } c_type(item); { let code: [u8;7] = [32,105,116,101,109,115,91]; byte_text(&code[..]); }
+    let count = array_length(copy(ty));
+    number(if count == 0 { 1 } else { count });
+    { let code: [u8;4] = [93,59,125,32]; byte_text(&code[..]); } array_name(ty); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+}

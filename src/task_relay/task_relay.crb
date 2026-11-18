@@ -1,0 +1,589 @@
+use bootstrap::calls::{bootstrap_callee};
+use bootstrap::check_flow::pattern_variant;
+use bootstrap::tasks::{scalar_handle_type, complete_task, task_method, dependent_handle, copy_task_summary, match_payload};
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::scalar::{verify_primitive, folded_integer, integer_width};
+use bootstrap::loans::borrow_mutable;
+use bootstrap::verify::{verify_expr, violation};
+use bootstrap::declarations::{nominal_declaration, verification_field};
+use bootstrap::ownership::nominal_variant;
+use bootstrap::places::literal_length;
+
+// A relay has one distinguished incoming value. Its other arguments may
+// change, but they cannot copy, drop, or substitute that value.
+pub fn envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    if nodes[function].kind != 1 { return 0; }
+    let parameter = graph[function].first_child;
+    if nodes[parameter].kind != 3 { return 0; }
+    let input = graph[parameter].first_child;
+    let counter = graph[parameter].next_sibling;
+    let output = graph[counter].next_sibling;
+    let mut nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(input));
+    if nodes[nominal].kind != 29 {
+        let (tag, length) = handle_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(input));
+        drop(length);
+        if tag == 0 { return 0; }
+        nominal = copy(input);
+    }
+    if nodes[counter].kind != 3 || nodes[output].kind != 4 { return 0; }
+    let mut current = copy(function);
+    let mut remaining: u64 = 64;
+    let mut decreases = false;
+    while remaining != 0 {
+        let first = graph[current].first_child;
+        let second = graph[first].next_sibling;
+        let result = graph[second].next_sibling;
+        let count_type = graph[second].first_child;
+        if nodes[first].kind != 3 || nodes[second].kind != 3 || nodes[result].kind != 4
+            || graph[count_type].first_child != 0 || verify_primitive(&source[0..source.len()],
+                nodes[count_type].name_start, nodes[count_type].name_end) != 2
+            || !relay_shape(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                graph[first].first_child, copy(nominal))
+            || !relay_shape(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                copy(result), copy(nominal)) { return 0; }
+        let body = graph[result].next_sibling;
+        let tail = graph[body].first_child;
+        if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return 0; }
+        let value = graph[tail].first_child;
+        let mut forwarding = copy(value);
+        if nodes[value].kind == 26 {
+            let condition = graph[value].first_child;
+            let yes = graph[condition].next_sibling;
+            let no = graph[yes].next_sibling;
+            let lhs = graph[condition].first_child;
+            let rhs = graph[lhs].next_sibling;
+            let returns = graph[no].first_child;
+            let returned = graph[returns].first_child;
+            let recurse = graph[yes].first_child;
+            if nodes[yes].kind != 2 || nodes[no].kind != 2 || nodes[condition].kind != 11
+                || nodes[condition].name_end - nodes[condition].name_start != 1
+                || source[nodes[condition].name_start] != 62 || nodes[lhs].kind != 7
+                || graph[lhs].binding != second || !zero(&source[0..source.len()], &nodes[0..nodes.len()], copy(rhs))
+                || nodes[returns].kind != 10 || graph[returns].next_sibling != 0 || nodes[returned].kind != 7
+                || graph[returned].binding != first || nodes[recurse].kind != 10
+                || graph[recurse].next_sibling != 0 { return 0; }
+            forwarding = graph[recurse].first_child;
+        } else if nodes[value].kind == 7 && graph[value].binding == first {
+            return nominal;
+        }
+        if nodes[forwarding].kind != 15 { return 0; }
+        let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(forwarding));
+        if callee == 0 { return 0; }
+        let left = graph[graph[forwarding].first_child].next_sibling;
+        let right = graph[left].next_sibling;
+        if nodes[left].kind != 7 || graph[left].binding != first || graph[right].next_sibling != 0 { return 0; }
+        if nodes[value].kind == 26 {
+            let from = graph[right].first_child;
+            let step = graph[from].next_sibling;
+            if nodes[right].kind != 11 || nodes[right].name_end - nodes[right].name_start != 1
+                || source[nodes[right].name_start] != 45 || nodes[from].kind != 7
+                || graph[from].binding != second || nodes[step].kind != 9
+                || nodes[step].end - nodes[step].start != 1 || source[nodes[step].start] != 49 { return 0; }
+            decreases = true;
+        } else if nodes[right].kind != 7 || graph[right].binding != second { return 0; }
+        if callee == function { return if decreases { nominal } else { 0 }; }
+        current = callee;
+        remaining = remaining - 1;
+    }
+    return 0;
+}
+
+fn zero(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+    nodes[node].kind == 9 && nodes[node].end - nodes[node].start == 1 && source[nodes[node].start] == 48
+}
+
+pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, nominal: u64) -> i64 {
+    let first = graph[graph[call].first_child].next_sibling;
+    let second = graph[first].next_sibling;
+    if first == 0 || second == 0 || graph[second].next_sibling != 0 {
+        return 0 - violation(8, nodes[call].start);
+    }
+    if nodes[nominal].kind == 4 {
+        let (tag, length) = handle_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal);
+        if nodes[first].kind != 44 || tag == 0 { return -9; }
+        let mut element = graph[first].first_child;
+        let mut count: u64 = 0;
+        while element != 0 {
+            let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(element), copy(tag), 1);
+            if ty < 0 { return ty; }
+            if ty != tag { return 0 - violation(1, nodes[element].start); }
+            count = count + 1;
+            element = graph[element].next_sibling;
+        }
+        if length != count { return 0 - violation(1, nodes[first].start); }
+        let count_type = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], second, 2, 1);
+        if count_type < 0 { return count_type; }
+        if count_type != 2 { return 0 - violation(1, nodes[call].start); }
+        values[call] = CheckedValue { ty: 476, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: first, exclusive: false };
+        return 476;
+    }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(first), 310, 1);
+    if ty < 0 { return ty; }
+    let shape = values[first].origin_call;
+    let descriptor = graph[shape].first_child;
+    if ty != 310 || nodes[descriptor].kind != 7 || nominal_declaration(&source[0..source.len()],
+        &nodes[0..nodes.len()], &graph[0..graph.len()], descriptor) != nominal { return -9; }
+    let count = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], second, 2, 1);
+    if count < 0 { return count; }
+    if count != 2 { return 0 - violation(1, nodes[call].start); }
+    let member = values[first].loan_parent;
+    let conditional = values[first].exclusive;
+    values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
+        loan_parent: member, origin_call: shape, exclusive: conditional };
+    return 310;
+}
+
+// Recognize a synchronous consumer that either waits in its only variant
+// or recurses with the unchanged envelope and a decreasing counter.
+pub fn envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    if nodes[function].kind != 1 && nodes[function].kind != 35 { return 0; }
+    let asynchronous = nodes[function].kind == 35;
+    let parameter = graph[function].first_child;
+    let counter = graph[parameter].next_sibling;
+    let annotation = graph[counter].first_child;
+    let body = graph[counter].next_sibling;
+    let declared = graph[parameter].first_child;
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(declared));
+    if nodes[parameter].kind != 3 || nodes[counter].kind != 3 || nodes[nominal].kind != 29
+        || graph[declared].first_child != 0 || nodes[body].kind != 2 || graph[annotation].first_child != 0
+        || verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 2 {
+        return 0;
+    }
+    let variant = graph[nominal].first_child;
+    let field = graph[variant].first_child;
+    if field == 0 || graph[variant].next_sibling != 0 || graph[field].next_sibling != 0 { return 0; }
+    let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[field].first_child);
+    if asynchronous {
+        if handle < 640 || handle > 647 { return 0; }
+    } else if handle < 620 || handle > 627 { return 0; }
+    let tail = graph[body].first_child;
+    let branch = graph[tail].first_child;
+    if (nodes[tail].kind != 10 && nodes[tail].kind != 8) || graph[tail].next_sibling != 0
+        || nodes[branch].kind != 26 { return 0; }
+    let condition = graph[branch].first_child;
+    let yes = graph[condition].next_sibling;
+    let no = graph[yes].next_sibling;
+    let lhs = graph[condition].first_child;
+    let rhs = graph[lhs].next_sibling;
+    if nodes[condition].kind != 11 || nodes[condition].name_end - nodes[condition].name_start != 1
+        || source[nodes[condition].name_start] != 62 || nodes[lhs].kind != 7 || graph[lhs].binding != counter
+        || !zero(&source[0..source.len()], &nodes[0..nodes.len()], rhs) || nodes[yes].kind != 2
+        || nodes[no].kind != 2 { return 0; }
+    let recursive = graph[yes].first_child;
+    let operation = graph[recursive].first_child;
+    if asynchronous && nodes[operation].kind != 38 { return 0; }
+    let call = if asynchronous { graph[operation].first_child } else { operation };
+    if nodes[recursive].kind != 8 || graph[recursive].next_sibling != 0 || nodes[call].kind != 15 { return 0; }
+    let callee = graph[call].first_child;
+    let called = &source[nodes[callee].name_start..nodes[callee].name_end];
+    let declared_name = &source[nodes[function].name_start..nodes[function].name_end];
+    if nodes[callee].kind != 7 || graph[callee].binding != 0 || !called.content_eq(&declared_name[0..declared_name.len()]) {
+        return 0;
+    }
+    let first = graph[callee].next_sibling;
+    let second = graph[first].next_sibling;
+    let left = graph[second].first_child;
+    let right = graph[left].next_sibling;
+    if nodes[first].kind != 7 || graph[first].binding != parameter || graph[second].next_sibling != 0
+        || nodes[second].kind != 11 || nodes[second].name_end - nodes[second].name_start != 1
+        || source[nodes[second].name_start] != 45 || nodes[left].kind != 7 || graph[left].binding != counter
+        || nodes[right].kind != 9 || nodes[right].end - nodes[right].start != 1 || source[nodes[right].start] != 49 {
+        return 0;
+    }
+    let base = graph[no].first_child;
+    let match_node = graph[base].first_child;
+    if (nodes[base].kind != 10 && nodes[base].kind != 8) || graph[base].next_sibling != 0
+        || nodes[match_node].kind != 39 { return 0; }
+    let subject = graph[match_node].first_child;
+    let arm = graph[subject].next_sibling;
+    let pattern = graph[arm].first_child;
+    let pattern_field = graph[pattern].first_child;
+    let binder = graph[pattern_field].first_child;
+    let arm_body = graph[pattern].next_sibling;
+    if nodes[subject].kind != 7 || graph[subject].binding != parameter || nodes[pattern].kind != 53
+        || graph[arm].next_sibling != 0 || graph[pattern_field].next_sibling != 0
+        || !graph[binder].declaration || nodes[arm_body].kind != 2 { return 0; }
+    let enum_name = &source[nodes[nominal].name_start..nodes[nominal].name_end];
+    let pattern_name = &source[nodes[pattern].name_start..nodes[pattern].name_end];
+    if !enum_name.content_eq(&pattern_name[0..pattern_name.len()]) { return 0; }
+    if pattern_variant(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(pattern), copy(nominal)) != variant { return 0; }
+    let field_name = &source[nodes[field].name_start..nodes[field].name_end];
+    let matched_name = &source[nodes[pattern_field].name_start..nodes[pattern_field].name_end];
+    if !field_name.content_eq(&matched_name[0..matched_name.len()]) { return 0; }
+    let effect = graph[arm_body].first_child;
+    let discard = graph[effect].first_child;
+    let drop_name = graph[discard].first_child;
+    let join = graph[drop_name].next_sibling;
+    let operand = graph[join].first_child;
+    let word: [u8; 4] = [100,114,111,112];
+    let drops = &source[nodes[drop_name].name_start..nodes[drop_name].name_end];
+    if nodes[effect].kind != 8 || graph[effect].next_sibling != 0 || nodes[discard].kind != 15
+        || nodes[drop_name].kind != 7 || graph[drop_name].binding != 0 || !drops.content_eq(&word[..])
+        || graph[join].next_sibling != 0 || nodes[operand].kind != 7 || graph[operand].binding != binder {
+        return 0;
+    }
+    if asynchronous {
+        if nodes[join].kind != 38 { return 0; }
+    } else if !task_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], join) {
+        return 0;
+    }
+    return nominal;
+}
+
+pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, nominal: u64, asynchronous: bool) -> i64 {
+    let callee = graph[call].first_child;
+    let first = graph[callee].next_sibling;
+    let counter = graph[first].next_sibling;
+    if first == 0 || counter == 0 || graph[counter].next_sibling != 0 {
+        return 0 - violation(8, nodes[call].start);
+    }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(first), 310, 1);
+    if ty < 0 { return ty; }
+    let structure = values[first].origin_call;
+    let name = graph[structure].first_child;
+    if ty != 310 || nodes[name].kind != 7 || nominal_declaration(&source[0..source.len()],
+        &nodes[0..nodes.len()], &graph[0..graph.len()], copy(name)) != nominal { return -9; }
+    let member = values[first].loan_parent;
+    let handle = if member == 0 { graph[name].next_sibling } else { member };
+    let result = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], counter, 2, 1);
+    if result < 0 { return result; }
+    if result != 2 { return 0 - violation(1, nodes[call].start); }
+    let captures = values[handle].origin_call;
+    if asynchronous {
+        values[call] = CheckedValue { ty: 610, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: captures, exclusive: false };
+        return 610;
+    }
+    complete_task(&mut values[0..values.len()], captures, callee);
+    return 0;
+}
+
+// In the empty variant the incoming operation has completed. In the
+// populated variant its ownership and completion effect move to the field.
+pub fn conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    if nodes[function].kind != 1 { return 0; }
+    let handle = graph[function].first_child;
+    let counter = graph[handle].next_sibling;
+    let wait = graph[counter].next_sibling;
+    let output = graph[wait].next_sibling;
+    if nodes[handle].kind != 3 || nodes[counter].kind != 3 || nodes[wait].kind != 3
+        || nodes[output].kind != 4 || graph[output].first_child != 0 { return 0; }
+    let ht = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[handle].first_child);
+    if ht < 620 || ht > 627 { return 0; }
+    let ct = graph[counter].first_child;
+    let wt = graph[wait].first_child;
+    if graph[ct].first_child != 0 || graph[wt].first_child != 0
+        || verify_primitive(&source[0..source.len()], nodes[ct].name_start, nodes[ct].name_end) != 2
+        || verify_primitive(&source[0..source.len()], nodes[wt].name_start, nodes[wt].name_end) != 3 { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(output));
+    if nodes[nominal].kind != 29 { return 0; }
+    let limit = graph[graph[output].next_sibling].first_child;
+    let branch = graph[limit].first_child;
+    if nodes[limit].kind != 10 || graph[limit].next_sibling != 0 || nodes[branch].kind != 26 { return 0; }
+    let test = graph[branch].first_child;
+    let lhs = graph[test].first_child;
+    let rhs = graph[lhs].next_sibling;
+    let recurse = graph[graph[test].next_sibling].first_child;
+    let base = graph[graph[graph[test].next_sibling].next_sibling].first_child;
+    if !one_byte_operator(&source[0..source.len()], &nodes[0..nodes.len()], test, 62) || nodes[lhs].kind != 7
+        || graph[lhs].binding != counter || !zero(&source[0..source.len()], &nodes[0..nodes.len()], rhs)
+        || nodes[recurse].kind != 10 || graph[recurse].next_sibling != 0
+        || nodes[base].kind != 10 || graph[base].next_sibling != 0 { return 0; }
+    let call = graph[recurse].first_child;
+    let name = graph[call].first_child;
+    let original = &source[nodes[function].name_start..nodes[function].name_end];
+    let called = &source[nodes[name].name_start..nodes[name].name_end];
+    let first = graph[name].next_sibling;
+    let second = graph[first].next_sibling;
+    let third = graph[second].next_sibling;
+    let minus_lhs = graph[second].first_child;
+    let minus_rhs = graph[minus_lhs].next_sibling;
+    if nodes[call].kind != 15 || nodes[name].kind != 7 || graph[name].binding != 0
+        || !original.content_eq(&called[0..called.len()]) || nodes[first].kind != 7 || graph[first].binding != handle
+        || !one_byte_operator(&source[0..source.len()], &nodes[0..nodes.len()], copy(second), 45)
+        || nodes[minus_lhs].kind != 7 || graph[minus_lhs].binding != counter
+        || nodes[minus_rhs].kind != 9 || nodes[minus_rhs].end - nodes[minus_rhs].start != 1
+        || source[nodes[minus_rhs].start] != 49 || nodes[third].kind != 7
+        || graph[third].binding != wait || graph[third].next_sibling != 0 { return 0; }
+    let choice = graph[base].first_child;
+    let flag = graph[choice].first_child;
+    let completed = graph[graph[flag].next_sibling].first_child;
+    let deferred = graph[graph[graph[flag].next_sibling].next_sibling].first_child;
+    let discard = graph[completed].first_child;
+    let drop_name = graph[discard].first_child;
+    let join = graph[drop_name].next_sibling;
+    let operand = graph[join].first_child;
+    let empty_tail = graph[completed].next_sibling;
+    let empty = graph[empty_tail].first_child;
+    let waiting = graph[deferred].first_child;
+    let dropping = &source[nodes[drop_name].name_start..nodes[drop_name].name_end];
+    let drop_word: [u8; 4] = [100,114,111,112];
+    if nodes[choice].kind != 26 || nodes[flag].kind != 7 || graph[flag].binding != wait
+        || nodes[completed].kind != 8 || nodes[discard].kind != 15 || nodes[drop_name].kind != 7
+        || graph[drop_name].binding != 0 || !dropping.content_eq(&drop_word[..])
+        || !task_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(join))
+        || graph[join].next_sibling != 0 || nodes[operand].kind != 7 || graph[operand].binding != handle
+        || graph[operand].next_sibling != 0 || nodes[empty_tail].kind != 10 || graph[empty_tail].next_sibling != 0
+        || nodes[empty].kind != 17 || nodes[deferred].kind != 10 || graph[deferred].next_sibling != 0
+        || nodes[waiting].kind != 37 { return 0; }
+    let empty_name = graph[empty].first_child;
+    let waiting_name = graph[waiting].first_child;
+    if graph[empty_name].next_sibling != 0
+        || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], empty_name) != nominal
+        || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(waiting_name)) != nominal { return 0; }
+    let none = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), empty);
+    let some = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(waiting));
+    if none == 0 || some == 0 || none == some || graph[none].first_child != 0 { return 0; }
+    let member = graph[some].first_child;
+    let initial = graph[nominal].first_child;
+    let final_variant = graph[initial].next_sibling;
+    let field = graph[waiting_name].next_sibling;
+    let binding = graph[field].first_child;
+    if final_variant == 0 || graph[final_variant].next_sibling != 0
+        || (initial != none && initial != some) || (final_variant != none && final_variant != some)
+        || member == 0 || graph[member].next_sibling != 0 || graph[field].next_sibling != 0
+        || verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], some, copy(field)) != member
+        || nodes[binding].kind != 7 || graph[binding].binding != handle
+        || scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[member].first_child) != ht { return 0; }
+    waiting
+}
+
+fn one_byte_operator(source: &[u8], nodes: &[AstNode], node: u64, operator: u8) -> bool {
+    nodes[node].kind == 11 && nodes[node].name_end - nodes[node].name_start == 1
+        && source[nodes[node].name_start] == operator
+}
+
+pub fn apply_conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, function: u64, constructor: u64) -> i64 {
+    let first = graph[graph[call].first_child].next_sibling;
+    let second = graph[first].next_sibling;
+    let third = graph[second].next_sibling;
+    if third == 0 || graph[third].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(first), 0, 1);
+    if ty < 0 { return ty; }
+    let declared = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[graph[function].first_child].first_child);
+    if ty != declared { return 0 - violation(1, nodes[first].start); }
+    let count = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(second), 2, 1);
+    if count < 0 { return count; }
+    if count != 2 { return 0 - violation(1, nodes[second].start); }
+    let wait = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(third), 3, 1);
+    if wait < 0 { return wait; }
+    if wait != 3 { return 0 - violation(1, nodes[third].start); }
+    values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
+        loan_parent: first, origin_call: constructor, exclusive: true };
+    310
+}
+
+// A relay preserves the caller's concrete payload and capture records.
+// Validate its declared payload before transferring either record.
+pub fn nominal_handle_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    annotation: u64, asynchronous: bool) -> u64 {
+    let inner = graph[annotation].first_child;
+    if inner == 0 || graph[inner].next_sibling != 0 || graph[inner].first_child != 0 { return 0; }
+    let mut end = nodes[inner].start;
+    while end > nodes[annotation].start && source[end-1] != 60 { end = end - 1; }
+    if end == nodes[annotation].start { return 0; }
+    end = end - 1;
+    while end > nodes[annotation].start && source[end-1] == 32 { end = end - 1; }
+    let handle_word: [u8; 15] = [114,117,110,116,105,109,101,58,58,72,97,110,100,108,101];
+    let async_word: [u8; 20] = [114,117,110,116,105,109,101,58,58,65,115,121,110,99,72,97,110,100,108,101];
+    let name = &source[nodes[annotation].start..end];
+    if asynchronous && !name.content_eq(&async_word[..]) { return 0; }
+    if !asynchronous && !name.content_eq(&handle_word[..]) { return 0; }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], inner);
+    if nodes[nominal].kind == 28 { return nominal; }
+    0
+}
+
+pub fn nominal_handle_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    function: u64) -> (u64, bool) {
+    if nodes[function].kind != 1 { return (0, false); }
+    let parameter = graph[function].first_child;
+    let output = graph[parameter].next_sibling;
+    if nodes[parameter].kind != 3 || nodes[output].kind != 4 { return (0, false); }
+    let nominal = nominal_handle_payload(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[parameter].first_child, false);
+    if nominal == 0 { return (0, false); }
+    let body = graph[output].next_sibling;
+    let tail = graph[body].first_child;
+    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return (0, false); }
+    let value = graph[tail].first_child;
+    if nodes[value].kind == 7 && graph[value].binding == parameter {
+        let result = nominal_handle_payload(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], output, false);
+        return (if result == nominal { nominal } else { 0 }, false);
+    }
+    let result = graph[output].first_child;
+    let error = graph[result].next_sibling;
+    let result_word: [u8; 6] = [82,101,115,117,108,116];
+    let error_word: [u8; 14] = [114,117,110,116,105,109,101,58,58,69,114,114,111,114];
+    let output_name = &source[nodes[output].name_start..nodes[output].name_end];
+    let error_name = &source[nodes[error].start..nodes[error].end];
+    let receiver = graph[value].first_child;
+    if !output_name.content_eq(&result_word[..]) || !error_name.content_eq(&error_word[..])
+        || graph[result].first_child != 0 || graph[error].next_sibling != 0
+        || !task_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], value)
+        || nodes[receiver].kind != 7 || graph[receiver].binding != parameter { return (0, false); }
+    let declared = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], result);
+    return (if declared == nominal { nominal } else { 0 }, true);
+}
+
+pub fn nominal_relay_declaration(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    item: u64) -> bool {
+    let (ty, waits) = nominal_handle_relay(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], item);
+    drop(waits);
+    ty != 0
+}
+
+pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, nominal: u64, waits: bool, mode: i64) -> i64 {
+    let argument = graph[graph[call].first_child].next_sibling;
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(argument), 0, 1);
+    if ty < 0 { return ty; }
+    if ty != 3300 { return -9; }
+    let record = values[argument].loan_parent;
+    let shape = values[record].origin_call;
+    let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], shape);
+    if nominal != actual { return 0 - violation(1, nodes[argument].start); }
+    if !waits {
+        if mode != 1 { return -9; }
+        copy_task_summary(&mut values[0..values.len()], argument, call, 3300, false);
+        return 3300;
+    }
+    if mode == 3 && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(record)) {
+        return 0 - violation(8, nodes[call].start);
+    }
+    let captures = values[argument].origin_call;
+    let operation = graph[call].first_child;
+    complete_task(&mut values[0..values.len()], captures, operation);
+    values[call] = CheckedValue { ty: 3500, state: 1, mutable: false, target: 0,
+        loan_parent: record, origin_call: 0, exclusive: false };
+    3500
+}
+
+// A direct async consumer extracts a shared scalar field after awaiting
+// and returns a scalar on either Result arm.
+pub fn awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    function: u64) -> (u64, i64) {
+    if nodes[function].kind != 35 { return (0, 0); }
+    let parameter = graph[function].first_child;
+    let output = graph[parameter].next_sibling;
+    if nodes[parameter].kind != 3 || nodes[output].kind != 4 || graph[output].first_child != 0 { return (0, 0); }
+    let scalar = verify_primitive(&source[0..source.len()], nodes[output].name_start, nodes[output].name_end);
+    if scalar < 1 || scalar > 7 { return (0, 0); }
+    let nominal = nominal_handle_payload(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], graph[parameter].first_child, true);
+    if nominal == 0 { return (0, 0); }
+    let tail = graph[graph[output].next_sibling].first_child;
+    let matched = graph[tail].first_child;
+    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 || nodes[matched].kind != 39 { return (0, 0); }
+    let waited = graph[matched].first_child;
+    let handle = graph[waited].first_child;
+    if nodes[waited].kind != 38 || nodes[handle].kind != 7 || graph[handle].binding != parameter { return (0, 0); }
+    let first = graph[waited].next_sibling;
+    let second = graph[first].next_sibling;
+    if second == 0 || graph[second].next_sibling != 0 { return (0, 0); }
+    let kind = match_payload(graph[first].first_child, &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &source[0..source.len()], 300);
+    let (success, error) = if kind == 300 { (first, second) } else { (second, first) };
+    let ok_pattern = graph[success].first_child;
+    let err_pattern = graph[error].first_child;
+    if match_payload(copy(ok_pattern), &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &source[0..source.len()], 300) != 300
+        || match_payload(copy(err_pattern), &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &source[0..source.len()], 300) != 70 { return (0, 0); }
+    let binding = graph[ok_pattern].first_child;
+    if !graph[binding].declaration { return (0, 0); }
+    let local = graph[graph[ok_pattern].next_sibling].first_child;
+    let exit = graph[local].next_sibling;
+    let deref = graph[exit].first_child;
+    let reference = graph[deref].first_child;
+    let projection = graph[local].first_child;
+    let base = graph[projection].first_child;
+    if nodes[local].kind != 5 || nodes[projection].kind != 17 || nodes[base].kind != 7
+        || graph[base].binding != binding || nodes[exit].kind != 10 || graph[exit].next_sibling != 0
+        || nodes[deref].kind != 14 || nodes[reference].kind != 7 || graph[reference].binding != local { return (0, 0); }
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(nominal), projection);
+    let annotation = graph[field].first_child;
+    let referent = graph[annotation].first_child;
+    if field == 0 || referent == 0 || graph[referent].next_sibling != 0 || graph[referent].first_child != 0
+        || source[nodes[annotation].start] != 38
+        || borrow_mutable(&source[nodes[annotation].start..nodes[referent].start])
+        || verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end) != scalar { return (0, 0); }
+    let fallback = graph[graph[err_pattern].next_sibling].first_child;
+    let value = graph[fallback].first_child;
+    if nodes[fallback].kind != 10 || graph[fallback].next_sibling != 0 || nodes[value].kind != 9 { return (0, 0); }
+    if scalar == 3 {
+        let first_byte = source[nodes[value].start];
+        if first_byte != 102 && first_byte != 116 { return (0, 0); }
+    } else {
+        let literal = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], value);
+        let width = integer_width(copy(scalar));
+        let bits = if scalar < 3 { width - 1 } else { width };
+        if !literal.known || literal.negative || (bits < 64 && literal.magnitude >= 1 << bits) { return (0, 0); }
+    }
+    return (nominal, scalar);
+}
+
+pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], call: u64, nominal: u64, scalar: i64) -> i64 {
+    let argument = graph[graph[call].first_child].next_sibling;
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(argument), 0, 1);
+    if ty < 0 { return ty; }
+    if ty != 3400 { return -9; }
+    let record = values[argument].loan_parent;
+    let shape = values[record].origin_call;
+    if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], shape) != nominal { return 0 - violation(1, nodes[argument].start); }
+    if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], record) { return -9; }
+    let captures = values[argument].origin_call;
+    let ty = 610 + scalar;
+    values[call] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: 0,
+        loan_parent: 0, origin_call: captures, exclusive: false };
+    ty
+}
+
+fn handle_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> (i64, u64) {
+    if annotation == 0 || source[nodes[annotation].start] != 91 { return (0, 0); }
+    let element = graph[annotation].first_child;
+    let bound = graph[element].next_sibling;
+    if bound == 0 { return (0, 0); }
+    let (valid, length) = literal_length(&source[0..source.len()], &nodes[0..nodes.len()], bound);
+    if !valid { return (0, 0); }
+    let kind = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], element);
+    (kind, length)
+}
+
+fn relay_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, nominal: u64) -> bool {
+    if nodes[nominal].kind == 29 {
+        return graph[annotation].first_child == 0 && nominal_declaration(&source[0..source.len()],
+            &nodes[0..nodes.len()], &graph[0..graph.len()], annotation) == nominal;
+    }
+    let (expected, size) = handle_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal);
+    let (found, length) = handle_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    expected != 0 && found == expected && length == size
+}

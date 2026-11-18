@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use bootstrap::runtime_sources::readiness_runtime;
+//! Connect the standard readiness queue to scheduler parking and wakeups.
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::target_c::{byte_text, character};
+use bootstrap::lowering_types::{number, local};
+use bootstrap::lowering_annotations::same_bytes;
+
+/// Only the linker-designated std reactor may invoke the runtime hook.
+pub fn socket_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    if nodes[node].kind != 15 { return false; }
+    let callee = graph[node].first_child;
+    let name: [u8;20] = [114,117,110,116,105,109,101,58,58,119,97,105,116,95,115,111,99,107,101,116];
+    if nodes[callee].kind != 36 || !same_bytes(&source[nodes[callee].start..nodes[callee].end], &name[..]) { return false; }
+    let mut owner = nodes[node].parent;
+    while owner != 0 && nodes[owner].kind != 1 && nodes[owner].kind != 35 { owner = nodes[owner].parent; }
+    if nodes[owner].kind != 35 || graph[owner].fact != 41 { return false; }
+    let socket = graph[callee].next_sibling;
+    let direction = graph[socket].next_sibling;
+    // The hook's operands are the stable parameter slots of ready().
+    nodes[socket].kind == 7 && nodes[direction].kind == 7 && graph[direction].next_sibling == 0
+        && nodes[graph[socket].binding].parent == owner && nodes[graph[direction].binding].parent == owner
+}
+
+pub fn emit_socket_wait(nodes: &[AstNode], graph: &[StaticNode], node: u64) {
+    { let bytes: [u8; 8] = [105,110,116,54,52,95,116,32]; byte_text(&bytes[..]); }
+    character(116); number(copy(node)); character(59);
+    { let bytes: [u8; 6] = [10,99,97,115,101,32]; byte_text(&bytes[..]); }
+    number(copy(node));
+    { let bytes: [u8; 30] = [58,59,10,105,102,40,33,99,111,114,98,111,95,115,111,99,107,101,116,95,119,97,105,116,40,116,97,115,107,44]; byte_text(&bytes[..]); }
+    let socket = graph[graph[node].first_child].next_sibling;
+    let direction = graph[socket].next_sibling;
+    local(graph[socket].binding); character(44); local(graph[direction].binding);
+    { let bytes: [u8; 4] = [44,32,38,116]; byte_text(&bytes[..]); }
+    number(copy(node));
+    { let bytes: [u8; 12] = [41,41,123,116,97,115,107,45,62,112,99,61]; byte_text(&bytes[..]); }
+    number(node);
+    { let bytes: [u8; 16] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10]; byte_text(&bytes[..]); }
+}
+
+pub fn emit_socket_runtime(nodes: &[AstNode], graph: &[StaticNode]) {
+    let mut create: u64 = 0;
+    let mut watch: u64 = 0;
+    let mut wait: u64 = 0;
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if graph[item].fact == 42 { create = copy(item); }
+        if graph[item].fact == 43 { watch = copy(item); }
+        if graph[item].fact == 44 { wait = copy(item); }
+        item = graph[item].next_sibling;
+    }
+    if create == 0 || watch == 0 || wait == 0 { return; }
+    { let bytes: [u8; 28] = [35,100,101,102,105,110,101,32,99,111,114,98,111,95,113,117,101,117,101,95,99,114,101,97,116,101,32,102]; byte_text(&bytes[..]); }
+    number(create); character(10);
+    { let bytes: [u8; 27] = [35,100,101,102,105,110,101,32,99,111,114,98,111,95,113,117,101,117,101,95,119,97,116,99,104,32,102]; byte_text(&bytes[..]); }
+    number(watch); character(10);
+    { let bytes: [u8; 26] = [35,100,101,102,105,110,101,32,99,111,114,98,111,95,113,117,101,117,101,95,119,97,105,116,32,102]; byte_text(&bytes[..]); }
+    number(wait); character(10);
+    readiness_runtime();
+}

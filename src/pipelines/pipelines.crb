@@ -1,0 +1,1148 @@
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::generics::{expression_layout, deferred_iterator};
+use bootstrap::results::payload_type;
+use bootstrap::lowering_types::{signed, unsigned};
+use bootstrap::scalar_options::checked_option_payload;
+use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue, token_at};
+use bootstrap::calls::{lookup_record_method, borrowed_receiver, bootstrap_callee};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::places::{inline_array, value_record, record_pool_field, record_with_shared_fields};
+use bootstrap::loans::borrow_mutable;
+use bootstrap::scalar::{verify_primitive, verify_literal_hint};
+use bootstrap::scalar_options::{scalar_option_annotation, reference_annotation, record_borrow, borrow_exclusive, resource_payload_type, scalar_reference_annotation};
+use bootstrap::verify::{check_block, report_violation};
+use bootstrap::check_flow::LoopEdge;
+use bootstrap::regional_calls::region_vector_element;
+use bootstrap::task_vectors::record_with_handle_vector;
+
+// Captureless adapters share the initial loan as their runtime state.
+// A capturing adapter introduces storage for its predecessor and captures.
+struct Stage {
+    action: u8,
+    source: u64,
+    root: u64,
+    item: i64,
+    annotation: u64,
+    previous: u64,
+    mapper: u64,
+    state: u64,
+    captures: u64,
+    owned: bool,
+}
+
+struct Capture {
+    binding: u64,
+    annotation: u64,
+    ty: i64,
+    next: u64,
+    copied: bool,
+}
+
+fn new_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) -> bool {
+    if nodes[node].kind != 15 { return false; }
+    let callee = graph[node].first_child;
+    if nodes[callee].kind != 36 { return false; }
+    let first = token_at(&tokens[0..tokens.len()], nodes[callee].start);
+    let method = &source[tokens[first + 2].start..tokens[first + 2].end];
+    let new: [u8; 3] = [110,101,119];
+    if tokens[first + 1].kind != 43 || tokens[first + 2].end != nodes[callee].end
+        || !method.content_eq(&new[..]) { return false; }
+    let owner = &source[tokens[first].start..tokens[first].end];
+    let imported: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
+    if owner.content_eq(&imported[..]) { return true; }
+    let iter: [u8; 4] = [73,116,101,114];
+    if !owner.content_eq(&iter[..]) {
+        let prefix: [u8; 20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
+        if owner.len() < 20 || !same_bytes(&owner[0..20], &prefix[..]) { return false; }
+        let standard: [u8; 39] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95,95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114,95];
+        let direct: [u8; 25] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95,73,116,101,114,95];
+        if !(owner.len() >= 39 && same_bytes(&owner[0..39], &standard[..]))
+            && !(owner.len() >= 25 && same_bytes(&owner[0..25], &direct[..])) { return false; }
+        let layout = expression_layout(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], node);
+        let name = &source[nodes[layout].name_start..nodes[layout].name_end];
+        let next: [u8; 4] = [110,101,120,116];
+        return lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], name, &next[..], true) != 0;
+    }
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if nodes[item].kind == 28 || nodes[item].kind == 29 {
+            let name = &source[nodes[item].name_start..nodes[item].name_end];
+            if name.content_eq(&iter[..]) { return false; }
+        }
+        item = graph[item].next_sibling;
+    }
+    true
+}
+
+/// Finds a library factory whose generic forwarding body must be instantiated first.
+pub fn iterator_factory(source: &[u8], nodes: &[AstNode]) -> u64 {
+    let name: [u8; 17] = [95,95,99,111,114,98,111,95,105,116,101,114,95,105,116,101,114];
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 1 && same_bytes(&source[nodes[node].name_start..nodes[node].name_end], &name[..]) { return node; }
+        node = node + 1;
+    }
+    0
+}
+
+/// Inlines the source factory's single forwarding expression, retaining every
+/// argument expression and its evaluation count. No collection algorithm lives here.
+pub fn specialize_factory(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], factory: u64,
+    out: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    let mut parameter = graph[factory].first_child;
+    while parameter != 0 && nodes[parameter].kind != 3 { parameter = graph[parameter].next_sibling; }
+    let mut body = graph[factory].first_child;
+    while body != 0 && nodes[body].kind != 2 { body = graph[body].next_sibling; }
+    let expression = tail(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(body));
+    let callee = graph[expression].first_child;
+    let argument = graph[callee].next_sibling;
+    if nodes[expression].kind != 15 || nodes[argument].kind != 7 || graph[argument].binding != parameter
+        || graph[argument].next_sibling != 0 { return (8, 0); }
+    let mut edits: [u64; 3145728] = [0; 3145728];
+    edits[nodes[factory].start] = copy(factory);
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        let first = graph[node].first_child;
+        if nodes[node].kind == 15 && same_bytes(&source[nodes[first].name_start..nodes[first].name_end],
+            &source[nodes[factory].name_start..nodes[factory].name_end]) { edits[nodes[node].start] = copy(node); }
+        node = node + 1;
+    }
+    let mut byte: u64 = 0;
+    let mut pos: u64 = 0;
+    while byte < source.len() as u64 {
+        offsets[byte] = copy(pos);
+        let node = edits[byte];
+        if node == 0 { pos = put(&mut out[0..out.len()], pos, &source[byte..byte + 1]); byte = byte + 1; continue; }
+        if node != factory {
+            let value = graph[graph[node].first_child].next_sibling;
+            if value == 0 || graph[value].next_sibling != 0 { return (8, 0); }
+            pos = put(&mut out[0..out.len()], pos, &source[nodes[expression].start..nodes[argument].start]);
+            pos = put(&mut out[0..out.len()], pos, &source[nodes[value].start..nodes[value].end]);
+            pos = put(&mut out[0..out.len()], pos, &source[nodes[argument].end..nodes[expression].end]);
+        }
+        while byte < nodes[node].end { offsets[byte] = copy(pos); byte = byte + 1; }
+    }
+    offsets[byte] = copy(pos);
+    if pos >= out.len() as u64 { return (4, 0); };
+    (0, pos)
+}
+
+pub fn has_pipeline(source: &[u8], tokens: &[Token]) -> bool {
+    let plain: [u8; 4] = [73,116,101,114];
+    let imported: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
+    let new: [u8; 3] = [110,101,119];
+    let deferred: [u8; 13] = [95,95,99,111,114,98,111,95,105,116,101,114,95];
+    let mut token: u64 = 0;
+    while token + 3 < tokens.len() as u64 {
+        let spelling = &source[tokens[token].start..tokens[token].end];
+        if spelling.len() >= 13 && same_bytes(&spelling[0..13], &deferred[..]) { return true; }
+        if tokens[token + 1].kind == 43 && tokens[token + 3].kind == 2 {
+            let owner = &source[tokens[token].start..tokens[token].end];
+            let method = &source[tokens[token + 2].start..tokens[token + 2].end];
+            let generic: [u8; 20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
+            if (owner.content_eq(&plain[..]) || owner.content_eq(&imported[..])
+                || (owner.len() >= 20 && same_bytes(&owner[0..20], &generic[..])))
+                && method.content_eq(&new[..]) { return true; }
+        }
+        token = token + 1;
+    }
+    false
+}
+
+fn group(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+    let mut item = node;
+    while nodes[item].kind == 19 { item = graph[item].first_child; }
+    item
+}
+
+fn tail(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> u64 {
+    let mut item = graph[block].first_child;
+    while item != 0 {
+        if nodes[item].kind == 10 { return graph[item].first_child; }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+fn stage_at(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], node: u64) -> u64 {
+    let mut item = node;
+    let mut depth: u64 = 0;
+    while item != 0 && depth < 128 {
+        if stages[item].action == 1 || stages[item].action == 2 || stages[item].action == 5 || stages[item].action == 6 { return item; }
+        let kind = nodes[item].kind;
+        if kind == 7 { item = graph[graph[item].binding].initializer; }
+        else if kind == 19 { item = graph[item].first_child; }
+        else if kind == 2 {
+            item = tail(&nodes[0..nodes.len()], &graph[0..graph.len()], item);
+        } else { return 0; }
+        depth = depth + 1;
+    }
+    0
+}
+
+// A block with only a result needs no runtime scope for the erased stage.
+fn simple_result(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> u64 {
+    if nodes[block].kind != 2 { return 0; }
+    let result = graph[block].first_child;
+    if nodes[result].kind != 10 || graph[result].next_sibling != 0 { return 0; }
+    graph[result].first_child
+}
+
+fn fresh_loan(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], expression: u64) -> u64 {
+    let mut node = expression;
+    while node != 0 {
+        let first = graph[node].first_child;
+        if stages[node].action == 1 {
+            if stages[node].owned { return 0; }
+            let argument = graph[first].next_sibling;
+            if nodes[argument].kind == 13 { return argument; }
+            return 0;
+        }
+        if nodes[node].kind == 19 || stages[node].action == 2 { node = first; }
+        else { node = simple_result(&nodes[0..nodes.len()], &graph[0..graph.len()], node); }
+    }
+    0
+}
+
+fn source_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64) -> u64 {
+    let mut declaration = binding;
+    let mut depth: u64 = 0;
+    while declaration != 0 && depth < 128 {
+        let mut annotation = graph[declaration].type_node;
+        while annotation != 0 && source[nodes[annotation].start] == 38 {
+            annotation = graph[annotation].first_child;
+        }
+        if annotation != 0 {
+            return nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+        }
+        let expression = group(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[declaration].initializer);
+        if nodes[expression].kind == 37 {
+            return nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], expression);
+        }
+        if nodes[expression].kind == 15 {
+            let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], expression);
+            if function == 0 { return 0; }
+            let mut result = graph[function].first_child;
+            while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+            if nodes[result].kind != 4 { return 0; }
+            return nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
+        }
+        let place = if nodes[expression].kind == 13 { graph[expression].first_child } else { expression };
+        declaration = graph[place].binding;
+        depth = depth + 1;
+    }
+    0
+}
+
+fn mutable_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) -> bool {
+    if binding == 0 || depth >= 128 { return false; }
+    let annotation = graph[binding].type_node;
+    if annotation != 0 && source[nodes[annotation].start] == 38 {
+        let inner = graph[annotation].first_child;
+        return borrow_mutable(&source[nodes[annotation].start..nodes[inner].start]);
+    }
+    let init = group(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[binding].initializer);
+    if nodes[init].kind == 13 {
+        return borrow_mutable(&source[nodes[init].start..nodes[graph[init].first_child].start]);
+    }
+    if nodes[init].kind != 7 { return false; }
+    mutable_reference(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        graph[init].binding, depth + 1)
+}
+
+fn destination_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) -> i64 {
+    if binding == 0 || depth >= 128 { return 0; }
+    let annotation = graph[binding].type_node;
+    if annotation != 0 {
+        let vector = graph[annotation].first_child;
+        let scalar = region_vector_element(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(vector));
+        if scalar != 0 { return scalar; }
+        return item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[vector].first_child);
+    }
+    let init = group(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[binding].initializer);
+    if nodes[init].kind == 7 {
+        return destination_item(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[init].binding, depth + 1);
+    }
+    if nodes[init].kind != 16 { return 0; }
+    let receiver = graph[init].first_child;
+    let pool = graph[receiver].binding;
+    let constructor = graph[pool].initializer;
+    let vector = graph[graph[constructor].first_child].first_child;
+    let scalar_item = region_vector_element(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(vector));
+    if scalar_item != 0 { return scalar_item; }
+    item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[vector].first_child)
+}
+
+fn item_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    let option = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if option != 0 { return option; }
+    let reference = reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if reference != 0 { return reference; }
+    let owned = resource_payload_type(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(annotation));
+    if owned != 0 { return owned; }
+    let scalar = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+    if scalar != 0 { return scalar; }
+    let ty = payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
+    if inline_array(copy(ty)) || (ty >= 3000000 && ty < 4000000) { return ty; }
+    0
+}
+
+// A declared type can seed specialization. The ordinary verifier still
+// checks the generated function on every path, including explicit returns.
+fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) -> u64 {
+    if node == 0 || depth >= 128 { return 0; }
+    let child = graph[node].first_child;
+    let kind = nodes[node].kind;
+    if kind == 2 {
+        let mut tail = child;
+        while graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+        if nodes[tail].kind != 10 { return 0; }
+        return result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[tail].first_child, depth + 1);
+    }
+    if kind == 19 {
+        return result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            child, depth + 1);
+    }
+    if kind == 7 {
+        let binding = graph[node].binding;
+        if nodes[binding].kind == 3 { return graph[binding].first_child; }
+        let annotation = graph[binding].type_node;
+        if annotation != 0 { return annotation; }
+        return result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            graph[binding].initializer, depth + 1);
+    }
+    if kind == 15 {
+        let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], node);
+        let mut result = graph[function].first_child;
+        if function == 0 { return 0; }
+        while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+        if nodes[result].kind == 4 { return result; }
+    }
+    0
+}
+
+fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    captures: &[Capture], first_capture: u64, mapper: u64, parameter: u64, input: i64) -> (i64, u64) {
+    let next = graph[parameter].next_sibling;
+    let body = if nodes[next].kind == 4 { graph[next].next_sibling } else { copy(next) };
+    if nodes[body].kind != 2 || graph[body].next_sibling != 0 { return (0, 0); }
+    let annotation = if nodes[next].kind == 4 { copy(next) } else {
+        result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(body), 0)
+    };
+    let declared = if annotation == 0 { 0 }
+        else { item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) };
+    if first_capture == 0 && (declared != 0 || nodes[next].kind == 4) { return (declared, annotation); }
+    let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0,
+        loan_parent: 0, origin_call: 0, exclusive: false }; 524289];
+    let borrowed_record = record_borrow(copy(input));
+    let shape = if borrowed_record { unsigned((copy(input) - 20000000) / 2) }
+        else if input >= 3000000 { unsigned(copy(input) - 3000000) } else { 0 };
+    let parameter_type = if borrowed_record { 734 } else if shape == 0 { copy(input) }
+        else if nodes[shape].kind == 29 { 310 } else { 300 };
+    let reference = borrowed_record || (parameter_type > 20 && parameter_type < 60);
+    values[parameter] = CheckedValue { ty: copy(parameter_type), state: 1, mutable: graph[parameter].mutable,
+        target: if reference { copy(parameter) } else { 0 }, loan_parent: 0, origin_call: shape,
+        exclusive: reference && borrow_exclusive(input) };
+    let mut capture = copy(first_capture);
+    while capture != 0 {
+        let binding = captures[capture].binding;
+        let captured_ty = captures[capture].ty;
+        let record = captured_ty >= 3000000 && captured_ty < 4000000;
+        let reference = captured_ty > 20 && captured_ty < 60;
+        if reference {
+            values[capture] = CheckedValue { ty: copy(captured_ty) % 20, state: 1, mutable: false,
+                target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+        }
+        let origin = if record { unsigned(copy(captured_ty) - 3000000) } else { 0 };
+        values[binding] = CheckedValue { ty: if record { 300 } else { copy(captured_ty) },
+            state: 1, mutable: graph[binding].mutable, target: if reference { copy(capture) } else { 0 },
+            loan_parent: 0, origin_call: origin, exclusive: reference && captured_ty > 40 };
+        capture = captures[capture].next;
+    }
+    let mut edges = [LoopEdge { breaks: 0, continues: 0 }; 524289];
+    let (status, outcome) = check_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &tokens[0..tokens.len()], &mut values[..], &mut edges[..], body, if declared == 0 { -1 } else { copy(declared) }, true);
+    if status != 0 { return (0 - status, 0); }
+    capture = first_capture;
+    while capture != 0 {
+        let binding = captures[capture].binding;
+        if values[binding].state != 1 { return (0 - (report_violation(6, nodes[capture].start) as i64), 0); }
+        capture = captures[capture].next;
+    }
+    if declared != 0 { return (declared, annotation); }
+    if outcome < 5 || outcome > 13 { return (0, 0); }
+    return (outcome - 4, 0);
+}
+
+fn plan_captures(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], captures: &mut [Capture],
+    mapper: u64, parameter: u64) -> (i32, u64) {
+    let mut first: u64 = 0;
+    let mut name = parameter + 1;
+    while name < nodes.len() as u64 && nodes[name].start < nodes[mapper].end {
+        let binding = graph[name].binding;
+        if nodes[name].kind == 7 && binding != 0 && nodes[binding].start < nodes[mapper].start {
+            let mut saved = copy(first);
+            while saved != 0 && captures[saved].binding != binding { saved = captures[saved].next; }
+            if saved == 0 {
+                let annotation = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                    &graph[0..graph.len()], copy(name), 0);
+                let initializer = graph[binding].initializer;
+                let mut ty = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
+                if annotation == 0 && nodes[initializer].kind == 9 {
+                    ty = verify_literal_hint(&source[0..source.len()], &nodes[initializer]);
+                }
+                let copied = nodes[mapper].name_start == nodes[mapper].name_end;
+                if ty == 0 && !copied {
+                    ty = scalar_reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(annotation));
+                    if annotation == 0 && nodes[initializer].kind == 13 {
+                        let place = graph[initializer].first_child;
+                        if nodes[place].kind == 7 {
+                            let root = graph[place].binding;
+                            let target = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
+                                &graph[0..graph.len()], copy(place), 0);
+                            let mut scalar = verify_primitive(&source[0..source.len()], nodes[target].name_start, nodes[target].name_end);
+                            if target == 0 && nodes[graph[root].initializer].kind == 9 { scalar = 2; }
+                            if scalar > 0 && scalar <= 7 {
+                                ty = scalar + (if graph[initializer].mutable { 40 } else { 20 });
+                            }
+                        }
+                    }
+                }
+                if ty == 0 && !copied {
+                    let shape = if annotation != 0 { copy(annotation) } else { copy(initializer) };
+                    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], shape);
+                    if value_record(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(nominal), 0, true) {
+                        ty = 3000000 + signed(nominal);
+                    }
+                }
+                if (ty < 1 || ty > 9) && !(ty > 20 && ty < 60) && (ty <= 3000000 || ty >= 4000000) {
+                    return (report_violation(1, nodes[name].start), 0);
+                }
+                captures[name] = Capture { binding: binding, annotation: annotation, ty: ty, next: first, copied: copied };
+                first = copy(name);
+            }
+        }
+        name = name + 1;
+    }
+    (0, first)
+}
+
+fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    stages: &mut [Stage], captures: &mut [Capture], edits: &mut [u64]) -> i32 {
+    let next_name: [u8; 4] = [110,101,120,116];
+    let map_name: [u8; 3] = [109,97,112];
+    let filter_name: [u8; 6] = [102,105,108,116,101,114];
+    let reduce_name: [u8; 6] = [114,101,100,117,99,101];
+    let collect_name: [u8; 7] = [99,111,108,108,101,99,116];
+    let drop_name: [u8; 4] = [100,114,111,112];
+    let private_prefix: [u8; 13] = [100,105,110,95,112,105,112,101,108,105,110,101,95];
+    let prefix = &private_prefix[..];
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        let named = &source[nodes[node].name_start..nodes[node].name_end];
+        let callee = graph[node].first_child;
+        if named.len() >= prefix.len()
+            && prefix.content_eq(&named[0..prefix.len()]) {
+            return report_violation(1, nodes[node].start);
+        }
+        let first = copy(callee);
+        let argument = graph[first].next_sibling;
+        if new_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(node)) {
+            if argument == 0 || graph[argument].next_sibling != 0 {
+                return report_violation(1, nodes[node].start);
+            }
+            let place = graph[argument].first_child;
+            let origin = if nodes[argument].kind == 13 {
+                if !borrow_mutable(&source[nodes[argument].start..nodes[place].start]) {
+                    return report_violation(5, nodes[argument].start);
+                }
+                if nodes[place].kind == 14 { graph[graph[place].first_child].binding }
+                else { graph[place].binding }
+            } else { graph[argument].binding };
+            if origin == 0 || (nodes[argument].kind != 13 && !mutable_reference(&source[0..source.len()],
+                &nodes[0..nodes.len()], &graph[0..graph.len()], copy(origin), 0)) {
+                return report_violation(1, nodes[argument].start);
+            }
+            let concrete_layout = expression_layout(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &tokens[0..tokens.len()], copy(node));
+            let owned = concrete_layout != 0;
+            let layout = if owned { concrete_layout } else {
+                source_layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(origin))
+            };
+            if !owned && !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), 0, true)
+                && !record_with_shared_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout))
+                && !record_with_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout))
+                && record_pool_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout)) == 0 {
+                return report_violation(1, nodes[argument].start);
+            }
+            let owner = &source[nodes[layout].name_start..nodes[layout].name_end];
+            let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &owner[0..owner.len()], &next_name[..], true);
+            let parameter = graph[method].first_child;
+            let result = graph[parameter].next_sibling;
+            let item = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(result));
+            if nodes[method].kind != 1 || !borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], method)
+                || nodes[result].kind != 4 || item == 0 {
+                return report_violation(1, nodes[argument].start);
+            }
+            if !borrow_mutable(&source[nodes[parameter].start..nodes[parameter].name_start]) {
+                return report_violation(5, nodes[argument].start);
+            }
+            stages[node] = Stage { action: 1, source: layout, root: origin, item: checked_option_payload(item), annotation: graph[result].first_child, previous: 0, mapper: 0, state: 0, captures: 0, owned: owned };
+        } else if nodes[node].kind == 16 {
+            let previous = stage_at(&nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], copy(first));
+            if previous != 0 {
+                let layout = stages[previous].source;
+                let root = stages[previous].root;
+                let input = stages[previous].item;
+                let previous_state = stages[previous].state;
+                let prior_owned = stages[previous].owned;
+                if named.content_eq(&map_name[..]) || named.content_eq(&filter_name[..]) || named.content_eq(&reduce_name[..]) {
+                    let action: u8 = if named.content_eq(&map_name[..]) { 2 } else if named.content_eq(&filter_name[..]) { 5 } else { 6 };
+                    let parameter = graph[argument].first_child;
+                    let annotation = graph[parameter].first_child;
+                    let value_annotation = if action == 5 && source[nodes[annotation].start] == 38 {
+                        graph[annotation].first_child
+                    } else { copy(annotation) };
+                    if nodes[argument].kind != 55 || graph[argument].next_sibling != 0
+                        || nodes[parameter].kind != 3 || nodes[annotation].kind != 4
+                        || (action == 5 && (value_annotation == annotation || borrow_mutable(&source[nodes[annotation].start..nodes[value_annotation].start])))
+                        || item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(value_annotation)) != input {
+                        return report_violation(1, nodes[node].start);
+                    }
+                    let (status, captured) = plan_captures(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], &mut captures[0..captures.len()], copy(argument), copy(parameter));
+                    if status != 0 { return status; }
+                    let second = graph[parameter].next_sibling;
+                    if (action != 6 && nodes[second].kind == 3)
+                        || (action == 6 && nodes[graph[second].next_sibling].kind == 3) {
+                        return report_violation(1, nodes[node].start);
+                    }
+                    if action == 6 && (nodes[second].kind != 3 || item_type(&source[0..source.len()],
+                        &nodes[0..nodes.len()], &graph[0..graph.len()], graph[second].first_child) != input) {
+                        return report_violation(1, nodes[node].start);
+                    }
+                    let callback_input = if action == 5 { item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) } else { copy(input) };
+                    let expected_item = if action == 5 { 3 } else { copy(input) };
+                    let mut mapped_item = expected_item;
+                    let mut mapped_annotation = copy(annotation);
+                    if action == 2 {
+                        let (inferred_item, inferred_annotation) = mapper_result(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+                            &captures[0..captures.len()], copy(captured), copy(argument), copy(parameter), callback_input);
+                        mapped_item = inferred_item;
+                        mapped_annotation = inferred_annotation;
+                    }
+                    let item = if action == 5 { copy(input) } else { copy(mapped_item) };
+                    let annotation = if action == 5 { copy(value_annotation) } else { copy(mapped_annotation) };
+                    if action == 5 && mapped_item != 3 { return report_violation(1, nodes[node].start); }
+                    if item < 0 { return if item == -8 { 8 } else { 9 }; }
+                    if item == 0 { return report_violation(1, nodes[argument].start); }
+                    let other = graph[parameter].next_sibling;
+                    let body = if nodes[other].kind == 4 { graph[other].next_sibling } else { other };
+                    let value = simple_result(&nodes[0..nodes.len()], &graph[0..graph.len()], body);
+                    let identity = action == 2 && captured == 0 && nodes[value].kind == 7 && graph[value].binding == parameter;
+                    stages[node] = Stage { action: copy(action), source: layout, root: root, item: item, annotation: annotation,
+                        previous: previous, mapper: if identity { 0 } else { argument }, state: if captured != 0 || action == 6 { copy(node) } else { copy(previous_state) }, captures: captured, owned: prior_owned };
+                } else if named.content_eq(&next_name[..]) {
+                    let place = group(&nodes[0..nodes.len()], &graph[0..graph.len()], first);
+                    if argument != 0 { return report_violation(1, nodes[node].start); }
+                    if nodes[place].kind == 7 && !graph[graph[place].binding].mutable {
+                        return report_violation(5, nodes[place].start);
+                    }
+                    stages[node] = Stage { action: 3, source: layout, root: root, item: input, annotation: 0, previous: previous, mapper: 0, state: previous_state, captures: 0, owned: prior_owned };
+                } else if named.content_eq(&collect_name[..]) {
+                    let operand = graph[argument].first_child;
+                    let destination = if nodes[operand].kind == 14 { graph[operand].first_child } else { copy(operand) };
+                    if nodes[argument].kind != 13 || graph[argument].next_sibling != 0
+                        || nodes[destination].kind != 7 || nodes[nodes[node].parent].kind != 8 {
+                        return report_violation(1, nodes[node].start);
+                    }
+                    if !borrow_mutable(&source[nodes[argument].start..nodes[operand].start]) {
+                        return report_violation(5, nodes[argument].start);
+                    }
+                    let element = destination_item(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], graph[destination].binding, 0);
+                    if element != 0 && element != input {
+                        return report_violation(1, nodes[argument].start);
+                    }
+                    stages[node] = Stage { action: 4, source: layout, root: root, item: input, annotation: 0, previous: previous, mapper: destination, state: previous_state, captures: 0, owned: prior_owned };
+                } else { return report_violation(1, nodes[node].start); }
+            }
+        }
+        if stages[node].action != 0 {
+            // Nodes sharing a start are ordered from the base to the outer call.
+            edits[nodes[node].start] = copy(node);
+        }
+        node = node + 1;
+    }
+    let mut declaration = graph[0].first_child;
+    while declaration != 0 {
+        if deferred_iterator(&source[0..source.len()], &nodes[0..nodes.len()], copy(declaration)) {
+            edits[nodes[declaration].start] = copy(declaration);
+            stages[declaration] = Stage { action: 100, source: 0, root: 0, item: 0, annotation: 0, previous: 0, mapper: 0, state: 0, captures: 0, owned: false };
+        }
+        declaration = graph[declaration].next_sibling;
+    }
+    // A stage has its own type even though its only runtime field is erased
+    // to the loan. Prevent arbitrary code from observing that representation.
+    node = 1;
+    while node < nodes.len() as u64 {
+        let result = simple_result(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+        if result != 0 {
+            let stage = stage_at(&nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], result);
+            if stage != 0 { edits[nodes[node].start] = copy(node); }
+        }
+        let first = graph[node].first_child;
+        let exiting = if nodes[node].kind == 10 || nodes[node].kind == 6 {
+            stage_at(&nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], first)
+        } else { 0 };
+        if exiting != 0 {
+            let root = stages[exiting].root;
+            if nodes[node].kind == 6 || graph[root].scope == graph[node].scope {
+                return report_violation(4, nodes[node].start);
+            }
+        }
+        let stage = stage_at(&nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], copy(node));
+        if stage != 0 && !(stages[stage].action == 1 && stages[stage].owned) {
+            let parent = nodes[node].parent;
+            let kind = nodes[parent].kind;
+            let call = kind == 15 && graph[graph[parent].first_child].next_sibling == node;
+            let callee = graph[parent].first_child;
+            let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+            let drop_stage = call && spelling.content_eq(&drop_name[..])
+                && graph[callee].binding == 0 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(parent)) == 0;
+            if kind != 19 && kind != 10 && !(kind == 5 && graph[parent].type_node == 0)
+                && !(kind == 16 && stages[parent].action >= 2 && graph[parent].first_child == node)
+                && !drop_stage {
+                return report_violation(1, nodes[node].start);
+            }
+        }
+        node = node + 1;
+    }
+    0
+}
+
+fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
+    if text.len() as u64 >= out.len() as u64 - cursor { return out.len() as u64; }
+    let mut i: u64 = 0;
+    while i < text.len() as u64 {
+        out[cursor + i] = text[i];
+        i = i + 1;
+    }
+    cursor + i
+}
+
+fn identifier(out: &mut [u8], cursor: u64, kind: u8, node: u64) -> u64 {
+    let prefix: [u8; 13] = [100,105,110,95,112,105,112,101,108,105,110,101,95];
+    let alphabet: [u8; 10] = [48,49,50,51,52,53,54,55,56,57];
+    let mut digits: [u8; 20] = [0; 20];
+    let mut value = node;
+    let mut len: u64 = 0;
+    while value != 0 {
+        digits[len] = alphabet[value % 10];
+        value = value / 10;
+        len = len + 1;
+    }
+    let mut pos = put(&mut out[0..out.len()], cursor, &prefix[..]);
+    if len + 1 >= out.len() as u64 - pos { return out.len() as u64; }
+    out[pos] = kind;
+    pos = pos + 1;
+    while len > 0 {
+        len = len - 1;
+        out[pos] = digits[len];
+        pos = pos + 1;
+    }
+    pos
+}
+
+fn spelling(source: &[u8], nodes: &[AstNode], out: &mut [u8], cursor: u64, ty: i64, annotation: u64) -> u64 {
+    if annotation != 0 {
+        return put(&mut out[0..out.len()], cursor, &source[nodes[annotation].start..nodes[annotation].end]);
+    }
+    if ty >= 3000000 && ty < 4000000 {
+        let declaration = unsigned(ty - 3000000);
+        return put(&mut out[0..out.len()], cursor, &source[nodes[declaration].name_start..nodes[declaration].name_end]);
+    }
+    if ty > 20 && ty < 60 {
+        let shared: [u8; 1] = [38];
+        let mutable: [u8; 5] = [38,109,117,116,32];
+        let pos = if ty >= 40 { put(&mut out[0..out.len()], cursor, &mutable[..]) }
+            else { put(&mut out[0..out.len()], cursor, &shared[..]) };
+        return spelling(&source[0..source.len()], &nodes[0..nodes.len()],
+            &mut out[0..out.len()], pos, ty % 20, 0);
+    }
+    let i32_name: [u8; 3] = [105,51,50];
+    let i64_name: [u8; 3] = [105,54,52];
+    let bool_name: [u8; 4] = [98,111,111,108];
+    let u8_name: [u8; 2] = [117,56];
+    let u16_name: [u8; 3] = [117,49,54];
+    let u32_name: [u8; 3] = [117,51,50];
+    let u64_name: [u8; 3] = [117,54,52];
+    let f32_name: [u8; 3] = [102,51,50];
+    let f64_name: [u8; 3] = [102,54,52];
+    if ty == 1 { return put(&mut out[0..out.len()], cursor, &i32_name[..]); }
+    if ty == 2 { return put(&mut out[0..out.len()], cursor, &i64_name[..]); }
+    if ty == 3 { return put(&mut out[0..out.len()], cursor, &bool_name[..]); }
+    if ty == 4 { return put(&mut out[0..out.len()], cursor, &u8_name[..]); }
+    if ty == 5 { return put(&mut out[0..out.len()], cursor, &u16_name[..]); }
+    if ty == 6 { return put(&mut out[0..out.len()], cursor, &u32_name[..]); }
+    if ty == 7 { return put(&mut out[0..out.len()], cursor, &u64_name[..]); }
+    if ty == 8 { return put(&mut out[0..out.len()], cursor, &f32_name[..]); }
+    put(&mut out[0..out.len()], cursor, &f64_name[..])
+}
+
+fn state_type(source: &[u8], nodes: &[AstNode], stages: &[Stage], out: &mut [u8],
+    cursor: u64, node: u64) -> u64 {
+    let state = stages[node].state;
+    if state != 0 { return identifier(&mut out[0..out.len()], cursor, 116, state); }
+    let layout = stages[node].source;
+    put(&mut out[0..out.len()], cursor, &source[nodes[layout].name_start..nodes[layout].name_end])
+}
+
+fn captured_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], captures: &[Capture],
+    first: u64, body: u64, out: &mut [u8], cursor: u64) -> u64 {
+    let open: [u8; 2] = [123,32];
+    let bind: [u8; 4] = [108,101,116,32];
+    let borrow: [u8; 26] = [32,61,32,38,40,42,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,41,46];
+    let mut_borrow: [u8; 30] = [32,61,32,38,109,117,116,32,40,42,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,41,46];
+    let shared_field: [u8; 27] = [32,61,32,38,42,40,42,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,41,46];
+    let exclusive_field: [u8; 31] = [32,61,32,38,109,117,116,32,42,40,42,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,41,46];
+    let semi: [u8; 2] = [59,32];
+    let deref: [u8; 2] = [40,42];
+    let close: [u8; 1] = [41];
+    let mut pos = put(&mut out[0..out.len()], cursor, &open[..]);
+    let mut capture = copy(first);
+    while capture != 0 {
+        let binding = captures[capture].binding;
+        pos = put(&mut out[0..out.len()], pos, &bind[..]);
+        pos = identifier(&mut out[0..out.len()], pos, 97, copy(binding));
+        let ty = captures[capture].ty;
+        if ty > 20 && ty < 60 {
+            pos = if ty > 40 { put(&mut out[0..out.len()], pos, &exclusive_field[..]) }
+                else { put(&mut out[0..out.len()], pos, &shared_field[..]) };
+        } else {
+            pos = if graph[binding].mutable { put(&mut out[0..out.len()], pos, &mut_borrow[..]) }
+                else { put(&mut out[0..out.len()], pos, &borrow[..]) };
+        }
+        pos = identifier(&mut out[0..out.len()], pos, 102, binding);
+        pos = put(&mut out[0..out.len()], pos, &semi[..]);
+        capture = captures[capture].next;
+    }
+    let mut node = body + 1;
+    let mut byte = nodes[body].start + 1;
+    while node < nodes.len() as u64 && nodes[node].start < nodes[body].end {
+        let binding = graph[node].binding;
+        if nodes[node].kind == 7 && binding != 0 && nodes[node].start >= byte {
+            capture = copy(first);
+            while capture != 0 && captures[capture].binding != binding { capture = captures[capture].next; }
+            if capture != 0 {
+                let parent = nodes[node].parent;
+                let callee = graph[parent].first_child;
+                let intrinsic: [u8; 4] = [99,111,112,121];
+                let callee_name = &source[nodes[callee].start..nodes[callee].end];
+                let copied = nodes[parent].kind == 15 && graph[callee].binding == 0
+                    && graph[callee].next_sibling == node && graph[node].next_sibling == 0
+                    && callee_name.content_eq(&intrinsic[..]);
+                let start = if copied { nodes[parent].start } else { nodes[node].start };
+                pos = put(&mut out[0..out.len()], pos, &source[byte..start]);
+                let ty = captures[capture].ty;
+                let reference = ty > 20 && ty < 60;
+                let assignment = nodes[parent].kind == 21 && callee == node;
+                if reference {
+                    pos = identifier(&mut out[0..out.len()], pos, 97, copy(binding));
+                } else if assignment {
+                    let star: [u8; 1] = [42];
+                    pos = put(&mut out[0..out.len()], pos, &star[..]);
+                } else { pos = put(&mut out[0..out.len()], pos, &deref[..]); }
+                if !reference {
+                    pos = identifier(&mut out[0..out.len()], pos, 97, binding);
+                    if !assignment { pos = put(&mut out[0..out.len()], pos, &close[..]); }
+                }
+                byte = if copied { nodes[parent].end } else { nodes[node].end };
+            }
+        }
+        node = node + 1;
+    }
+    put(&mut out[0..out.len()], pos, &source[byte..nodes[body].end])
+}
+
+// The library owns control flow. This pass only resolves concrete receiver,
+// callable and type identities; its output is checked by the ordinary verifier.
+fn library_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], action: u8) -> u64 {
+    let iter: [u8; 17] = [95,95,99,111,114,98,111,95,105,116,101,114,95,73,116,101,114];
+    let map: [u8; 16] = [95,95,99,111,114,98,111,95,105,116,101,114,95,77,97,112];
+    let filter: [u8; 19] = [95,95,99,111,114,98,111,95,105,116,101,114,95,70,105,108,116,101,114];
+    let reduce: [u8; 19] = [95,95,99,111,114,98,111,95,105,116,101,114,95,82,101,100,117,99,101];
+    let collect: [u8; 7] = [99,111,108,108,101,99,116];
+    let next: [u8; 4] = [110,101,120,116];
+    let remaining: [u8; 9] = [114,101,109,97,105,110,105,110,103];
+    let adapter = if action >= 10 { action - 10 } else { copy(action) };
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        let name = &source[nodes[item].name_start..nodes[item].name_end];
+        let selected = (adapter == 1 && name.content_eq(&iter[..])) || (adapter == 2 && name.content_eq(&map[..])) || (adapter == 5 && name.content_eq(&filter[..]))
+            || ((adapter == 6 || adapter == 7) && name.content_eq(&reduce[..]));
+        if selected {
+            let mut function = if nodes[item].kind == 49 { graph[item].first_child } else { 0 };
+            while function != 0 {
+                let method = &source[nodes[function].name_start..nodes[function].name_end];
+                if (action >= 10 && method.content_eq(&collect[..])) || (action == 7 && method.content_eq(&remaining[..]))
+                    || (action < 10 && action != 7 && method.content_eq(&next[..])) {
+                    let mut child = graph[function].first_child;
+                    while child != 0 {
+                        if nodes[child].kind == 2 { return child; }
+                        child = graph[child].next_sibling;
+                    }
+                }
+                function = graph[function].next_sibling;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+fn collector_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], stage: u64) -> u64 {
+    library_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], stages[stage].action + 10)
+}
+
+fn library_render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage],
+    out: &mut [u8], cursor: u64, stage: u64, body: u64, start: u64, end: u64) -> u64 {
+    if end - nodes[body].start >= 16384 { return out.len() as u64; }
+    let mut edits: [u64; 16384] = [0; 16384];
+    let next: [u8; 4] = [110,101,120,116];
+    let mapper: [u8; 6] = [109,97,112,112,101,114];
+    let remaining: [u8; 9] = [114,101,109,97,105,110,105,110,103];
+    let self_name: [u8; 4] = [115,101,108,102];
+    let source_name: [u8; 6] = [115,111,117,114,99,101];
+    let destination: [u8; 11] = [100,101,115,116,105,110,97,116,105,111,110];
+    let state_name: [u8; 5] = [115,116,97,116,101];
+    let prior: [u8; 24] = [40,38,109,117,116,32,40,42,115,116,97,116,101,41,46,112,114,101,118,105,111,117,115,41];
+    let prior_loan: [u8; 25] = [40,38,109,117,116,32,42,40,42,115,116,97,116,101,41,46,112,114,101,118,105,111,117,115,41];
+    let state_arg: [u8; 14] = [40,38,109,117,116,32,42,115,116,97,116,101,44,32];
+    let open: [u8; 1] = [40];
+    let borrow: [u8; 6] = [40,38,109,117,116,32];
+    let close: [u8; 1] = [41];
+    let mut node = body + 1;
+    while node < nodes.len() as u64 && nodes[node].start < end {
+        let spelling = &source[nodes[node].name_start..nodes[node].name_end];
+        let first = graph[node].first_child;
+        let callee = group(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(first));
+        let field = &source[nodes[callee].name_start..nodes[callee].name_end];
+        if (nodes[node].kind == 16 && (spelling.content_eq(&next[..]) || spelling.content_eq(&remaining[..])))
+            || (nodes[node].kind == 15 && nodes[callee].kind == 17 && field.content_eq(&mapper[..]))
+            || (nodes[node].kind == 7 && (spelling.content_eq(&self_name[..])
+                || (stages[stage].action == 4 && (spelling.content_eq(&source_name[..]) || spelling.content_eq(&destination[..]))))) {
+            edits[nodes[node].start - nodes[body].start] = copy(node);
+        }
+        node = node + 1;
+    }
+    let mut byte = start;
+    let mut pos = cursor;
+    while byte < end {
+        let node = edits[byte - nodes[body].start];
+        if node == 0 { pos = put(&mut out[0..out.len()], pos, &source[byte..byte + 1]); byte = byte + 1; continue; }
+        let name = &source[nodes[node].name_start..nodes[node].name_end];
+        if nodes[node].kind == 16 && name.content_eq(&remaining[..]) {
+            pos = identifier(&mut out[0..out.len()], pos, 114, copy(stage));
+            pos = put(&mut out[0..out.len()], pos, &state_arg[..]);
+            let mut arguments = nodes[node].name_end;
+            while arguments < nodes[node].end && source[arguments] != 40 { arguments = arguments + 1; }
+            pos = put(&mut out[0..out.len()], pos, &source[arguments + 1..nodes[node].end]);
+        } else if nodes[node].kind == 16 {
+            pos = identifier(&mut out[0..out.len()], pos, 110, stages[stage].previous);
+            if stages[stage].action == 4 {
+                pos = put(&mut out[0..out.len()], pos, &borrow[..]);
+                pos = identifier(&mut out[0..out.len()], pos, 115, copy(stage));
+                pos = put(&mut out[0..out.len()], pos, &close[..]);
+            } else if stages[stage].state == stages[stages[stage].previous].state && stages[stage].action != 6 {
+                let forward: [u8; 13] = [40,38,109,117,116,32,42,115,116,97,116,101,41];
+                pos = put(&mut out[0..out.len()], pos, &forward[..]);
+            } else {
+                pos = if stages[stages[stage].previous].state == 0 && !stages[stages[stage].previous].owned {
+                    put(&mut out[0..out.len()], pos, &prior_loan[..])
+                } else { put(&mut out[0..out.len()], pos, &prior[..]) };
+            }
+        } else if nodes[node].kind == 15 {
+            pos = identifier(&mut out[0..out.len()], pos, 109, copy(stage));
+            pos = if stages[stage].captures != 0 { put(&mut out[0..out.len()], pos, &state_arg[..]) }
+                else { put(&mut out[0..out.len()], pos, &open[..]) };
+            let first = graph[node].first_child;
+            let mut arguments = nodes[first].end;
+            while arguments < nodes[node].end && source[arguments] != 40 { arguments = arguments + 1; }
+            pos = put(&mut out[0..out.len()], pos, &source[arguments + 1..nodes[node].end]);
+        } else {
+            let name = &source[nodes[node].name_start..nodes[node].name_end];
+            if stages[stage].action != 4 { pos = put(&mut out[0..out.len()], pos, &state_name[..]); }
+            else if name.content_eq(&source_name[..]) || name.content_eq(&self_name[..]) { pos = identifier(&mut out[0..out.len()], pos, 115, copy(stage)); }
+            else { let destination = stages[stage].mapper;
+                pos = put(&mut out[0..out.len()], pos, &source[nodes[destination].start..nodes[destination].end]); }
+        }
+        byte = nodes[node].end;
+    }
+    pos
+}
+
+fn helpers(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], captures: &[Capture],
+    out: &mut [u8], cursor: u64, node: u64) -> u64 {
+    let function: [u8; 4] = [10,102,110,32];
+    let method: [u8; 13] = [40,115,116,97,116,101,58,32,38,109,117,116,32];
+    let mapper_state: [u8; 26] = [40,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,58,32,38,109,117,116,32];
+    let result: [u8; 12] = [41,32,45,62,32,79,112,116,105,111,110,60];
+    let arrow: [u8; 5] = [41,32,45,62,32];
+    let begin: [u8; 4] = [62,32,123,32];
+    let next: [u8; 15] = [115,116,97,116,101,46,110,101,120,116,40,41,32,125,10];
+    let open: [u8; 1] = [40];
+    let space: [u8; 1] = [32];
+    let record: [u8; 8] = [10,115,116,114,117,99,116,32];
+    let previous_field: [u8; 13] = [32,123,32,112,114,101,118,105,111,117,115,58,32];
+    let mut_ref: [u8; 5] = [38,109,117,116,32];
+    let comma: [u8; 2] = [44,32];
+    let colon: [u8; 2] = [58,32];
+    let end_record: [u8; 3] = [32,125,10];
+    let param: [u8; 2] = [44,32];
+    let item = stages[node].item;
+    let captured = stages[node].captures;
+    let previous = stages[node].previous;
+    let mut pos = cursor;
+    if stages[node].captures != 0 || stages[node].action == 6 {
+        pos = put(&mut out[0..out.len()], pos, &record[..]);
+        pos = identifier(&mut out[0..out.len()], pos, 116, copy(node));
+        pos = put(&mut out[0..out.len()], pos, &previous_field[..]);
+        if stages[previous].state == 0 && !stages[previous].owned { pos = put(&mut out[0..out.len()], pos, &mut_ref[..]); }
+        pos = state_type(&source[0..source.len()], &nodes[0..nodes.len()], &stages[0..stages.len()],
+            &mut out[0..out.len()], pos, copy(previous));
+        let mut capture = copy(captured);
+        while capture != 0 {
+            pos = put(&mut out[0..out.len()], pos, &comma[..]);
+            pos = identifier(&mut out[0..out.len()], pos, 102, captures[capture].binding);
+            pos = put(&mut out[0..out.len()], pos, &colon[..]);
+            pos = spelling(&source[0..source.len()], &nodes[0..nodes.len()], &mut out[0..out.len()], pos,
+                captures[capture].ty, captures[capture].annotation);
+            capture = captures[capture].next;
+        }
+        if stages[node].action == 6 {
+            let finished: [u8; 16] = [44,32,102,105,110,105,115,104,101,100,58,32,98,111,111,108];
+            pos = put(&mut out[0..out.len()], pos, &finished[..]);
+        }
+        pos = put(&mut out[0..out.len()], pos, &end_record[..]);
+    }
+    if (stages[node].action == 2 || stages[node].action == 5 || stages[node].action == 6) && stages[node].mapper != 0 {
+        let mapper = stages[node].mapper;
+        let parameter = graph[mapper].first_child;
+        let second = graph[parameter].next_sibling;
+        let last_parameter = if nodes[second].kind == 3 { second } else { copy(parameter) };
+        let other = graph[last_parameter].next_sibling;
+        let body = if nodes[other].kind == 4 { graph[other].next_sibling } else { other };
+        pos = put(&mut out[0..out.len()], pos, &function[..]);
+        pos = identifier(&mut out[0..out.len()], pos, 109, copy(node));
+        if captured != 0 {
+            pos = put(&mut out[0..out.len()], pos, &mapper_state[..]);
+            pos = state_type(&source[0..source.len()], &nodes[0..nodes.len()], &stages[0..stages.len()],
+                &mut out[0..out.len()], pos, copy(node));
+            pos = put(&mut out[0..out.len()], pos, &param[..]);
+        } else { pos = put(&mut out[0..out.len()], pos, &open[..]); }
+        pos = put(&mut out[0..out.len()], pos, &source[nodes[parameter].start..nodes[last_parameter].end]);
+        pos = put(&mut out[0..out.len()], pos, &arrow[..]);
+        pos = spelling(&source[0..source.len()], &nodes[0..nodes.len()], &mut out[0..out.len()], pos, if stages[node].action == 5 { 3 } else { copy(item) }, if stages[node].action == 5 { 0 } else { stages[node].annotation });
+        pos = put(&mut out[0..out.len()], pos, &space[..]);
+        if captured != 0 {
+            pos = captured_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &captures[0..captures.len()], copy(captured), body, &mut out[0..out.len()], pos);
+        } else {
+            pos = put(&mut out[0..out.len()], pos, &source[nodes[body].start..nodes[body].end]);
+        }
+    }
+    if stages[node].action == 6 {
+        pos = put(&mut out[0..out.len()], pos, &function[..]);
+        pos = identifier(&mut out[0..out.len()], pos, 114, copy(node));
+        pos = put(&mut out[0..out.len()], pos, &method[..]);
+        pos = state_type(&source[0..source.len()], &nodes[0..nodes.len()], &stages[0..stages.len()], &mut out[0..out.len()], pos, copy(node));
+        let accumulator: [u8; 19] = [44,32,109,117,116,32,97,99,99,117,109,117,108,97,116,111,114,58,32];
+        pos = put(&mut out[0..out.len()], pos, &accumulator[..]);
+        pos = spelling(&source[0..source.len()], &nodes[0..nodes.len()], &mut out[0..out.len()], pos, copy(item), stages[node].annotation);
+        pos = put(&mut out[0..out.len()], pos, &arrow[..]);
+        pos = spelling(&source[0..source.len()], &nodes[0..nodes.len()], &mut out[0..out.len()], pos, copy(item), stages[node].annotation);
+        let space: [u8; 1] = [32];
+        pos = put(&mut out[0..out.len()], pos, &space[..]);
+        let body = library_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], 7);
+        if body == 0 { return out.len() as u64; }
+        pos = library_render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &stages[0..stages.len()], &mut out[0..out.len()], pos, copy(node), copy(body), nodes[body].start, nodes[body].end);
+    }
+    pos = put(&mut out[0..out.len()], pos, &function[..]);
+    pos = identifier(&mut out[0..out.len()], pos, 110, copy(node));
+    pos = put(&mut out[0..out.len()], pos, &method[..]);
+    pos = state_type(&source[0..source.len()], &nodes[0..nodes.len()], &stages[0..stages.len()],
+        &mut out[0..out.len()], pos, copy(node));
+    pos = put(&mut out[0..out.len()], pos, &result[..]);
+    pos = spelling(&source[0..source.len()], &nodes[0..nodes.len()], &mut out[0..out.len()], pos, item, stages[node].annotation);
+    pos = put(&mut out[0..out.len()], pos, &begin[..]);
+    if stages[node].action == 1 { return put(&mut out[0..out.len()], pos, &next[..]); }
+    // A captureless identity callable allows the ordinary local forwarding reduction.
+    if stages[node].mapper == 0 {
+        pos = identifier(&mut out[0..out.len()], pos, 110, stages[node].previous);
+        let argument: [u8; 25] = [40,38,109,117,116,32,40,42,115,116,97,116,101,41,46,112,114,101,118,105,111,117,115,41,125];
+        if stages[node].state == stages[stages[node].previous].state {
+            let forward: [u8; 15] = [40,38,109,117,116,32,42,115,116,97,116,101,41,125,10];
+            return put(&mut out[0..out.len()], pos, &forward[..]);
+        }
+        return put(&mut out[0..out.len()], pos, &argument[..]);
+    }
+    let body = library_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], stages[node].action);
+    if body == 0 { return out.len() as u64; }
+    // The signature already opened the body. The algorithm itself comes from STD.
+    library_render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &stages[0..stages.len()], &mut out[0..out.len()], pos, copy(node), copy(body), nodes[body].start + 1, nodes[body].end)
+
+}
+
+fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], edits: &[u64],
+    captures: &[Capture], out: &mut [u8], offsets: &mut [u64], cursor: u64, start: u64, end: u64, parent: u64, depth: u64) -> u64 {
+    if depth >= 128 { return out.len() as u64; }
+    let mut pos = cursor;
+    let mut byte = start;
+    while byte < end {
+        offsets[byte] = copy(pos);
+        let mut node = edits[byte];
+        while node != 0 && (node == parent || nodes[node].end > end) {
+            let inner = graph[node].first_child;
+            node = if stages[inner].action != 0 && nodes[inner].start == byte { inner } else { 0 };
+        }
+        if node == 0 {
+            if pos >= out.len() as u64 { return out.len() as u64; }
+            out[pos] = source[byte];
+            pos = pos + 1;
+            byte = byte + 1;
+            continue;
+        }
+        let action = stages[node].action;
+        if action == 100 { byte = nodes[node].end; continue; }
+        let callee = graph[node].first_child;
+        let first = callee;
+        if action <= 2 || action == 5 || action == 6 {
+            let captured = stages[node].captures;
+            let construct = captured != 0 || action == 6;
+            let prefix: [u8; 13] = [32,123,32,112,114,101,118,105,111,117,115,58,32];
+            let comma: [u8; 2] = [44,32];
+            let colon: [u8; 2] = [58,32];
+            let end_value: [u8; 2] = [32,125];
+            let copy_open: [u8; 5] = [99,111,112,121,40];
+            let close: [u8; 1] = [41];
+            if construct {
+                pos = identifier(&mut out[0..out.len()], pos, 116, copy(node));
+                pos = put(&mut out[0..out.len()], pos, &prefix[..]);
+            }
+            let inner = if action == 1 && stages[node].owned { copy(node) }
+                else if action == 1 { graph[first].next_sibling }
+                else if action == 2 || action == 5 || action == 6 { first }
+                else { simple_result(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) };
+            pos = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()],
+                &edits[0..edits.len()], &captures[0..captures.len()], &mut out[0..out.len()], &mut offsets[0..offsets.len()], pos,
+                nodes[inner].start, nodes[inner].end, copy(node), copy(depth) + 1);
+            let mut capture = captured;
+            while capture != 0 {
+                let binding = captures[capture].binding;
+                pos = put(&mut out[0..out.len()], pos, &comma[..]);
+                pos = identifier(&mut out[0..out.len()], pos, 102, copy(binding));
+                pos = put(&mut out[0..out.len()], pos, &colon[..]);
+                let copied = captures[capture].copied;
+                if copied { pos = put(&mut out[0..out.len()], pos, &copy_open[..]); }
+                pos = put(&mut out[0..out.len()], pos, &source[nodes[binding].name_start..nodes[binding].name_end]);
+                if copied { pos = put(&mut out[0..out.len()], pos, &close[..]); }
+                capture = captures[capture].next;
+            }
+            if action == 6 {
+                let finished: [u8; 17] = [44,32,102,105,110,105,115,104,101,100,58,32,102,97,108,115,101];
+                pos = put(&mut out[0..out.len()], pos, &finished[..]);
+            }
+            if construct { pos = put(&mut out[0..out.len()], pos, &end_value[..]); }
+        } else {
+            let operand = group(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(first));
+            let direct = action == 3 && nodes[operand].kind == 7;
+            let fresh = if action == 3 && stages[node].state == 0 { fresh_loan(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                &stages[0..stages.len()], copy(first)) } else { 0 };
+            let declare: [u8; 10] = [123,32,108,101,116,32,109,117,116,32];
+            let assign: [u8; 3] = [32,61,32];
+            let semi: [u8; 2] = [59,32];
+            let finish: [u8; 2] = [32,125];
+            if action == 4 {
+                pos = put(&mut out[0..out.len()], pos, &declare[..]);
+                pos = identifier(&mut out[0..out.len()], pos, 115, copy(node));
+                pos = put(&mut out[0..out.len()], pos, &assign[..]);
+                pos = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()],
+                    &edits[0..edits.len()], &captures[0..captures.len()], &mut out[0..out.len()], &mut offsets[0..offsets.len()], pos,
+                    nodes[first].start, nodes[first].end, copy(node), copy(depth) + 1);
+                pos = put(&mut out[0..out.len()], pos, &semi[..]);
+                let body = collector_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], stages[node].previous);
+                if body == 0 { return out.len() as u64; }
+                pos = library_render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &stages[0..stages.len()], &mut out[0..out.len()], pos, copy(node), copy(body), nodes[body].start + 1, nodes[body].end);
+                byte = nodes[node].end;
+                continue;
+            }
+            let apply: [u8; 7] = [40,38,109,117,116,32,42];
+            let apply_state: [u8; 6] = [40,38,109,117,116,32];
+            let open: [u8; 1] = [40];
+            let close: [u8; 1] = [41];
+            let finish: [u8; 2] = [32,125];
+            if !direct && fresh == 0 {
+                pos = put(&mut out[0..out.len()], pos, &declare[..]);
+                pos = identifier(&mut out[0..out.len()], pos, 115, copy(node));
+                pos = put(&mut out[0..out.len()], pos, &assign[..]);
+                pos = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()],
+                    &edits[0..edits.len()], &captures[0..captures.len()], &mut out[0..out.len()], &mut offsets[0..offsets.len()], pos,
+                    nodes[first].start, nodes[first].end, copy(node), copy(depth) + 1);
+                pos = put(&mut out[0..out.len()], pos, &semi[..]);
+            }
+            pos = identifier(&mut out[0..out.len()], pos, 110, stages[node].previous);
+            if fresh != 0 {
+                pos = put(&mut out[0..out.len()], pos, &open[..]);
+                pos = put(&mut out[0..out.len()], pos, &source[nodes[fresh].start..nodes[fresh].end]);
+            } else if stages[node].state != 0 || stages[node].owned { pos = put(&mut out[0..out.len()], pos, &apply_state[..]); }
+            else { pos = put(&mut out[0..out.len()], pos, &apply[..]); }
+            if direct {
+                pos = put(&mut out[0..out.len()], pos, &source[nodes[operand].start..nodes[operand].end]);
+            } else if fresh == 0 { pos = identifier(&mut out[0..out.len()], pos, 115, copy(node)); }
+            pos = put(&mut out[0..out.len()], pos, &close[..]);
+            if !direct && fresh == 0 { pos = put(&mut out[0..out.len()], pos, &finish[..]); }
+        }
+        byte = nodes[node].end;
+    }
+    offsets[end] = copy(pos);
+    pos
+}
+
+pub fn specialize_pipelines(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    out: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    let mut stages = [Stage { action: 0, source: 0, root: 0, item: 0, annotation: 0, previous: 0, mapper: 0, state: 0, captures: 0, owned: false }; 524289];
+    let mut captures = [Capture { binding: 0, annotation: 0, ty: 0, next: 0, copied: false }; 524289];
+    let mut edits: [u64; 3145728] = [0; 3145728];
+    let status = plan(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+        &mut stages[..], &mut captures[..], &mut edits[..]);
+    if status != 0 { return (status, 0); }
+    let mut pos = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[..],
+        &edits[..], &captures[..], &mut out[0..out.len()], &mut offsets[0..offsets.len()], 0, 0, source.len() as u64, 0, 0);
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if stages[node].action == 1 || stages[node].action == 2 || stages[node].action == 5 || stages[node].action == 6 {
+            pos = helpers(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &stages[..], &captures[..],
+                &mut out[0..out.len()], pos, copy(node));
+        }
+        node = node + 1;
+    }
+    if pos >= out.len() as u64 { return (4, 0); };
+    (0, pos)
+}

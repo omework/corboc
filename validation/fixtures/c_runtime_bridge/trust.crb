@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+struct Point{value:i64}
+fn main(){
+ let mut point=Point{value:1};let view=&point;
+ @unchecked{@c{${point}.f_value=2;}}
+ print((*view).value);
+}
