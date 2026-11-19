@@ -1,8 +1,8 @@
 # Shared STD, runtime, grammar and language rules used by this compiler.
 # Update this revision deliberately and regenerate runtime_sources before building.
 [corbo]
-git = "git@github.com:omework/din-lang.git"
-rev = "f905f1afd8c462f633e0ae09d5f058ad9de6c321"
+git = "git@github.com:omework/corbo-lang.git"
+rev = "d5e96d158dee8cce6579f2c857b01a625a8407e3"
 stdlib = "stdlib/src"
 runtime = "runtime"
 runtime_implementation = "corbo"

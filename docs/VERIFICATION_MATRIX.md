@@ -77,3 +77,12 @@ See [TEXT_SPLIT_CYCLE.md](TEXT_SPLIT_CYCLE.md).
 | Diagnostics / publication | Eight expected failures, prior binary hash preservation and temporary-workspace cleanup pass. | 18 focused checks overall; other native build drivers remain unimplemented |
 
 [Report and reproduction](PACKAGE_BUILD_DEFAULTS_CYCLE.md).
+
+
+## Canonical corbo-lang repository (organization)
+
+The source lock now targets corbo-lang's initial snapshot. Source-lock and
+runtime-resource checks, a pinned install build and the new checkout's package
+smoke test pass on macOS ARM64. Emitted compiler C matches the pre-migration
+build byte for byte. No language or runtime implementation changed; no new
+safety claim is made. See [migration evidence](CORBO_REPOSITORY_MIGRATION_CYCLE.md).

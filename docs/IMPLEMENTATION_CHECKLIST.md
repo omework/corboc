@@ -1,3 +1,12 @@
+## Canonical corbo-lang repository (organization)
+
+- [x] Point the language link and local checkout instructions to corbo-lang.
+- [x] Pin its parentless initial snapshot in corbo.lock and update the clean dependency cache.
+- [x] Verify the source lock and runtime resource freshness.
+- [x] Complete the pinned install build with unchanged emitted C.
+- [x] Build and run a package from the new checkout.
+- [x] Record the [migration evidence and limits](CORBO_REPOSITORY_MIGRATION_CYCLE.md).
+
 ## Package-root build defaults (build/CLI)
 
 - [x] Accept package-root build and optional explicit package paths.

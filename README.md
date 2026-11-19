@@ -1,6 +1,6 @@
 # corboc
 
-The self-hosted compiler for [Corbo](https://github.com/omework/din-lang), an
+The self-hosted compiler for [Corbo](https://github.com/omework/corbo-lang), an
 experimental systems language built around explicit intent, predictable memory
 management and static verification.
 
@@ -26,7 +26,7 @@ changes to STD, runtime code or normative inputs. SSH access to the language
 repository is required. A local Git checkout can supply the same commit offline:
 
 ```sh
-python3 scripts/corbo_sources.py --from-repo ../crust
+python3 scripts/corbo_sources.py --from-repo ../corbo-lang
 ```
 
 That option clones Git objects at the locked commit, not the source checkout's
