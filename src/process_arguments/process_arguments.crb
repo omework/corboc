@@ -205,3 +205,13 @@ pub fn split_receiver(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&
     }
     check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],receiver,0)
 }
+
+/// Identifies the existing TX8 byte-to-text validation primitive.
+pub fn is_utf8_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    if nodes[node].kind != 15 { return false; }
+    let callee = graph[node].first_child;
+    if nodes[callee].kind != 36 { return false; }
+    let spelling = &source[nodes[callee].start..nodes[callee].end];
+    let name: [u8; 14] = [115,116,114,58,58,102,114,111,109,95,117,116,102,56];
+    spelling.content_eq(&name[..])
+}

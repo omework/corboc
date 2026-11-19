@@ -1,3 +1,18 @@
+## Configurable constants and HTTP parsing (core + STD API)
+
+- [x] Parse configurable constants and lexical override blocks.
+- [x] Resolve/import aliases, visibility, types and duplicate targets.
+- [x] Specialize helper calls and nominal layouts; preserve escaped configurations.
+- [x] Implement bounded HTTP request/response heads and optional streaming bodies.
+- [x] Preserve nested result and reader dependencies with existing value summaries.
+- [x] Complete 37 focused checks: 25 UBSan executions and 12 expected refusals.
+- [x] Reconstruct the optimized compiler with identical emitted C.
+- [x] Regenerate/check API documentation and record scope/limits.
+- [x] Pin the published STD, rebuild/install corboc and validate automatic STD discovery.
+
+No open design decision. The published STD pin and untested platforms are
+explicit in the [cycle report](CONFIGURATION_HTTP_CYCLE.md).
+
 ## Canonical corbo-lang repository (organization)
 
 - [x] Point the language link and local checkout instructions to corbo-lang.

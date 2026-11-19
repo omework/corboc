@@ -230,8 +230,9 @@ pub fn copy_task_summary(values: &mut [CheckedValue], from: u64, to: u64, ty: i6
     let captures = values[from].origin_call;
     let result_root = values[from].target;
     let result_entries = values[from].loan_parent;
+    let exclusive = values[from].exclusive;
     values[to] = CheckedValue { ty: ty, state: 1, mutable: mutable, target: result_root,
-        loan_parent: result_entries, origin_call: captures, exclusive: false };
+        loan_parent: result_entries, origin_call: captures, exclusive: exclusive };
 }
 
 fn allocation_return_root(nodes: &[AstNode], graph: &[StaticNode], body: u64) -> u64 {

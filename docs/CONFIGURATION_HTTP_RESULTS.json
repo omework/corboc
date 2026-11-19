@@ -1,0 +1,175 @@
+{
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "compiler": "/Users/jabarkarim/sources/corboc/build/install/bin/corboc",
+  "cases": [
+    {
+      "name": "nested_escape",
+      "passed": true
+    },
+    {
+      "name": "layouts",
+      "passed": true
+    },
+    {
+      "name": "values",
+      "passed": true
+    },
+    {
+      "name": "ordinary",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "unknown",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "duplicate",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "runtime",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "range",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "negative",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "type",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "marker_target",
+      "passed": true,
+      "status": 7
+    },
+    {
+      "name": "typed_constant",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "request_partial",
+      "passed": true
+    },
+    {
+      "name": "response_partial",
+      "passed": true
+    },
+    {
+      "name": "chunked",
+      "passed": true
+    },
+    {
+      "name": "no_body",
+      "passed": true
+    },
+    {
+      "name": "zero_body",
+      "passed": true
+    },
+    {
+      "name": "clean_eof",
+      "passed": true
+    },
+    {
+      "name": "truncated",
+      "passed": true
+    },
+    {
+      "name": "framing_conflict",
+      "passed": true
+    },
+    {
+      "name": "bad_length",
+      "passed": true
+    },
+    {
+      "name": "line_exact",
+      "passed": true
+    },
+    {
+      "name": "line_over",
+      "passed": true
+    },
+    {
+      "name": "header_count",
+      "passed": true
+    },
+    {
+      "name": "alias_override",
+      "passed": true
+    },
+    {
+      "name": "duplicate_alias",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "private_override",
+      "passed": true,
+      "status": 13
+    },
+    {
+      "name": "reader_lifetime",
+      "passed": true,
+      "status": 8
+    },
+    {
+      "name": "header_line_limit",
+      "passed": true
+    },
+    {
+      "name": "header_total_limit",
+      "passed": true
+    },
+    {
+      "name": "header_views",
+      "passed": true
+    },
+    {
+      "name": "record_result_method",
+      "passed": true
+    },
+    {
+      "name": "mixed_constructor",
+      "passed": true
+    },
+    {
+      "name": "slice_forward",
+      "passed": true
+    },
+    {
+      "name": "borrowed_enum",
+      "passed": true
+    },
+    {
+      "name": "utf8_valid",
+      "passed": true
+    },
+    {
+      "name": "utf8_invalid",
+      "passed": true
+    }
+  ],
+  "date": "2026-11-19",
+  "corbo_revision": "aa3bec8add1191f68faf4c7808a2239182d40170",
+  "self_emitted_c_sha256": "d8a949ed6f69b56af036cdbfbdc4e107daf794cf42110d147f13bb03e83ead7f",
+  "self_emission_equal": true,
+  "sanitizer": "undefined; no recovery",
+  "automatic_std_discovery": true,
+  "installed_http_output": "4\n6\n5\n104\n0\n67\n",
+  "source_lock_checked": true,
+  "runtime_resources_checked": true
+}

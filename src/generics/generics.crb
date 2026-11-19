@@ -578,7 +578,7 @@ fn body_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
                     }
                     annotation = graph[annotation].next_sibling;
                 }
-                if !guaranteed { return false; }
+                if !guaranteed { drop(report_violation(1, nodes[point].start)); return false; }
             }
         }
         point = point + 1;
@@ -665,9 +665,11 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     while call < nodes.len() as u64 {
         let mut ancestor = copy(call);
         while nodes[ancestor].parent != 0 { ancestor = nodes[ancestor].parent; }
-        if (nodes[call].kind == 15 || nodes[call].kind == 4 || nodes[call].kind == 37) && !omitted[ancestor] {
+        if (nodes[call].kind == 15 || nodes[call].kind == 4 || nodes[call].kind == 37
+            || (nodes[call].kind == 17 && graph[graph[call].first_child].binding == 0)) && !omitted[ancestor]
+            && !function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor)) {
             let callee = if nodes[call].kind == 15 { graph[call].first_child } else { copy(call) };
-            if nodes[callee].kind == 36 || nodes[call].kind == 4 || nodes[call].kind == 37 {
+            if nodes[callee].kind == 36 || nodes[call].kind == 4 || nodes[call].kind == 37 || nodes[call].kind == 17 {
                 let first = token_at(&tokens[0..tokens.len()], nodes[callee].start);
                 let mut template = graph[0].first_child;
                 while template != 0 {
@@ -696,12 +698,12 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                                 let mut supplied = graph[graph[callee].first_child].first_child;
                                 let mut index: u64 = 0;
                                 while supplied != 0 {
-                                    if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (8, 0); }
+                                    if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (report_violation(1, nodes[call].start), 0); }
                                     types[index] = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(supplied));
                                     supplied = graph[supplied].next_sibling;
                                     index = index + 1;
                                 }
-                                if template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), index) != 0 { return (8, 0); }
+                                if template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), index) != 0 { return (report_violation(1, nodes[call].start), 0); }
                             }
                         let mut parameter = graph[function].first_child;
                         let mut argument = graph[callee].next_sibling;
@@ -709,15 +711,15 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                             instance_count[0]=copy(count);
                             let ty = decoded(resolved_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(argument), 0, &mut instances[..], &mut stored_types[..], &mut instance_count[..], 0));
                             count=instance_count[0];
-                            if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), graph[parameter].first_child, &ty, &mut types[..], &instances[..], &stored_types[..], 0) { return (8, 0); }
+                            if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), graph[parameter].first_child, &ty, &mut types[..], &instances[..], &stored_types[..], 0) { return (report_violation(1, nodes[call].start), 0); }
                             parameter = graph[parameter].next_sibling;
                             argument = graph[argument].next_sibling;
                         }
-                        if nodes[parameter].kind == 3 || argument != 0 { return (8, 0); }
-                        } else if nodes[call].kind == 37 {
+                        if nodes[parameter].kind == 3 || argument != 0 { return (report_violation(1, nodes[call].start), 0); }
+                        } else if nodes[call].kind == 37 || nodes[call].kind == 17 {
                             instance_count[0]=copy(count);
                             let concrete=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(call),0,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0));
-                            count=instance_count[0];if concrete.instance==0{return (8,0);}
+                            count=instance_count[0];if concrete.instance==0{return (report_violation(1, nodes[call].start), 0);}
                             let mut index:u64=0;
                             while index<instances[concrete.instance-1].count {
                                 let at=(concrete.instance-1)*32+index;
@@ -727,7 +729,7 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                             let mut index: u64 = 0;
                             let mut argument = graph[call].first_child;
                             while argument != 0 {
-                                if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (8, 0); }
+                                if index == 32 || template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index)) == 0 { return (report_violation(1, nodes[call].start), 0); }
                                 types[index] = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
                                 argument = graph[argument].next_sibling;
                                 index = index + 1;
@@ -738,7 +740,7 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                             instance_count[0]=copy(count);
                             let code=resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[resolved_index],0,&mut instances[..],&mut stored_types[..],&mut instance_count[..],0);
                             count=instance_count[0];
-                            if code==0{return (8,0);}types[resolved_index]=decoded(code);resolved_index=resolved_index+1;
+                            if code==0{return (report_violation(1, nodes[call].start), 0);}types[resolved_index]=decoded(code);resolved_index=resolved_index+1;
                         }
                         instance_count[0]=copy(count);
                         let valid=constraints(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), &mut types[..], &mut instances[..],&mut stored_types[..],&mut instance_count[..]);
@@ -746,7 +748,7 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                         if !valid {return (report_violation(1, nodes[call].start), 0);}
                         let mut length: u64 = 0;
                         while template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(length)) != 0 {
-                            if length == 32 || types[length].node == 0 { return (8, 0); }
+                            if length == 32 || types[length].node == 0 { return (report_violation(1, nodes[call].start), 0); }
                             length = length + 1;
                         }
                         let mut instance: u64 = 0;
@@ -782,7 +784,7 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                             }
                             prefix_end = tokens[token - 1].end;
                         }
-                        substitution_ends[first] = if direct_call || nodes[call].kind == 37 { prefix_end } else { nodes[call].end };
+                        substitution_ends[first] = if direct_call || nodes[call].kind == 37 || nodes[call].kind == 17 { prefix_end } else { nodes[call].end };
                     }
                     template = graph[template].next_sibling;
                 }
@@ -1002,6 +1004,21 @@ pub fn function_template(nodes: &[AstNode], graph: &[StaticNode], item: u64) -> 
 }
 
 /// Expand one recipe per pass. Reparse before specializing dependent calls.
+// Defer calls in both generic functions and generic impls until their enclosing
+// recipe has concrete arguments. Struct methods can call generic helpers too.
+fn inside_recipe(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> bool {
+    let mut ancestor = nodes[point].parent;
+    while ancestor != 0 {
+        if function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor)) { return true; }
+        if nodes[ancestor].kind == 49 {
+            let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor));
+            if owner != 0 && is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner) { return true; }
+        }
+        ancestor = nodes[ancestor].parent;
+    }
+    false
+}
+
 pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
     let mut template = graph[0].first_child;
@@ -1016,18 +1033,23 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             let mut point: u64 = 1;
             while point < nodes.len() as u64 && selected == 0 {
                 if nodes[point].kind == 15 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == candidate {
-                    let mut ancestor = nodes[point].parent;
-                    let mut recipe = false;
-                    while ancestor != 0 {
-                        if function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor)) { recipe = true; }
-                        ancestor = nodes[ancestor].parent;
-                    }
+                    let recipe = inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point));
                     if !recipe { selected = copy(candidate); }
                 }
                 point += 1;
             }
         }
         candidate = graph[candidate].next_sibling;
+    }
+    if selected == 0 {
+        let mut point: u64 = 1;
+        while point < nodes.len() as u64 {
+            let mut owner = nodes[point].parent;
+            while owner != 0 && nodes[owner].kind != 49 { owner = nodes[owner].parent; }
+            if nodes[point].kind == 15 && owner != 0 && inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))
+                && function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))) { return (0, 0); }
+            point += 1;
+        }
     }
     template = if selected == 0 { fallback } else { selected };
     if template == 0 { return (0, 0); }
@@ -1048,12 +1070,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     while point < nodes.len() as u64 {
         let name = graph[point].first_child;
         if nodes[point].kind == 15 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == template {
-            let mut ancestor = nodes[point].parent;
-            let mut recipe = false;
-            while ancestor != 0 {
-                if function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor)) { recipe = true; }
-                ancestor = nodes[ancestor].parent;
-            }
+            let recipe = inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point));
             if !recipe {
                 let mut types = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 32];
                 let mut parameter = graph[template].first_child;

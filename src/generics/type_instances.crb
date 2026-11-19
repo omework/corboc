@@ -83,6 +83,25 @@ fn unify_instance(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64
 }
 
 
+// Concrete fields do not infer template parameters; their types are checked by
+// the ordinary verifier after specialization, including computed initializers.
+fn parameter_pattern(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, pattern: u64, depth: u64) -> bool {
+    if pattern == 0 || depth >= 128 { return false; }
+    let mut index: u64 = 0;
+    while index < 32 {
+        let parameter = template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(index));
+        if parameter == 0 { break; }
+        if text_equal(&source[0..source.len()], &nodes[parameter], &nodes[pattern]) { return true; }
+        index += 1;
+    }
+    let mut child = graph[pattern].first_child;
+    while child != 0 {
+        if parameter_pattern(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(child), depth + 1) { return true; }
+        child = graph[child].next_sibling;
+    }
+    false
+}
+
 // Locate the concrete variant layout without interpreting any payload value.
 fn variant_layout(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],template:u64,expression:u64)->u64 {
     if nodes[template].kind!=29{return template;}
@@ -133,7 +152,7 @@ fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Tok
             return resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&ty,owner.instance,&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
         }
     }
-    if kind==15 || kind==37 {
+    if kind==15 || kind==37 || (kind==17 && graph[child].binding==0) {
         let name=if kind==15{copy(child)}else{copy(expression)};
         let token=token_at(&tokens[0..tokens.len()],nodes[copy(name)].start);let mut template=graph[0].first_child;
         while template!=0 {
@@ -141,7 +160,7 @@ fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Tok
             template=graph[copy(template)].next_sibling;
         }
         if template!=0 {
-            if nodes[template].kind==29 {
+            if nodes[template].kind==29 || kind==37 || kind==17 {
                 let mut context=nodes[expression].parent;let mut expected:u64=0;
                 while context!=0 {
                     if nodes[context].kind==5 && graph[context].type_node!=0{expected=graph[context].type_node;break;}
@@ -179,7 +198,11 @@ fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Tok
                 while field!=0 {
                     let member=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(layout),copy(field));
                     let value=graph[copy(field)].first_child;
+                    if member == 0 { return 0; }
                     let hint=graph[member].first_child;
+                    if !parameter_pattern(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(hint), 0) {
+                        field = graph[field].next_sibling; continue;
+                    }
                     let literal=nodes[value].kind==9 && primitive_type(&source[0..source.len()],&nodes[0..nodes.len()],copy(hint))!=0;
                     let code=if literal {
                         let expected=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(hint));packed(&expected)

@@ -1,3 +1,4 @@
+use bootstrap::lowering_types::optional;
 use bootstrap::places::bind_record_pool;
 use bootstrap::regional_calls::scalar_vector_owner_element;
 use bootstrap::scalar_options::{scalar_option_annotation, scalar_option, checked_option_payload, option_borrow, option_borrow_return, copy_option_borrow, option_allocation, option_handle, option_resource_return, record_borrow, slice_borrow, check_option_reference};
@@ -763,6 +764,8 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 let members=values[origin].loan_parent;
                 values[node] = CheckedValue { ty: ty, state: 1, mutable: graph[node].mutable, target: 0,
                     loan_parent: members, origin_call: shape, exclusive: false };
+            } else if result_type(copy(ty)) && values[origin].state == 1 {
+                copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if option_borrow(copy(ty)) != 0 {
                 copy_option_borrow(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if ((ty > 20 && ty < 60) || ty == 734 || ty==2000138 || slice_view(copy(ty)))
@@ -772,7 +775,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if option_allocation(copy(ty)) != 0 || option_handle(copy(ty)) != 0 {
                 copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
-            } else if (ty == 300 && values[origin].state == 1) || task_value(copy(ty)) || (nodes[origin].kind == 38
+            } else if ((ty == 300 || ty == 310 || ty == 734) && values[origin].state == 1) || task_value(copy(ty)) || (nodes[origin].kind == 38
                 && ((ty >= 297 && ty <= 299) || ty == 300 || ty == 301 || vector_reference_owner(copy(ty)))) {
                 copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else {
@@ -1224,8 +1227,8 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 constructor = values[binding].origin_call;
                 let mutable = values[binding].mutable;
                 let member = values[binding].loan_parent;
-                if (ty == 300 && member != 0) || task_value(copy(ty)) {
-                    let survives = if ty == 300 {
+                if (ty == 300 && member != 0) || task_value(copy(ty)) || optional(copy(ty)) || result_type(copy(ty)) || ty == 734 {
+                    let survives = if !task_value(copy(ty)) {
                         owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(binding), graph[destination].scope)
                     } else {
                         task_survives(&graph[0..graph.len()], &values[0..values.len()], copy(binding), graph[destination].scope)

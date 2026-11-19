@@ -1,3 +1,5 @@
+use bootstrap::lowering_types::optional;
+use bootstrap::value_summaries::instantiate_envelope_record;
 use bootstrap::process_arguments::{check_text, returned_text_field, split_callee};
 use bootstrap::lock_contracts::retain_lock;
 use bootstrap::value_summaries::instantiate_record;
@@ -528,6 +530,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut result: i64 = 0;
     if parameter != 0 && nodes[parameter].kind == 4 {
         result = verify_primitive(&source[0..source.len()], nodes[parameter].name_start, nodes[parameter].name_end);
+        if result == 0 && shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(parameter)) { result = argument_text_type(); }
         if result == 0 {
             result = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(parameter));
         }
@@ -545,8 +548,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 &graph[0..graph.len()], copy(parameter), false);
             if owner >= 201 && owner <= 207 { result = owner; }
         }
-        if result == 0 && ((expected >= 20 && expected < 60) || record_borrow(copy(expected))
-            || slice_borrow(copy(expected))) && mode == 1 {
+        if result == 0 && mode == 1 {
             result = reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(parameter));
         }
@@ -589,6 +591,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 }
             }
         }
+    }
+    if !deferred && (result_type(copy(result)) || optional(copy(result))) {
+        let summary=instantiate_envelope_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(parameter),copy(result));
+        if summary<0{return summary;}
     }
     if deferred {
         if (!result_type(copy(result)) && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
@@ -661,7 +667,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let root=values[actual].target;let parent=values[actual].loan_parent;
         values[call]=CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:parent,origin_call:field,exclusive:false};
     } else if borrowed != 0 || (((result > 20 && result < 60) || record_borrow(copy(result))
-        || slice_borrow(copy(result))) && expected == result) {
+        || slice_borrow(copy(result))) && (expected == 0 || expected == result)) {
         if reservations != 1 || nodes[function].kind != 1 { return -9; }
         let entry = graph[function].first_child;
         if graph[entry].next_sibling != parameter { return -9; }
@@ -781,5 +787,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             target: 0, loan_parent: 0, origin_call: unsigned((result - 10000) / 100), exclusive: false };
     }
     complete_task(&mut values[0..values.len()], waited, completion);
+    if mode==1 && expected==0 && (record_borrow(copy(result)) || slice_borrow(copy(result))) {
+        let view=if record_borrow(copy(result)){734}else{slice_borrow_type(copy(result))};
+        let target=values[call].target;let parent=values[call].loan_parent;let shape=values[call].origin_call;let exclusive=values[call].exclusive;
+        values[call]=CheckedValue{ty:copy(view),state:1,mutable:false,target:target,loan_parent:parent,origin_call:shape,exclusive:exclusive};return view;
+    }
     return result;
 }

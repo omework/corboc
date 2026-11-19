@@ -1,3 +1,5 @@
+use bootstrap::lowering_types::optional;
+use bootstrap::model::result_type;
 use bootstrap::model::{summary_value,summary_next};
 use bootstrap::model::constructor_argument_retained;
 use bootstrap::declarations::{nominal_declaration, verification_field};
@@ -12,6 +14,7 @@ use bootstrap::task_vectors::handle_vector;
 
 pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u64) -> bool {
     let ty = values[owner].ty;
+    if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
         while summary_entry != 0 {
@@ -62,7 +65,7 @@ pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u
     }
     if ty < 300 { return values[values[owner].target].state == 1; }
     if ty == 301 && values[values[owner].target].state != 1 { return false; }
-    if (ty == 300 || ty == 301 || ty == 475) && values[owner].loan_parent != 0 {
+    if (ty == 300 || ty == 301 || ty == 475 || optional(copy(ty)) || result_type(copy(ty))) && values[owner].loan_parent != 0 {
         return live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], values[owner].loan_parent);
     }
     let constructor = values[owner].origin_call;
@@ -190,6 +193,7 @@ pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) -> bool {
 
 pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner: u64, scope: u64) -> bool {
     let ty = values[owner].ty;
+    if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
         while summary_entry != 0 {
@@ -263,7 +267,7 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
     }
     if ty < 200 || is_scalar_array(copy(ty)) || task_value(copy(ty)) || map_value(copy(ty)) { return true; }
     let pool = values[owner].target;
-    if ty != 300 && ty != 310 && !scope_contains(&graph[0..graph.len()], graph[pool].scope, copy(scope)) { return false; }
+    if ty != 300 && ty != 310 && !optional(copy(ty)) && !result_type(copy(ty)) && !scope_contains(&graph[0..graph.len()], graph[pool].scope, copy(scope)) { return false; }
     if ty == 296 {
         let mut entry = values[owner].origin_call;
         while entry != 0 {
@@ -277,8 +281,8 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
         return true;
     }
     if ty < 300 || (ty >= 710 && ty <= 729) { return true; }
-    let member = if ty == 300 || ty == 301 || ty == 310 { values[owner].loan_parent } else { 0 };
-    if (ty == 300 || ty == 301 || ty == 475) && member != 0 {
+    let member = if ty == 300 || ty == 301 || ty == 310 || optional(copy(ty)) || result_type(copy(ty)) { values[owner].loan_parent } else { 0 };
+    if (ty == 300 || ty == 301 || ty == 475 || optional(copy(ty)) || result_type(copy(ty))) && member != 0 {
         return owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], member, scope);
     }
     let constructor = values[owner].origin_call;

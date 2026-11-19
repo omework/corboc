@@ -314,7 +314,7 @@ fn qualified_call_error(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     let from_utf8: [u8; 9] = [102,114,111,109,95,117,116,102,56];
     let text: [u8; 3] = [115,116,114];
     if member.content_eq(&converts[..]) && verify_primitive(&source[0..source.len()], copy(start), copy(end)) != 0 { return 1; }
-    if prefix.content_eq(&text[..]) && member.content_eq(&from_utf8[..]) { return 1; }
+    if prefix.content_eq(&text[..]) && member.content_eq(&from_utf8[..]) { return 0; }
     let mutex: [u8; 5] = [77,117,116,101,120];
     let async_mutex: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
     if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],

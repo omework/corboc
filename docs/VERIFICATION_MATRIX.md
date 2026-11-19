@@ -1,3 +1,14 @@
+## Configurable constants and HTTP parsing
+
+| Mechanism / rules | Executed evidence | Scope and limits |
+| --- | --- | --- |
+| CC1–CC7 / N1 | Default, nested, transitive, escaped layout, alias, type and visibility checks | Bounded literal/constant-reference specialization |
+| N4/N5/N6 | Reader destruction refused; per-field Result/Option summaries and four existing aggregate/borrow regressions | Covered shapes only; no independent safety claim |
+| HTTP budgets / framing | Partial reads, both roles, chunked trailers, body boundaries, EOF/errors and all four budgets | Synchronous injected reader on macOS ARM64 |
+| Reconstruction / documentation | Identical self-emitted C; reference inventory check | Published STD pinned; installed automatic discovery validated |
+
+37 focused checks complete. [Evidence and limits](CONFIGURATION_HTTP_CYCLE.md).
+
 ## Documentation coverage follow-up
 
 | Rules / mechanism | Executed evidence | Scope and limits |

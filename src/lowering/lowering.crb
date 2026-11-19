@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::is_utf8_call;
 use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::{completion_call,emit_completion};
 use bootstrap::lowering_c::lower_c;
@@ -8,7 +9,7 @@ use bootstrap::scalar_options::option_variant;
 use bootstrap::calls::borrowed_receiver;
 use bootstrap::regional_calls::region_signature;
 use bootstrap::results::result_variant;
-use bootstrap::model::{result_type, result_has_nominal_payload};
+use bootstrap::model::{result_type, result_payload, result_has_nominal_payload};
 use bootstrap::model::{AstNode, StaticNode};
 use bootstrap::scalar::{verify_primitive, integer_value, integer_width};
 use bootstrap::calls::bootstrap_callee;
@@ -205,6 +206,24 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
     }
     if kind == 9 || (kind == 12 && nodes[child].kind == 9 && source[nodes[node].name_start] == 45) {
         return literal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node), node, expected, emit);
+    }
+    if is_utf8_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if !result_type(copy(expected)) || result_payload(copy(expected), true) != 2000138 { return -1; }
+        let argument = graph[child].next_sibling;
+        if argument == 0 || graph[argument].next_sibling != 0 { return -1; }
+        let bytes = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut types[0..types.len()], ctx, copy(argument), 2000004);
+        if bytes != 2000004 { return -1; }
+        if emit {
+            declaration(copy(expected), copy(node)); { let text: [u8; 6] = [61,123,48,125,59,10]; byte_text(&text[..]); }
+            temporary(copy(node)); { let text: [u8; 12] = [46,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&text[..]); }
+            { let text: [u8; 24] = [123,99,111,110,115,116,32,117,110,115,105,103,110,101,100,32,99,104,97,114,32,42,112,61]; byte_text(&text[..]); } temporary(copy(argument)); { let text: [u8; 17] = [46,100,97,116,97,59,117,105,110,116,54,52,95,116,32,110,61]; byte_text(&text[..]); } temporary(copy(argument));
+            { let text: [u8; 438] = [46,108,101,110,59,117,105,110,116,54,52,95,116,32,105,61,48,59,98,111,111,108,32,118,97,108,105,100,61,116,114,117,101,59,119,104,105,108,101,40,105,60,110,38,38,118,97,108,105,100,41,123,117,110,115,105,103,110,101,100,32,99,61,112,91,105,43,43,93,59,105,102,40,99,60,49,50,56,41,99,111,110,116,105,110,117,101,59,117,110,115,105,103,110,101,100,32,107,59,105,102,40,99,62,61,49,57,52,38,38,99,60,61,50,50,51,41,107,61,49,59,101,108,115,101,32,105,102,40,99,62,61,50,50,52,38,38,99,60,61,50,51,57,41,107,61,50,59,101,108,115,101,32,105,102,40,99,62,61,50,52,48,38,38,99,60,61,50,52,52,41,107,61,51,59,101,108,115,101,123,118,97,108,105,100,61,102,97,108,115,101,59,98,114,101,97,107,59,125,105,102,40,107,62,110,45,105,41,123,118,97,108,105,100,61,102,97,108,115,101,59,98,114,101,97,107,59,125,117,110,115,105,103,110,101,100,32,102,105,114,115,116,61,112,91,105,93,59,105,102,40,40,99,61,61,50,50,52,38,38,102,105,114,115,116,60,49,54,48,41,124,124,40,99,61,61,50,51,55,38,38,102,105,114,115,116,62,61,49,54,48,41,124,124,40,99,61,61,50,52,48,38,38,102,105,114,115,116,60,49,52,52,41,124,124,40,99,61,61,50,52,52,38,38,102,105,114,115,116,62,61,49,52,52,41,41,123,118,97,108,105,100,61,102,97,108,115,101,59,98,114,101,97,107,59,125,102,111,114,40,117,110,115,105,103,110,101,100,32,106,61,48,59,106,60,107,59,106,43,43,41,123,117,110,115,105,103,110,101,100,32,98,61,112,91,105,43,43,93,59,105,102,40,98,60,49,50,56,124,124,98,62,49,57,49,41,123,118,97,108,105,100,61,102,97,108,115,101,59,98,114,101,97,107,59,125,125,125]; byte_text(&text[..]); }
+            temporary(copy(node)); { let text: [u8; 20] = [46,111,107,61,118,97,108,105,100,59,105,102,40,118,97,108,105,100,41,123]; byte_text(&text[..]); }
+            temporary(copy(node)); { let text: [u8; 22] = [46,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,46,100,97,116,97,61]; byte_text(&text[..]); } temporary(copy(argument)); { let text: [u8; 6] = [46,100,97,116,97,59]; byte_text(&text[..]); }
+            temporary(copy(node)); { let text: [u8; 21] = [46,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,46,108,101,110,61]; byte_text(&text[..]); } temporary(copy(argument)); { let text: [u8; 8] = [46,108,101,110,59,125,125,10]; byte_text(&text[..]); }
+        }
+        return expected;
     }
     let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
     if constant != 0 {

@@ -103,23 +103,42 @@ pub fn constructor_field_value(graph: &[StaticNode], values: &[CheckedValue],
 }
 
 // Result descriptors keep the two payload identities separate.
+// Result keeps compact arm identities and one optional-envelope bit per arm.
+// Existing nonoptional Result codes are unchanged.
 pub fn result_code(ok: i64, err: i64) -> i64 {
-    if ok <= 0 || err <= 0 || ok >= 8000000 || err >= 8000000 { return -1; }
-    9000000000000000000 + ok * 8000000 + err
+    let mut left = ok;
+    let mut right = err;
+    let mut flags: i64 = 0;
+    if left >= 5000000000000000000 && left < 5001000000000000000 {
+        left -= 5000000000000000000; flags += 1;
+    }
+    if right >= 5000000000000000000 && right < 5001000000000000000 {
+        right -= 5000000000000000000; flags += 2;
+    }
+    if left <= 0 || right <= 0 || left >= 8000000 || right >= 8000000 { return -1; }
+    9000000000000000000 + flags * 64000000000000 + left * 8000000 + right
 }
 
 pub fn result_type(ty: i64) -> bool {
-    ty > 9000000000000000000 && ty < 9000064000000000000
+    ty > 9000000000000000000 && ty < 9000256000000000000
 }
 
 pub fn result_payload(ty: i64, ok: bool) -> i64 {
-    let pair = ty - 9000000000000000000;
-    if ok { return pair / 8000000; }
-    pair % 8000000
+    let packed = ty - 9000000000000000000;
+    let flags = packed / 64000000000000;
+    let pair = packed % 64000000000000;
+    let payload = if ok { pair / 8000000 } else { pair % 8000000 };
+    let wrapped = if ok { flags % 2 != 0 } else { flags / 2 != 0 };
+    if wrapped { 5000000000000000000 + payload } else { payload }
+}
+
+pub fn result_arm_nominal(ty: i64) -> bool {
+    let leaf = if ty >= 5000000000000000000 && ty < 5001000000000000000 { ty - 5000000000000000000 } else { ty };
+    leaf >= 3000000 && leaf < 4000000
 }
 
 pub fn result_has_nominal_payload(ty: i64) -> bool {
-    result_type(copy(ty)) && (result_payload(copy(ty), true) >= 3000000 || result_payload(ty, false) >= 3000000)
+    result_type(copy(ty)) && (result_arm_nominal(result_payload(copy(ty), true)) || result_arm_nominal(result_payload(ty, false)))
 }
 
 // The argument list contains evaluation inputs; only fields stored in the result retain their loans.

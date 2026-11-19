@@ -1,4 +1,5 @@
 use bootstrap::model::{AstNode, StaticNode, result_payload, result_has_nominal_payload};
+use bootstrap::lowering_types::{optional, option_payload};
 use bootstrap::results::{result_variant, scalar_result_payload, unit_result_payload};
 use bootstrap::target_c::{byte_text, character};
 use bootstrap::lowering_types::{c_type, declaration, local, temporary, nominal_type, unsigned, number, consume};
@@ -98,11 +99,24 @@ pub fn result_definition(ty: i64, storage: bool) {
     if !storage || !result_has_nominal_payload(copy(ty)) { return; }
     { let code: [u8; 43] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32]; byte_text(&code[..]); } result_drop_name(copy(ty)); character(40);
     c_type(ty); { let code: [u8; 40] = [42,118,41,123,10,105,102,40,33,118,45,62,108,105,118,101,41,114,101,116,117,114,110,59,10,118,45,62,108,105,118,101,61,102,97,108,115,101,59,10]; byte_text(&code[..]); }
-    if success >= 3000000 {
-        { let code: [u8; 16] = [105,102,40,118,45,62,111,107,41,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(nominal_type(success)); { let code: [u8; 23] = [40,38,118,45,62,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,41,59,10]; byte_text(&code[..]); }
-    }
-    if error >= 3000000 {
-        { let code: [u8; 17] = [105,102,40,33,118,45,62,111,107,41,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(nominal_type(error)); { let code: [u8; 21] = [40,38,118,45,62,112,97,121,108,111,97,100,46,101,114,114,111,114,41,59,10]; byte_text(&code[..]); }
+    let mut side: u64 = 0;
+    while side < 2 {
+        let arm = if side == 0 { copy(success) } else { copy(error) };
+        let wrapped = optional(copy(arm));
+        let leaf = if wrapped { option_payload(copy(arm)) } else { copy(arm) };
+        if leaf >= 3000000 && leaf < 4000000 {
+            { let text: [u8; 3] = [105,102,40]; byte_text(&text[..]); } if side != 0 { character(33); }
+            { let text: [u8; 5] = [118,45,62,111,107]; byte_text(&text[..]); }
+            if wrapped {
+                { let text: [u8; 13] = [38,38,118,45,62,112,97,121,108,111,97,100,46]; byte_text(&text[..]); } if side == 0 { { let text: [u8; 7] = [115,117,99,99,101,115,115]; byte_text(&text[..]); } } else { { let text: [u8; 5] = [101,114,114,111,114]; byte_text(&text[..]); } }
+                { let text: [u8; 5] = [46,115,111,109,101]; byte_text(&text[..]); }
+            }
+            { let text: [u8; 8] = [41,100,101,115,116,114,111,121]; byte_text(&text[..]); } number(nominal_type(leaf)); { let text: [u8; 13] = [40,38,118,45,62,112,97,121,108,111,97,100,46]; byte_text(&text[..]); }
+            if side == 0 { { let text: [u8; 7] = [115,117,99,99,101,115,115]; byte_text(&text[..]); } } else { { let text: [u8; 5] = [101,114,114,111,114]; byte_text(&text[..]); } }
+            if wrapped { { let text: [u8; 6] = [46,118,97,108,117,101]; byte_text(&text[..]); } }
+            { let text: [u8; 3] = [41,59,10]; byte_text(&text[..]); }
+        }
+        side += 1;
     }
     { let code: [u8; 2] = [125,10]; byte_text(&code[..]); }
 }

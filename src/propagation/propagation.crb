@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Static Result/Option propagation and exact error-conversion lookup.
 use bootstrap::model::{AstNode,StaticNode,CheckedValue,result_type,result_payload};
-use bootstrap::results::{result_annotation,payload_type,scalar_result_payload};
+use bootstrap::results::{result_annotation,payload_type,scalar_result_payload,checked_result_payload};
 use bootstrap::scalar_options::{scalar_option_annotation,scalar_option,checked_option_payload,option_borrow,copy_option_borrow,record_borrow,slice_borrow,slice_borrow_type,option_allocation,allocation_kind,option_handle,nested_checked_option};
 use bootstrap::tasks::copy_task_summary;
 use bootstrap::places::inline_array;
@@ -57,7 +57,7 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
         if !scalar_option(outer){return 0-violation(1,nodes[node].start);}
         payload=checked_option_payload(copy(ty));
     }else{return 0-violation(1,nodes[node].start);}
-    let scalar=scalar_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
+    let scalar=checked_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
         let nominal=unsigned(copy(payload)-3000000);if nodes[nominal].kind==29{310}else{300}
     }else{copy(payload)};
     let reference=option_borrow(copy(ty));

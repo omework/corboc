@@ -6,13 +6,37 @@ use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::calls::associated_callee;
 use bootstrap::places::resolve_record_receiver;
 use bootstrap::process_arguments::{is_process_arguments_call, is_process_arguments_result, read_argument_value};
-use bootstrap::signatures::check_signature;
+use bootstrap::signatures::{check_signature, check_slice_argument};
+use bootstrap::process_arguments::{is_utf8_call, argument_text_type};
+use bootstrap::model::{result_type, result_payload};
+use bootstrap::lowering_types::unsigned as node_index;
 
 // -10 leaves ordinary expression dispatch in charge.
 fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
     let child = graph[node].first_child;
     let kind = nodes[node].kind;
+    if is_utf8_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if !result_type(copy(expected)) || result_payload(copy(expected), true) != argument_text_type() || mode == 2 {
+            return 0 - violation(1, nodes[node].start);
+        }
+        let error_type = result_payload(copy(expected), false);
+        if error_type < 3000000 || error_type >= 4000000 { return 0 - violation(1, nodes[node].start); }
+        let error = node_index(error_type - 3000000);
+        let variant = graph[error].first_child;
+        if nodes[error].kind != 29 || variant == 0 || graph[variant].next_sibling != 0 || graph[variant].first_child != 0 {
+            return 0 - violation(1, nodes[node].start);
+        }
+        let argument = graph[child].next_sibling;
+        if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(1, nodes[node].start); }
+        let checked = check_slice_argument(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(argument), 744, 0, false);
+        if checked < 0 { return checked; }
+        values[node] = CheckedValue { ty: copy(expected), state: 1, mutable: false,
+            target: values[argument].target, loan_parent: values[argument].loan_parent,
+            origin_call: argument, exclusive: false };
+        return expected;
+    }
     if kind == 15 && nodes[child].kind == 36 {
         let method = associated_callee(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(node));

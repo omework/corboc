@@ -399,6 +399,27 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
             }
             point = point + 1;
         }
+        // Option arms must be defined before the Result records that contain them.
+        point = 1;
+        while point < nodes.len() as u64 {
+            let kind = types[point];
+            let mut side: u64 = 0;
+            while result_type(copy(kind)) && side < 2 {
+                let arm = result_payload(copy(kind), side == 0);
+                if optional(copy(arm)) {
+                    let mut prior: u64 = 1;
+                    let mut duplicate = false;
+                    while prior < point {
+                        if result_type(types[prior]) && (result_payload(types[prior], true) == arm || result_payload(types[prior], false) == arm) { duplicate = true; }
+                        prior += 1;
+                    }
+                    if side == 1 && result_payload(copy(kind), true) == arm { duplicate = true; }
+                    if !duplicate { emit_option(copy(arm)); }
+                }
+                side += 1;
+            }
+            point += 1;
+        }
         point = 1;
         while point < nodes.len() as u64 {
             let kind = types[point];
@@ -412,6 +433,13 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
             if optional(copy(kind)) {
                 let mut previous: u64 = 1;
                 let leaf = option_base(copy(kind));
+                let mut arm_owner: u64 = 1;
+                let mut already_defined = false;
+                while arm_owner < nodes.len() as u64 {
+                    if result_type(types[arm_owner]) && (result_payload(types[arm_owner], true) == kind || result_payload(types[arm_owner], false) == kind) { already_defined = true; break; }
+                    arm_owner += 1;
+                }
+                if already_defined { point += 1; continue; }
                 while previous < point && (!optional(types[previous]) || option_base(types[previous]) != leaf) {
                     previous = previous + 1;
                 }

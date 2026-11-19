@@ -527,6 +527,7 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(annotation));
         if nodes[nested].kind == 28 { return (300, binding, annotation); }
+        if nodes[nested].kind == 29 { return (310, binding, annotation); }
         return (0, 0, 0);
     }
     if kind == 18 && nodes[graph[child].next_sibling].kind == 46 { return (0, 0, 0); }

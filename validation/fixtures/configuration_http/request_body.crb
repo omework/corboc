@@ -1,0 +1,57 @@
+use std::net::http;
+
+struct Input { bytes: [u8; 4096], length: usize, position: usize }
+impl Input {
+    fn new(text: &str) -> Input {
+        let bytes = text.as_bytes();
+        let mut input = Input { bytes: [0; 4096], length: bytes.len(), position: 0 };
+        let output = &mut input.bytes[..];
+        let mut i: usize = 0;
+        while i < bytes.len() { output[i] = bytes[i]; i += 1; }
+        input
+    }
+
+    fn read(&mut self, output: &mut [u8]) -> Result<usize, i32> {
+        let bytes = &(*self).bytes[..];
+        let at = (*self).position;
+        let available = (*self).length - at;
+        let capacity = output.len();
+        let count: usize = if available < capacity { available } else { capacity };
+        let mut i: usize = 0;
+        while i < count { output[i] = bytes[at + i]; i += 1; }
+        let position = &mut (*self).position;
+        *position = at + count;
+        Ok(count)
+    }
+}
+
+fn main() {
+    let text = "POST /hello HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhelloNEXT";
+    let mut input = Input::new(text);
+    #(override:
+        std::net::http::REQUEST_LINE_MAX_SIZE = 128,
+        std::net::http::HEADER_LINE_MAX_SIZE = 128,
+        std::net::http::HEADERS_MAX_SIZE = 512,
+        std::net::http::HEADER_COUNT_MAX = 8
+    ) {
+        let parsed = match http::request(&mut input) {
+            Ok(parsed) => { parsed },
+            Err(error) => { drop(error); return; },
+        };
+        let mut request = match parsed {
+            Some(request) => { request },
+            None => { return; },
+        };
+        let method=request.method(); let method_bytes=method.as_bytes(); print(method_bytes.len());
+        let target=request.target(); let target_bytes=target.as_bytes(); print(target_bytes.len());
+        let mut body = match request.body() { Some(body) => { body }, None => { return; }, };
+        let mut bytes: [u8; 8] = [0; 8];
+        match body.read(&mut bytes[..]) {
+            Ok(count) => { print(count); },
+            Err(error) => { drop(error); return; },
+        }
+        print(bytes[0]);
+        match body.read(&mut bytes[..]) { Ok(count) => { print(count); }, Err(error) => { drop(error); }, }
+    }
+    print(input.position);
+}

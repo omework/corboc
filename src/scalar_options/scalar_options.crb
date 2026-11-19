@@ -162,7 +162,7 @@ fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let (actual, root, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], place);
         if actual < 0 { return actual; }
-        if actual != 300 || (values[root].ty != 300 && values[root].ty != 734) {
+        if (actual != 300 && actual != 310) || (values[root].ty != 300 && values[root].ty != 310 && values[root].ty != 734) {
             return 0 - violation(1, start);
         }
         let reborrow = values[root].ty == 734;
@@ -373,6 +373,19 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     }
     if slice_borrow(copy(reference)) {
         let expected = slice_borrow_type(copy(reference));
+        if kind==13 && nodes[child].kind==14 && nodes[graph[child].first_child].kind==17 {
+            let projection=graph[child].first_child;
+            let (owner,binding,layout)=scalar_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],graph[projection].first_child);
+            if owner<0{return owner;}if owner!=300{return -9;}
+            let nominal=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],layout);
+            let field=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nominal,copy(projection));if field==0{return -9;}
+            let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[field].first_child);
+            let mutable=borrow_exclusive(copy(reference));
+            if slice!=expected || graph[expression].mutable!=mutable || (mutable && (!exclusive || !values[binding].exclusive)){return 0-violation(1,start);}
+            let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(expression),copy(mutable));if conflict!=0{return if conflict>0{0-violation(5,start)}else{-9};}
+            let root=if values[binding].ty==734{values[binding].target}else{copy(binding)};
+            values[result]=CheckedValue{ty:copy(ty),state:1,mutable:false,target:root,loan_parent:0,origin_call:shape,exclusive:mutable};return ty;
+        }
         let checked = if kind == 7 {
             move_slice_argument(&nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(expression), copy(expected))

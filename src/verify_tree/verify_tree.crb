@@ -322,9 +322,11 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
                     let record = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation), false);
                     if record != 0 {
+                        let exclusive=borrow_mutable(&source[nodes[annotation].start..nodes[record].start]);
+                        values[annotation]=CheckedValue{ty:734,state:1,mutable:copy(exclusive),target:copy(annotation),loan_parent:0,origin_call:copy(record),exclusive:copy(exclusive)};
                         values[child] = CheckedValue { ty: 734, state: 1, mutable: graph[child].mutable,
-                            target: copy(child), loan_parent: 0, origin_call: copy(record),
-                            exclusive: borrow_mutable(&source[nodes[annotation].start..nodes[record].start]) };
+                            target: copy(annotation), loan_parent: 0, origin_call: copy(record),
+                            exclusive: exclusive };
                         child = graph[child].next_sibling;
                         continue;
                     }

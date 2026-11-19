@@ -1,5 +1,6 @@
 use bootstrap::lowering_annotations::same_bytes;
 use bootstrap::scalar::verify_primitive;
+use bootstrap::configuration::{has_configuration, expand_configuration};
 use bootstrap::generics::{numeric_conversion, specialize_conversion};
 use bootstrap::generics::{function_template, specialize_functions};
 use bootstrap::callables::{has_callables, specialize_callables};
@@ -276,6 +277,10 @@ fn annotation_word(word: &[u8]) -> i64 {
     if word.content_eq(&annotation_22[..]) { return 22; }
     let try_slice_key: [u8; 9] = [116, 114, 121, 95, 115, 108, 105, 99, 101];
     if word.content_eq(&try_slice_key[..]) { return 28; }
+    let configurable_key: [u8; 12] = [99,111,110,102,105,103,117,114,97,98,108,101];
+    if word.content_eq(&configurable_key[..]) { return 31; }
+    let override_key: [u8; 8] = [111,118,101,114,114,105,100,101];
+    if word.content_eq(&override_key[..]) { return 32; }
     let historical_region: [u8; 21] = [115,116,97,99,107,95,114,101,103,105,111,110,95,109,97,120,95,115,105,122,101];
     if word.content_eq(&historical_region[..]) { return 30; }
     0
@@ -1002,10 +1007,13 @@ fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
         if mark == 39 {
             if tokens[index].kind == 14 {
                 index = index + 1;
-                if tokens[index].kind != 8 { return (0, 0); }
-                nodes[count] = syntax_leaf(9, copy(free), &tokens[index]);
-                count = count + 1;
-                index = index + 1;
+                if tokens[index].kind != 8 && !lexical_name(tokens[index].kind) { return (0, 0); }
+                let (next_length, used_length, length_node) = parse_expression(0, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(free), 0);
+                if next_length == 0 { return (0, 0); }
+                drop(length_node);
+                count = used_length;
+                index = next_length;
             }
             if tokens[index].kind != 40 { return (0, 0); }
             index = index + 1;
@@ -1269,10 +1277,13 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
             items = items + 1;
             if tokens[index].kind == 14 && items == 1 {
                 index = index + 1;
-                if tokens[index].kind != 8 { return (0, 0, 0); }
-                nodes[count] = syntax_leaf(9, copy(root), &tokens[index]);
-                count = count + 1;
-                index = index + 1;
+                if tokens[index].kind != 8 && !lexical_name(tokens[index].kind) { return (0, 0, 0); }
+                let (next_length, used_length, length_node) = parse_expression(depth + 1, &tokens[0..tokens.len()],
+                    &mut nodes[0..nodes.len()], copy(index), copy(count), copy(root), 0);
+                if next_length == 0 { return (0, 0, 0); }
+                drop(length_node);
+                count = used_length;
+                index = next_length;
                 kind = 45;
                 break;
             }
@@ -1601,7 +1612,37 @@ fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
     let tag = tokens[tag_token].annotation;
     let mut index = first + 3;
     let mut count = free + 1;
-    if tag == 4 {
+    if tag == 32 {
+        if tokens[index].kind != 10 { return (0, 0); }
+        index += 1;
+        if tokens[index].kind == 3 { return (0, 0); }
+        while true {
+            let entry = copy(count);
+            let first_name = copy(index);
+            if !lexical_name(tokens[index].kind) { return (0, 0); }
+            index += 1;
+            while tokens[index].kind == 43 {
+                index += 1;
+                if !lexical_name(tokens[index].kind) { return (0, 0); }
+                index += 1;
+            }
+            if tokens[index].kind != 13 { return (0, 0); }
+            nodes[entry + 1] = AstNode { kind: if index == first_name + 1 { 7 } else { 36 },
+                parent: copy(entry), start: tokens[first_name].start, end: tokens[index - 1].end,
+                name_start: tokens[first_name].start, name_end: tokens[first_name].end, public: false };
+            let (next, used, expression) = parse_expression(0, &tokens[0..tokens.len()],
+                &mut nodes[0..nodes.len()], index + 1, entry + 2, copy(entry), 0);
+            if next == 0 { return (0, 0); }
+            drop(expression);
+            nodes[entry] = AstNode { kind: 80, parent: copy(free), start: tokens[first_name].start,
+                end: tokens[next - 1].end, name_start: 0, name_end: 0, public: false };
+            index = next;
+            count = used;
+            if tokens[index].kind != 11 { break; }
+            index += 1;
+            if tokens[index].kind == 3 { break; }
+        }
+    } else if tag == 4 {
         if tokens[index].kind != 10 || tokens[index + 1].annotation != 6 { return (0, 0); }
         index = index + 2;
         if tokens[index].kind != 13 || tokens[index + 1].kind != 66 { return (0, 0); }
@@ -1803,6 +1844,13 @@ fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
     if depth % 256 >= 128 { return (0, 0); }
     let mut index = copy(first);
     let mut count = free + 1;
+    if tokens[index].kind == 71 && tokens[index + 2].annotation == 32 {
+        let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            copy(index), copy(count), copy(free));
+        if next == 0 { return (0, 0); }
+        index = next;
+        count = used;
+    }
     if tokens[index].kind == 71 {
         let region = tokens[index + 2].annotation == 2;
         let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
@@ -2462,6 +2510,11 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
             count = used;
             continue;
         }
+        let configurable = tokens[index].kind == 71 && tokens[index + 2].annotation == 31;
+        if configurable {
+            if tokens[index + 1].kind != 2 || tokens[index + 3].kind != 3 { return 0; }
+            index += 4;
+        }
         let mut public = tokens[index].kind == 57;
         if public { index = index + 1; }
         if tokens[index].kind == 71 && tokens[index + 2].annotation == 24 {
@@ -2490,6 +2543,7 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
             index = index + 1;
         }
         let item_kind = tokens[index].kind;
+        if configurable && item_kind != 81 { return 0; }
         if count != item && item_kind != 7 && item_kind != 60 && item_kind != 73 && item_kind != 58 && item_kind != 59 { return 0; }
         if item_kind == 81 {
             let (next, used) = parse_constant(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
@@ -2664,12 +2718,29 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         node = node + 1;
     }
     if check == 4 { return 0; }
+    if check != 0 && has_configuration(&tokens[0..tokens.len()]) {
+        return parse_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
+            check, env_call, package, &visibility[0..visibility.len()]);
+    }
+    let generic = generic_recipes(&source[0..source.len()], &nodes[..node]);
+    if check != 0 && (generic || has_pipeline(&source[0..source.len()], &tokens[0..tokens.len()])) {
+        return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
+            check, env_call, package, &visibility[0..visibility.len()], generic);
+    }
+    if check != 0 && has_callables(&source[0..source.len()], &nodes[..node]) {
+        return parse_callables(&source[0..source.len()], check, env_call, package, visibility);
+    }
+    emit_static_tree(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()], check, env_call, package, visibility)
+}
+
+// Recipe detection is reused by the iterative specialization workspace.
+fn generic_recipes(source: &[u8], nodes: &[AstNode]) -> bool {
     let mut generic = false;
     let mut candidate: u64 = 1;
-    while candidate < count {
+    while candidate < nodes.len() as u64 {
         let kind = nodes[candidate].kind;
         if (kind == 58 || kind == 67) && (nodes[nodes[candidate].parent].kind == 28 || nodes[nodes[candidate].parent].kind == 29)
-            && !deferred_iterator(&source[0..source.len()], &nodes[..node], nodes[candidate].parent) { generic = true; }
+            && !deferred_iterator(&source[0..source.len()], &nodes[0..nodes.len()], nodes[candidate].parent) { generic = true; }
         if kind == 58 && nodes[nodes[candidate].parent].parent == 0
             && (nodes[nodes[candidate].parent].kind == 1 || nodes[nodes[candidate].parent].kind == 35) {
             let type_name: [u8; 4] = [116,121,112,101];
@@ -2684,14 +2755,32 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         }
         candidate = candidate + 1;
     }
-    if check != 0 && (generic || has_pipeline(&source[0..source.len()], &tokens[0..tokens.len()])) {
-        return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
-            check, env_call, package, &visibility[0..visibility.len()], generic);
-    }
-    if check != 0 && has_callables(&source[0..source.len()], &nodes[..node]) {
-        return parse_callables(&source[0..source.len()], check, env_call, package, visibility);
-    }
-    emit_static_tree(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()], check, env_call, package, visibility)
+    generic
+}
+
+// Configuration monomorphization precedes generic/callable specialization.
+fn parse_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
+    env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+    if source.len() >= 4194304 { return 4; }
+    let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
+        scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
+        fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
+        private_start: 0, private_end: 0 }; 524289];
+    build_graph(&source[0..source.len()],&nodes[0..nodes.len()],&tokens[0..tokens.len()], &mut graph[..], true);
+    let mut output: [u8; 4194304] = [0; 4194304];
+    let mut offsets: [u64; 4194304] = [0; 4194304];
+    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let (error, written, view_count) = expand_configuration(&source[0..source.len()],&nodes[0..nodes.len()], &graph[..nodes.len()],&tokens[0..tokens.len()],
+        &mut output[..], &mut offsets[..],&visibility[0..visibility.len()], &mut views[..]);
+    if error != 0 { return error; }
+    let mut rewritten = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
+    let (status, count) = scan_tokens(&output[..written], &mut rewritten[..], copy(check));
+    if status != 0 { return status; }
+    let selected = select_target(&output[..written], &mut rewritten[..count + 3]);
+    if selected == 0 { return 7; }
+    mark_nominal_names(&output[..written], &mut rewritten[..selected]);
+    let env: u64 = if env_call == 0 { 0 } else { offsets[env_call] };
+    parse(&output[..written], &rewritten[..selected], check, env, package, &views[..view_count])
 }
 
 // Callable expansion reuses its syntax and graph workspace. Generated capture
@@ -2737,14 +2826,35 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             reset = reset + 1;
         }
         build_graph(&current[..length], &syntax[..used], &tokens[..selected], &mut graph[..], true);
-        let (status, written) = specialize_callables(&current[..length], &syntax[..used], &graph[..used],
-            &tokens[..selected], &mut expanded[..], &mut offsets[..]);
+        let generic = generic_recipes(&current[..length], &syntax[..used]);
+        let factory = iterator_factory(&current[..length], &syntax[..used]);
+        let mut rewrite_status: i32 = 0;
+        let mut rewrite_length: u64 = 0;
+        if generic || factory != 0 || has_pipeline(&current[..length], &tokens[..selected]) {
+            let (status, written) = rewrite_pipeline(&current[..length], &syntax[..used], &graph[..used],
+                &tokens[..selected], generic, factory, &mut expanded[..], &mut offsets[..]);
+            rewrite_status = status;
+            rewrite_length = written;
+        }
+        if rewrite_status != 0 { return rewrite_status; }
+        let mut status: i32 = 0;
+        let mut written = copy(rewrite_length);
+        if rewrite_length == 0 {
+            let (result, expanded_length) = specialize_callables(&current[..length], &syntax[..used], &graph[..used],
+                &tokens[..selected], &mut expanded[..], &mut offsets[..]);
+            status = result;
+            written = expanded_length;
+        }
         if status != 0 { return status; }
         if written == 0 {
             return emit_static_tree(&current[..length], &syntax[..used], &tokens[..selected],
                 check, env, package, &views[..view]);
         }
         if written >= 4194304 { return 4; }
+        if written == length {
+            let previous = &current[..length];
+            if previous.content_eq(&expanded[..written]) { return 7; }
+        }
         let mut item: usize = 0;
         while item < view {
             views[item] = LayoutVisibility { kind: views[item].kind, name: offsets[views[item].name],
@@ -2778,45 +2888,8 @@ fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
 
 fn parse_pipeline(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
     env_call: u64, package: bool, visibility: &[LayoutVisibility], generic: bool) -> i32 {
-    // The offset table includes the end of input.
-    if source.len() >= 4194304 { return 4; }
-    let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
-        scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,
-        visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0 }; 524289];
-    build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()],
-        &mut graph[..], true);
-    let mut expanded: [u8; 4194304] = [0; 4194304];
-    let mut offsets: [u64; 4194304] = [0; 4194304];
-    let factory = iterator_factory(&source[0..source.len()], &nodes[0..nodes.len()]);
-    let (error, length) = rewrite_pipeline(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..],
-        &tokens[0..tokens.len()], copy(generic), copy(factory), &mut expanded[..], &mut offsets[..]);
-    if error != 0 { return error; }
-    let mut relocated = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
-    let mut item: usize = 0;
-    while item < visibility.len() && visibility[item].name != 0 {
-        relocated[item] = LayoutVisibility { kind: visibility[item].kind, name: offsets[visibility[item].name],
-            start: offsets[visibility[item].start], end: offsets[visibility[item].end] };
-        item = item + 1;
-    }
-    let env: u64 = if env_call == 0 { 0 } else { offsets[env_call] };
-    let mut rewritten = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
-    let (status, count) = scan_tokens(&expanded[..length], &mut rewritten[..], copy(check));
-    if status != 0 { return status; }
-    let selected = select_target(&expanded[..length], &mut rewritten[..count + 3]);
-    if selected == 0 { return 7; }
-    mark_nominal_names(&expanded[..length], &mut rewritten[..selected]);
-    let mut syntax = [AstNode { kind: 0, parent: 0, start: 0, end: 0, name_start: 0,
-        name_end: 0, public: false }; 524289];
-    let used = parse_nodes(&rewritten[..selected], &mut syntax[..]);
-    if used == 0 { return 7; }
-    if generic || factory != 0 {
-        return parse(&expanded[..length], &rewritten[..selected], check, env, package, &relocated[..item]);
-    }
-    if has_callables(&expanded[..length], &syntax[..used]) {
-        return parse_callables(&expanded[..length], check, env, package, &relocated[..item]);
-    }
-    emit_static_tree(&expanded[..length], &syntax[..used], &rewritten[..selected],
-        check, env, package, &relocated[..item])
+    drop(nodes); drop(tokens); drop(generic);
+    parse_callables(&source[0..source.len()], check, env_call, package, &visibility[0..visibility.len()])
 }
 
 fn main() -> i32 {

@@ -225,6 +225,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict < 0 { return -9; }
             let pool = values[binding].target;
             let constructor = values[binding].origin_call;
+            let binding_mutable = values[binding].mutable;
             if mode == 1 {
                 let member = values[binding].loan_parent;
                 let alternatives = values[binding].exclusive;
@@ -232,7 +233,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     loan_parent: member, origin_call: copy(constructor), exclusive: alternatives };
             }
             values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
-                mutable: false, target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+                mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
             return if array_move { expected } else if mode == 1 { ty } else { 0 };
         }
         if values[binding].target != 0 {
@@ -780,8 +781,9 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             }
             let payload = checked_option_payload(copy(expected));
             let status = check_envelope_payload(&source[0..source.len()], &nodes[0..nodes.len()],
-                &graph[0..graph.len()], &mut values[0..values.len()], argument, payload);
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), payload);
             if status < 0 { return status; }
+            copy_task_summary(&mut values[0..values.len()], argument, node, copy(expected), false);
             return expected;
         }
         let variant = result_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(child));
