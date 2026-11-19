@@ -97,3 +97,13 @@ runtime-resource checks, a pinned install build and the new checkout's package
 smoke test pass on macOS ARM64. Emitted compiler C matches the pre-migration
 build byte for byte. No language or runtime implementation changed; no new
 safety claim is made. See [migration evidence](CORBO_REPOSITORY_MIGRATION_CYCLE.md).
+
+## Pool construction and fallible allocation
+
+- PASS: 11 focused native O1/fatal-UBSan programs and nine expected refusals.
+- PASS: owned Result cleanup/dependency summaries and scalar `?` forwarding.
+- PASS: byte-identical stage2/stage3 self-emission and explicit development-runtime resource freshness.
+- Scope: macOS ARM64; no broad corpus or independent audit, STD/runtime pinned to `600b409a0edae3112fd0dd68e246cd0798a0a666`; clean cache and embedded-runtime freshness checked.
+- Known limitation: complex owned-Result function signatures; existing iterator example fails in baseline and candidate.
+
+See [cycle report](POOL_CONSTRUCTION_TRY_CYCLE.md).

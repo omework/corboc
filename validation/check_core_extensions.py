@@ -34,7 +34,7 @@ REFUSED={
  'c_moved_binding':'fn main(){let x:i64=1;let y=x;@unchecked{@c{printf("%lld",(long long)${x});}}drop(y);}',
  'slice_use_after_move':'fn main(){let a:[u8;2]=[1,2];let first=&a[..];let second=first;print(first[0]);print(second[0]);}',
  'tuple_type_mismatch':'fn pair()->(bool,i64){(true,2)} fn main(){let (a,b)=if true{pair()}else{(1,2)};print(a);print(b);}',
- 'pop_shared':'fn main(){let mut p=pool<Vector<i64>>(1);let mut v=p.new();v.push(7);let view=&v[..];drop(v.pop());print(view[0]);}',
+ 'pop_shared':'fn main(){let mut p=Pool<Vector<i64>>::new(1);let mut v=p.new();v.push(7);let view=&v[..];drop(v.pop());print(view[0]);}',
 }
 
 def main():

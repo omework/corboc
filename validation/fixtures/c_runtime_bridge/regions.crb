@@ -2,7 +2,7 @@
 fn main(){
  #(stack_region: max_size=64K, count=2)
  {
- let mut vectors=pool<Vector<i64>>(1);let mut value=vectors.new();value.push(10);
+ let mut vectors=Pool<Vector<i64>>::new(1);let mut value=vectors.new();value.push(10);
  @unchecked{@c(includes={"assert.h"}){
   CorboVector *vector=corbo_allocation_data(&${value});
   *(int64_t*)corbo_region_push(vector)=20;

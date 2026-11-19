@@ -1,3 +1,16 @@
+## Pool construction and recoverable allocation (core + STD API)
+
+- [x] Parse `Pool<T>::new(capacity)`; reject the former constructor.
+- [x] Implement `try` with `PoolError.Full`, exactly-once initialization and cleanup.
+- [x] Preserve source-pool/field dependencies in stored/extracted owned Results.
+- [x] Migrate active source examples, grammar, STD exports and API documentation.
+- [x] Run 20 focused checks: 11 UBSan programs and nine expected refusals.
+- [x] Check C-reference slot reuse and byte-identical self-reconstruction.
+- [x] Record existing limits, the baseline iterator failure and platform scope.
+- [x] Pin the committed STD/runtime revision and verify the clean cache and runtime resource freshness.
+
+No open language decision. See [evidence and limits](POOL_CONSTRUCTION_TRY_CYCLE.md).
+
 ## Configurable constants and HTTP parsing (core + STD API)
 
 - [x] Parse configurable constants and lexical override blocks.

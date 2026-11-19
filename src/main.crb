@@ -259,10 +259,12 @@ fn annotation_word(word: &[u8]) -> i64 {
     if word.content_eq(&key_18[..]) { return 18; }
     let key_19: [u8; 1] = [71];
     if word.content_eq(&key_19[..]) { return 19; }
-    let pool_key: [u8; 4] = [112, 111, 111, 108];
+    let pool_key: [u8; 4] = [80, 111, 111, 108];
     if word.content_eq(&pool_key[..]) { return 20; }
     let new_key: [u8; 3] = [110, 101, 119];
     if word.content_eq(&new_key[..]) { return 21; }
+    let try_key: [u8;3]=[116,114,121];
+    if word.content_eq(&try_key[..]) { return 33; }
     let annotation_27: [u8; 4] = [116, 114, 117, 101];
     if word.content_eq(&annotation_27[..]) { return 27; }
     let annotation_26: [u8; 1] = [67];
@@ -1384,11 +1386,11 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
                 let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                     copy(first), copy(count), copy(root));
                 if next != 0 {
-                    if tokens[first].annotation == 20 && tokens[next].kind == 2 {
-                        if tokens[next + 1].kind != 8 || tokens[next + 2].kind != 3 { return (0, 0, 0); }
-                        nodes[used] = syntax_leaf(9, copy(root), &tokens[next + 1]);
+                    if tokens[first].annotation == 20 && tokens[next].kind == 43 && tokens[next + 1].annotation == 21 && tokens[next + 2].kind == 2 {
+                        if tokens[next + 3].kind != 8 || tokens[next + 4].kind != 3 { return (0, 0, 0); }
+                        nodes[used] = syntax_leaf(9, copy(root), &tokens[next + 3]);
                         count = used + 1;
-                        index = next + 3;
+                        index = next + 5;
                         kind = 66;
                     } else if tokens[next].kind == 43 && lexical_name(tokens[next + 1].kind)
                         && tokens[next + 2].kind == 2 {
@@ -1454,7 +1456,7 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
             }
             if kind == 16 {
                 index = index + 1;
-                if method == 21 && tokens[index].kind == 4
+                if (method == 21 || method == 33) && tokens[index].kind == 4
                     && (tokens[index + 1].kind == 5 || tokens[index + 2].kind == 10) {
                     let initializer = copy(count);
                     let initializer_start = tokens[index].start;

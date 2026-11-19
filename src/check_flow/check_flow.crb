@@ -482,6 +482,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             if graph[binder].declaration {
                 if unit_result_payload(copy(payload)) { return (9, 0); }
                 let mut shape: u64 = 0;
+                if payload>=6000000 && payload<7000000 {
+                    let holder=copy(subject);let actual=values[holder].loan_parent;
+                    if actual==0 || values[actual].target==0{return (9,0);}
+                    copy_task_summary(&mut values[0..values.len()],copy(actual),copy(binder),values[actual].ty,false);
+                }else{
                 let scalar = checked_result_payload(copy(payload));
                 let mut bound = if scalar != 0 { scalar } else { copy(payload) };
                 if inline_array(copy(payload)) {
@@ -491,7 +496,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     shape = unsigned(payload - 3000000);
                     bound = if nodes[shape].kind == 29 { 310 } else { 300 };
                 }
-                let holder=if nodes[subject].kind==7{copy(base)}else{copy(subject)};
+                let holder=copy(subject);
                 let retained = bound == 300 || bound == 2000138 || (bound >= 5000000000000000000 && bound < 6000000000000000000);
                 let constructor=values[holder].origin_call;
                 if bound==300 && constructor<nodes.len() as u64 && nodes[constructor].kind==37{shape=copy(constructor);}
@@ -499,6 +504,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     target: if retained { values[holder].target } else { 0 },
                     loan_parent: if retained { values[holder].loan_parent } else { 0 },
                     origin_call: if shape != 0 { shape } else if retained { constructor } else { 0 }, exclusive: false };
+                }
             } else if graph[binder].first_child != 0
                 || (nodes[binder].kind != 41 && !(unit_result_payload(payload) && nodes[binder].kind == 43)) {
                 return (9, 0);

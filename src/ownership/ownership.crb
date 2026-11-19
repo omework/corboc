@@ -53,7 +53,8 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
         if argument != 0 || nodes[initializer].name_end - nodes[initializer].name_start != 3 { return -9; }
         let method: [u8; 3] = [110,101,119];
         let spelling = &source[nodes[initializer].name_start..nodes[initializer].name_end];
-        if !spelling.content_eq(&method[..]) { return -9; }
+        let attempt:[u8;3]=[116,114,121];
+        if !spelling.content_eq(&method[..]) && !spelling.content_eq(&attempt[..]) { return -9; }
         let ty = pool_type + 100;
         values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
             loan_parent: 0, origin_call: 0, exclusive: false };
@@ -64,8 +65,8 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
     if !values[pool].mutable { return 0 - violation(5, start); }
     let method_start = nodes[initializer].name_start;
     let method_end = nodes[initializer].name_end;
-    if method_end - method_start != 3 || source[method_start] != 110
-        || source[method_start + 1] != 101 || source[method_start + 2] != 119 { return -9; }
+    let spelling=&source[method_start..method_end];let allocate:[u8;3]=[110,101,119];let attempt:[u8;3]=[116,114,121];
+    if !spelling.content_eq(&allocate[..]) && !spelling.content_eq(&attempt[..]) { return -9; }
     let supplied = graph[receiver].next_sibling;
     let mut argument = copy(supplied);
     if pool_type == 99 && nodes[supplied].kind == 2 {

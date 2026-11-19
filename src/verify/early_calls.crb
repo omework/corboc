@@ -1,3 +1,4 @@
+use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::process_arguments::{split_callee,split_receiver};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::ownership::plain_structure;
@@ -14,6 +15,9 @@ use bootstrap::lowering_types::unsigned as node_index;
 // -10 leaves ordinary expression dispatch in charge.
 fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    if pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(node)) {
+        return check_pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],node,expected,mode);
+    }
     let child = graph[node].first_child;
     let kind = nodes[node].kind;
     if is_utf8_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {

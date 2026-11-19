@@ -592,6 +592,15 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             }
         }
     }
+    if !deferred && result_type(copy(result)) && bootstrap::model::result_payload(copy(result),true)>=6000000 && bootstrap::model::result_payload(copy(result),true)<7000000 {
+        let formal=graph[function].first_child;if reservations!=1 || graph[formal].next_sibling!=parameter{return -9;}
+        let actual=reserved[0];let root=values[actual].target;let success=graph[parameter].first_child;
+        let kind=region_signature(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(success),false);
+        if root==0 || kind==0 || bootstrap::pool_results::allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(root))!=bootstrap::model::result_payload(copy(result),true){return -9;}
+        let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
+        values[slot]=CheckedValue{ty:kind,state:1,mutable:false,target:copy(root),loan_parent:0,origin_call:graph[success].first_child,exclusive:false};
+        values[call]=CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:slot,origin_call:0,exclusive:false};
+    }
     if !deferred && (result_type(copy(result)) || optional(copy(result))) {
         let summary=instantiate_envelope_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(parameter),copy(result));
         if summary<0{return summary;}

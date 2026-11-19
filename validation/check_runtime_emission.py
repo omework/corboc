@@ -39,7 +39,7 @@ def main():
         'opaque': 'fn peek(pointer:usize)->usize{let mut result:usize=0;@unchecked{@c{${result}=*(uintptr_t*)${pointer};}}result}',
         'entry': 'fn main(){}',
         'array': 'fn count()->i64{let values:[i64;2]=[1,2];values[0]}',
-        'owned': 'fn work(){let mut memory=pool<i64>(1);let value=memory.new(1);drop(value);}',
+        'owned': 'fn work(){let mut memory=Pool<i64>::new(1);let value=memory.new(1);drop(value);}',
         'async': 'async fn work()->i64{yield;1}',
         'borrowing': 'fn value(data:&i64)->i64{*data}',
         'unchecked_missing': 'fn value(){@c{int x=1;}}',

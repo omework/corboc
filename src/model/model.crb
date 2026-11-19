@@ -134,7 +134,7 @@ pub fn result_payload(ty: i64, ok: bool) -> i64 {
 
 pub fn result_arm_nominal(ty: i64) -> bool {
     let leaf = if ty >= 5000000000000000000 && ty < 5001000000000000000 { ty - 5000000000000000000 } else { ty };
-    leaf >= 3000000 && leaf < 4000000
+    (leaf >= 3000000 && leaf < 4000000) || (leaf>=6000000 && leaf<7000000)
 }
 
 pub fn result_has_nominal_payload(ty: i64) -> bool {

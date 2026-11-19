@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Fallible pool operations retain the same value graph as successful new().
+use bootstrap::model::{AstNode,StaticNode,CheckedValue,result_code,result_payload,reserve_summary};
+use bootstrap::lowering_types::{signed,wrap_pool};
+use bootstrap::lowering_annotations::annotation_type;
+use bootstrap::ownership::check_pool_new;
+use bootstrap::tasks::copy_task_summary;
+use bootstrap::verify::violation;
+
+/// Distinguishes a pool allocation attempt from ordinary user methods named try.
+pub fn pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],node:u64)->bool {
+    if nodes[node].kind!=16{return false;}
+    let receiver=graph[node].first_child;let pool=graph[receiver].binding;let ty=values[pool].ty;
+    if nodes[receiver].kind!=7 || !((ty>=93 && ty<200)||(ty>2000 && ty<2020)||(ty>=2200 && ty<=2227)||(ty>=8501 && ty<=8509)||(ty>=2601 && ty<=2608)){return false;}
+    let name:[u8;3]=[116,114,121];let method=&source[nodes[node].name_start..nodes[node].name_end];method.content_eq(&name[..])
+}
+
+/// Canonical PoolError remains an ordinary root-STD enum, including through aliases.
+pub fn pool_error(source:&[u8],nodes:&[AstNode],graph:&[StaticNode])->u64 {
+    let name:[u8;9]=[80,111,111,108,69,114,114,111,114];let full:[u8;4]=[70,117,108,108];let mut item=graph[0].first_child;
+    while item!=0 {
+        let spelling=&source[nodes[item].name_start..nodes[item].name_end];
+        if nodes[item].kind==29 && spelling.content_eq(&name[..]) {
+            let arm=graph[item].first_child;let variant=&source[nodes[arm].name_start..nodes[arm].name_end];
+            if arm!=0 && graph[arm].next_sibling==0 && graph[arm].first_child==0 && variant.content_eq(&full[..]){return item;}
+        }item=graph[item].next_sibling;
+    }0
+}
+
+/// Recover the concrete allocation descriptor type from its source pool declaration.
+pub fn allocation_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],pool:u64)->i64 {
+    let mut annotation=graph[graph[pool].initializer].first_child;
+    if nodes[pool].kind==3 {annotation=graph[graph[pool].first_child].first_child;}
+    let inner=graph[annotation].first_child;
+    let element=annotation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner);
+    wrap_pool(element,true)
+}
+
+/// Validate the supplied value once, then wrap its successful graph without discarding dependencies.
+pub fn check_pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
+    if mode!=1{return -9;}
+    let error=pool_error(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()]);if error==0{return 0-violation(1,nodes[node].start);}
+    let pool=graph[graph[node].first_child].binding;
+    let payload=allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(pool));if payload<6000000{return -9;}
+    let wrapped=result_code(copy(payload),3000000+signed(error));if expected!=0 && wrapped!=expected{return 0-violation(1,nodes[node].start);}
+    let actual=check_pool_new(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(node));if actual<0{return actual;}
+    let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
+    copy_task_summary(&mut values[0..values.len()],copy(node),copy(slot),actual,false);
+    values[node]=CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:pool,loan_parent:slot,origin_call:0,exclusive:false};wrapped
+}

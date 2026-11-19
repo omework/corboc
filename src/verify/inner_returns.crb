@@ -19,7 +19,7 @@ fn check_inner_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let tuple = tuple_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
     let checked = if tuple {
         tuple_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            &mut values[0..values.len()], expression, annotation)
+            &mut values[0..values.len()], copy(expression), annotation)
     } else {
         let mut expected = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
         if expected == 0 || graph[annotation].first_child != 0 {
@@ -27,10 +27,13 @@ fn check_inner_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         }
         if expected <= 0 { return 9; }
         let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            &mut values[0..values.len()], expression, copy(expected), 1);
+            &mut values[0..values.len()], copy(expression), copy(expected), 1);
         if actual >= 0 && actual != expected { return violation(1, nodes[statement].start); }
         actual
     };
     if checked < 0 { return 0 - checked; }
+    if bootstrap::model::result_type(copy(checked)) && bootstrap::model::result_payload(copy(checked),true)>=6000000 && bootstrap::model::result_payload(copy(checked),true)<7000000 && values[expression].loan_parent!=0 {
+        if !bootstrap::value_dependencies::result_fields_external(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],values[expression].loan_parent,function){return violation(4,nodes[statement].start);}
+    }
     task_exit(&nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], statement, 0)
 }

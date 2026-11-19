@@ -1,3 +1,4 @@
+use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::lowering_types::optional;
 use bootstrap::places::bind_record_pool;
 use bootstrap::regional_calls::scalar_vector_owner_element;
@@ -5,7 +6,7 @@ use bootstrap::scalar_options::{scalar_option_annotation, scalar_option, checked
 use bootstrap::places::{bind_record_field, resolve_record_receiver};
 use bootstrap::process_arguments::{read_argument_value, shared_text_annotation, argument_text_type, split_callee};
 use bootstrap::results::{result_annotation, result_variant, construct_result, check_envelope_payload};
-use bootstrap::model::result_type;
+use bootstrap::model::{result_type,result_payload};
 use bootstrap::lowering_types::signed;
 use bootstrap::tasks::{autonomous_enum, inline_void_worker};
 use bootstrap::calls::{bootstrap_callee, associated_callee, check_identity_move, identity_aggregate, joined_binding, same_type_spelling, spawned_function};
@@ -57,6 +58,13 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
         let child = graph[node].first_child;
         let annotated = kind == 5 && nodes[child].kind == 4;
         let initializer = if annotated { graph[child].next_sibling } else { copy(child) };
+        if kind==5 && pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(initializer)) {
+            let expected=if annotated{result_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(child))}else{0};
+            if annotated && expected==0{return (violation(1,start),0);}
+            let ty=check_pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(initializer),expected,1);
+            if ty<0{return (0-ty,0);}
+            copy_task_summary(&mut values[0..values.len()],initializer,copy(node),ty,graph[node].mutable);node=graph[node].next_sibling;continue;
+        }
         if kind == 5 && nodes[initializer].kind == 15 {
             let address = bind_asm_address(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(node), copy(initializer),
@@ -1531,6 +1539,10 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 return (0 - ty, 0);
             }
                     if ty != result { return (violation(1, start), 0); }
+                    if result_type(copy(ty)) && values[child].loan_parent!=0 && result_payload(copy(ty),true)>=6000000 && result_payload(copy(ty),true)<7000000 {
+                        let mut function=nodes[block].parent;while function!=0 && nodes[function].kind!=1 && nodes[function].kind!=35{function=nodes[function].parent;}
+                        if !result_fields_external(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],values[child].loan_parent,function){return (violation(4,start),0);}
+                    }
                     if pending_task(copy(ty)) && !native_return_valid(&nodes[0..nodes.len()],
                         &values[0..values.len()], copy(child)) {
                         return (violation(4, start), 0);

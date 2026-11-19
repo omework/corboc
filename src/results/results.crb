@@ -1,3 +1,6 @@
+use bootstrap::lowering_annotations::annotation_type;
+use bootstrap::lowering_types::{wrap_pool,pool_type};
+use bootstrap::model::reserve_summary;
 use bootstrap::value_summaries::borrowed_record_type;
 use bootstrap::process_arguments::{argument_list_annotation, argument_list_type, shared_text_annotation, argument_text_type};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, result_code, result_type, result_payload};
@@ -13,6 +16,7 @@ pub fn unit_result_payload(ty: i64) -> bool { ty == 10 }
 
 // Keep usize distinct in result identity, even on a 64-bit target.
 pub fn scalar_result_payload(ty: i64) -> i64 {
+    if ty>=6000000 && ty<7000000{return ty;}
     if ty == 11 { return pointer_integer_type(); }
     if ty == 2000138 || optional(copy(ty)) { return ty; }
     if ty >= 1 && ty <= 9 { return ty; }
@@ -69,6 +73,11 @@ pub fn plain_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a
 pub fn payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
     if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) { return argument_text_type(); }
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+    let allocation:[u8;1]=[65];
+    if name.content_eq(&allocation[..]) && graph[annotation].first_child!=0 && graph[graph[annotation].first_child].next_sibling==0 {
+        let element=annotation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[annotation].first_child);
+        return wrap_pool(element,true);
+    }
     let option: [u8; 6] = [79,112,116,105,111,110];
     let inner = graph[annotation].first_child;
     if name.content_eq(&option[..]) && inner != 0 && graph[inner].next_sibling == 0 {
@@ -137,15 +146,25 @@ pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(1, nodes[node].start); }
     let payload = result_payload(copy(expected), variant == 1);
     let status = check_envelope_payload(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), payload);
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), copy(payload));
     if status < 0 { return status; }
-    copy_task_summary(&mut values[0..values.len()], argument, node, copy(expected), false);
+    if payload>=6000000 && payload<7000000 {
+        let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
+        copy_task_summary(&mut values[0..values.len()],copy(argument),copy(slot),values[argument].ty,false);
+        values[node]=CheckedValue{ty:copy(expected),state:1,mutable:false,target:values[argument].target,loan_parent:slot,origin_call:0,exclusive:false};
+    }else{copy_task_summary(&mut values[0..values.len()], argument, node, copy(expected), false);}
     expected
 }
 
 pub fn check_envelope_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], argument: u64, payload: i64) -> i64 {
     if payload == argument_list_type() { return -9; }
+    if payload>=6000000 && payload<7000000 {
+        if nodes[argument].kind!=7{return -9;}
+        let binding=graph[argument].binding;let ty=values[binding].ty;let root=values[binding].target;
+        if bootstrap::pool_results::allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],root)!=payload{return 0-violation(1,nodes[argument].start);}
+        let actual=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],argument,ty,1);if actual<0{return actual;}return 0;
+    }
     let scalar = checked_result_payload(copy(payload));
     if unit_result_payload(copy(payload)) {
         if nodes[argument].kind != 19 || graph[argument].first_child != 0 {

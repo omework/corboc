@@ -197,7 +197,8 @@ fn native_type_name(name: &[u8]) -> bool {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let map: [u8; 7] = [72,97,115,104,77,97,112];
     let string: [u8; 6] = [83,116,114,105,110,103];
-    name.content_eq(&vector[..]) || name.content_eq(&map[..]) || name.content_eq(&string[..])
+    let pool: [u8;4]=[80,111,111,108];
+    name.content_eq(&vector[..]) || name.content_eq(&map[..]) || name.content_eq(&string[..]) || name.content_eq(&pool[..])
 }
 
 // Permit export declarations of reserved native names only in the root STD.
@@ -234,6 +235,14 @@ fn native_std_type(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[
     if files[owner].package != 64 || !module.content_eq(&root[..]) { return false; }
     let name = &source[nodes[item].name_start..nodes[item].name_end];
     native_type_name(name)
+}
+
+// The intrinsic fallible allocator returns this ordinary STD enum by stable identity.
+fn std_pool_error(source:&[u8],names:&[u8],files:&[PackageFile],nodes:&[AstNode],item:u64)->bool {
+    if nodes[item].kind!=29{return false;}
+    let owner=file_at(&files[0..files.len()],nodes[item].start);let root:[u8;3]=[115,116,100];let error:[u8;9]=[80,111,111,108,69,114,114,111,114];
+    let module=&names[files[owner].module_start..files[owner].module_end];let name=&source[nodes[item].name_start..nodes[item].name_end];
+    files[owner].package==64 && module.content_eq(&root[..]) && name.content_eq(&error[..])
 }
 
 fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) -> u64 {
@@ -546,7 +555,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 symbols_end = symbols_end + 1;
                 let name = &source[start..end];
                 if files[file].entry && kind == 1 && name.content_eq(&main[0..main.len()]) { main_node = copy(node); }
-                else { edits[start] = Edit { end: end, target: copy(node) }; }
+                else if !std_pool_error(&source[0..source.len()],&names[0..names.len()],&files[0..files.len()],&nodes[0..nodes.len()],copy(node)) { edits[start] = Edit { end: end, target: copy(node) }; }
                 if native_std_type(&source[0..source.len()], &names[0..names.len()],
                     &files[0..files.len()], &nodes[0..nodes.len()], copy(node)) {
                     edits[nodes[node].start] = Edit { end: nodes[node].end, target: 0 };
@@ -714,7 +723,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                         }
                     }
                 } else if native_std_type(&source[0..source.len()], &names[0..names.len()],
-                    &files[0..files.len()], &nodes[0..nodes.len()], copy(target)) {
+                    &files[0..files.len()], &nodes[0..nodes.len()], copy(target)) || std_pool_error(&source[0..source.len()],&names[0..names.len()],&files[0..files.len()],&nodes[0..nodes.len()],copy(target)) {
                     let mut letter = nodes[target].name_start;
                     while letter < nodes[target].name_end {
                         if written == output.len() { return (4, 0, 0); }

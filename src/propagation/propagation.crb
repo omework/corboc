@@ -57,6 +57,11 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
         if !scalar_option(outer){return 0-violation(1,nodes[node].start);}
         payload=checked_option_payload(copy(ty));
     }else{return 0-violation(1,nodes[node].start);}
+    if result_type(copy(ty)) && payload>=6000000 && payload<7000000 {
+        let value=values[child].loan_parent;if value==0{return -9;}let actual=values[value].ty;
+        if mode==2 || (expected!=0 && expected!=actual){return 0-violation(1,nodes[node].start);}
+        copy_task_summary(&mut values[0..values.len()],value,node,copy(actual),false);return actual;
+    }
     let scalar=checked_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
         let nominal=unsigned(copy(payload)-3000000);if nodes[nominal].kind==29{310}else{300}
     }else{copy(payload)};

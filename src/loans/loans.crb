@@ -1,3 +1,4 @@
+use bootstrap::model::result_type;
 use bootstrap::model::{summary_value,summary_next};
 use bootstrap::model::constructor_argument_retained;
 use bootstrap::scalar_options::{option_borrow, option_handle};
@@ -126,6 +127,7 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 // sequence. A negative result requires control-flow liveness to decide.
 pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) -> bool {
     let ty = values[loan].ty;
+    if result_type(copy(ty)) {let member=values[loan].loan_parent;return member!=0 && reserves(&values[0..values.len()],&graph[0..graph.len()],member,target);}
     if ty == 5019 { return values[loan].target == target; }
     if ty >= 81 && ty <= 87 {
         let mut item = values[loan].origin_call;

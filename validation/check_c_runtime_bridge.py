@@ -18,9 +18,9 @@ REFUSED={
 C_REFUSED={
  'immutable_record':'struct Point{x:i64} fn main(){let p=Point{x:1};@unchecked{@c{${p}.f_x=2;}}}',
  'immutable_array':'fn main(){let a:[i64;1]=[1];@unchecked{@c{${a}.items[0]=2;}}}',
- 'immutable_descriptor':'fn main(){let mut pool=pool<i64>(1);let value=pool.new(1);@unchecked{@c{${value}.pool=NULL;}}}',
+ 'immutable_descriptor':'fn main(){let mut pool=Pool<i64>::new(1);let value=pool.new(1);@unchecked{@c{${value}.pool=NULL;}}}',
 }
-EXTERNAL='''struct Point{x:i64} fn main(){let mut point=Point{x:3};let mut p=pool<i64>(1);let mut v=p.new(5);@unchecked{@c(includes={"HEADER"}){
+EXTERNAL='''struct Point{x:i64} fn main(){let mut point=Point{x:3};let mut p=Pool<i64>::new(1);let mut v=p.new(5);@unchecked{@c(includes={"HEADER"}){
  assert(point_value(&${point})==3);assert(external_info().position==corbo_datastack_info().position);
  CorboStackMark mark=corbo_datastack_mark();external_allocate();assert(external_info().position>mark.position);corbo_datastack_rewind(mark);
  external_store(&${v},17);${point}.f_x=7;

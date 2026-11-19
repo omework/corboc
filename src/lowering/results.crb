@@ -104,6 +104,10 @@ pub fn result_definition(ty: i64, storage: bool) {
         let arm = if side == 0 { copy(success) } else { copy(error) };
         let wrapped = optional(copy(arm));
         let leaf = if wrapped { option_payload(copy(arm)) } else { copy(arm) };
+        if leaf>=6000000 && leaf<7000000 {
+            let text: [u8; 3]=[105,102,40];byte_text(&text[..]);if side!=0{character(33);}let test: [u8; 22]=[118,45,62,111,107,41,112,117,116,40,38,118,45,62,112,97,121,108,111,97,100,46];byte_text(&test[..]);
+            if side==0{let part: [u8; 7]=[115,117,99,99,101,115,115];byte_text(&part[..]);}else{let part: [u8; 5]=[101,114,114,111,114];byte_text(&part[..]);}let end: [u8; 3]=[41,59,10];byte_text(&end[..]);
+        }
         if leaf >= 3000000 && leaf < 4000000 {
             { let text: [u8; 3] = [105,102,40]; byte_text(&text[..]); } if side != 0 { character(33); }
             { let text: [u8; 5] = [118,45,62,111,107]; byte_text(&text[..]); }

@@ -85,6 +85,11 @@ pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u
 
 pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, pool: u64) -> bool {
     let ty = values[holder].ty;
+    if result_type(copy(ty)) {
+        if values[holder].target==pool{return true;}
+        let member=values[holder].loan_parent;
+        return member!=0 && holds_pool(&graph[0..graph.len()],&values[0..values.len()],member,pool);
+    }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[holder].origin_call;
         while summary_entry != 0 {
@@ -422,6 +427,9 @@ pub fn external_dependencies(graph:&[StaticNode],values:&[CheckedValue],owner:u6
             if external_dependencies(&graph[0..graph.len()],&values[0..values.len()],summary_value(&values[0..values.len()],copy(entry)),depth+1){return true;}
             entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],entry);
         }return false;
+    }
+    if result_type(copy(ty)) {
+        let payload=values[owner].loan_parent;return payload!=0 && external_dependencies(&graph[0..graph.len()],&values[0..values.len()],payload,depth+1);
     }
     if ty==300 || ty==310 || ty==475 {
         let parent=values[owner].loan_parent;

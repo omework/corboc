@@ -6,7 +6,7 @@ fn main(){
  let mut row:[i64;3]=[3,4,5];
  let mut pair=(6,7);
  let mut choice=Choice.Number{value:8};
- let mut memory=pool<i64>(2);let mut number=memory.new(9);
+ let mut memory=Pool<i64>::new(2);let mut number=memory.new(9);
  let view=&mut point;let width:usize=8;
  @unchecked{
   @c(includes={"corbo_runtime.h","assert.h"}){

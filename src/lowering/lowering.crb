@@ -1136,6 +1136,16 @@ fn pool_construct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types:
     ty
 }
 
+// Evaluate initializer expressions first; a failed claim destroys that value, not a pool slot.
+fn emit_pool_try_start(result:i64,owned:i64,node:u64,allocation:u64,pool:u64,arm:u64,error_arm:u64) {
+    declaration(result,copy(node));{ let code:[u8;6]=[61,123,48,125,59,10];byte_text(&code[..]); }temporary(copy(node));{ let code:[u8;12]=[46,108,105,118,101,61,116,114,117,101,59,10];byte_text(&code[..]); }
+    temporary(copy(node));{let code:[u8;19]=[46,112,97,121,108,111,97,100,46,101,114,114,111,114,46,116,97,103,61];byte_text(&code[..]);}number(error_arm);character(59);character(10);
+    declaration(owned,copy(allocation));{ let code:[u8;6]=[61,123,48,125,59,10];byte_text(&code[..]); }temporary(copy(node));{ let code:[u8;19]=[46,111,107,61,112,111,111,108,95,116,114,121,95,116,97,107,101,40,38];byte_text(&code[..]); }temporary(allocation);character(44);local(pool);character(44);number(arm);{ let code:[u8;6]=[41,59,10,105,102,40];byte_text(&code[..]); }temporary(node);{ let code:[u8;6]=[46,111,107,41,123,10];byte_text(&code[..]); }
+}
+fn emit_pool_try_success(node:u64,allocation:u64) {
+    temporary(node);{ let code:[u8;17]=[46,112,97,121,108,111,97,100,46,115,117,99,99,101,115,115,61];byte_text(&code[..]); }temporary(allocation);{ let code:[u8;2]=[59,10];byte_text(&code[..]); }
+}
+
 fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
     ctx: &Lowering, node: u64, ty: i64) -> i64 {
     let receiver = graph[node].first_child;
@@ -1143,8 +1153,13 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
     let mut arg = graph[receiver].next_sibling;
     let element = pool_type(ty);
     let name: [u8;3] = [110,101,119];
-    if !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..])
+    let attempt:[u8;3]=[116,114,121];
+    let fallible=word(&source[0..source.len()],&nodes[0..nodes.len()],copy(node),&attempt[..]);
+    if (!fallible && !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..]))
         || nodes[receiver].kind != 7 { return -1; }
+    let allocation=if fallible{node+1000000000}else{copy(node)};
+    let error=if fallible{bootstrap::pool_results::pool_error(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()])}else{0};
+    if fallible && error==0{return -1;}
     if nodes[arg].kind == 2 {
         let tail = graph[arg].first_child;
         if nodes[tail].kind == 10 && graph[tail].next_sibling == 0 { arg = graph[tail].first_child; }
@@ -1152,20 +1167,24 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
     let fields = nodes[arg].kind == 31 || nodes[arg].kind == 74;
     if !fields && graph[arg].next_sibling != 0 { return -1; }
     let owned = wrap_pool(copy(element), true);
+    let outcome=if fallible{bootstrap::model::result_code(copy(owned),3000000+signed(copy(error)))}else{copy(owned)};
     if vector_type(copy(element)) {
         if arg != 0 { return -1; }
         if (*ctx).emit {
-            declaration(copy(owned), copy(node)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); { let code: [u8;5] = [44,48,41,59,10]; byte_text(&code[..]); }
+            if fallible { emit_pool_try_start(copy(outcome),copy(owned),copy(node),copy(allocation),copy(binding),0,graph[error].first_child); }else{
+            declaration(copy(owned), copy(allocation)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); { let code: [u8;5] = [44,48,41,59,10]; byte_text(&code[..]); }
+            }
             let slot = vector_element(element);
-            { let code: [u8;17] = [118,97,108,117,101,95,114,101,103,105,111,110,95,110,101,119,40]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;13] = [46,115,108,111,116,44,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(copy(slot));
-            { let code: [u8;36] = [41,44,48,44,33,99,117,114,114,101,110,116,95,98,97,110,100,38,38,33,103,108,111,98,97,108,95,98,117,100,103,101,116,41,59,10]; byte_text(&code[..]); } temporary(node);
+            { let code: [u8;17] = [118,97,108,117,101,95,114,101,103,105,111,110,95,110,101,119,40]; byte_text(&code[..]); } temporary(copy(allocation)); { let code: [u8;13] = [46,115,108,111,116,44,115,105,122,101,111,102,40]; byte_text(&code[..]); } c_type(copy(slot));
+            { let code: [u8;36] = [41,44,48,44,33,99,117,114,114,101,110,116,95,98,97,110,100,38,38,33,103,108,111,98,97,108,95,98,117,100,103,101,116,41,59,10]; byte_text(&code[..]); } temporary(copy(allocation));
             if uses_pool(copy(slot)) { { let code: [u8;31] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,111,119,110,101,100,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
             else if handle_type(copy(slot)) { { let code: [u8;30] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,116,97,115,107,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
             else if slot > 3000000 && slot < 4000000 {
                 { let code: [u8;23] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,118,101,99,116,111,114]; byte_text(&code[..]); } number(nominal_type(slot)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
             } else { { let code: [u8;25] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121,95,114,101,103,105,111,110,59,10]; byte_text(&code[..]); } }
         }
-        return owned;
+        if fallible && (*ctx).emit {emit_pool_try_success(copy(node),copy(allocation));let end:[u8;2]=[125,10];byte_text(&end[..]);}
+        return outcome;
     }
     let mut arm: u64 = 0;
     let record = nominal_type(copy(element));
@@ -1183,8 +1202,8 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
     let emit = (*ctx).emit;
     let mut initial: u64 = 0;
     if fields {
-        initial = copy(node);
-        if emit { declaration(copy(element), copy(node)); { let code: [u8;14] = [95,112,97,121,108,111,97,100,61,123,48,125,59,10]; byte_text(&code[..]); } }
+        initial = copy(allocation);
+        if emit { declaration(copy(element), copy(allocation)); { let code: [u8;14] = [95,112,97,121,108,111,97,100,61,123,48,125,59,10]; byte_text(&code[..]); } }
         let mut field = if nodes[arg].kind == 74 { graph[arg].first_child } else { copy(arg) };
         while field != 0 {
             let member = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -1196,7 +1215,7 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
                 &mut types[0..types.len()], ctx, copy(value), copy(want));
             if actual != want { return -1; }
             if emit {
-                temporary(copy(node)); { let code: [u8;10] = [95,112,97,121,108,111,97,100,46,109]; byte_text(&code[..]); } number(member); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                temporary(copy(allocation)); { let code: [u8;10] = [95,112,97,121,108,111,97,100,46,109]; byte_text(&code[..]); } number(member); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
             }
             field = graph[field].next_sibling;
         }
@@ -1207,26 +1226,40 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
         initial = arg;
     }
     if emit {
-        declaration(copy(owned), copy(node)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); character(44); number(arm); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        if fallible {emit_pool_try_start(copy(outcome),copy(owned),copy(node),copy(allocation),copy(binding),copy(arm),graph[error].first_child);}else{
+        declaration(copy(owned), copy(allocation)); { let code: [u8;11] = [61,112,111,111,108,95,116,97,107,101,40]; byte_text(&code[..]); } local(binding); character(44); number(arm); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
+        }
         if handle_type(copy(element)) {
-            temporary(copy(node)); { let code: [u8;31] = [46,100,101,115,116,114,111,121,61,100,105,115,112,111,115,101,95,104,97,110,100,108,101,95,118,97,108,117,101,59,10]; byte_text(&code[..]); }
+            temporary(copy(allocation)); { let code: [u8;31] = [46,100,101,115,116,114,111,121,61,100,105,115,112,111,115,101,95,104,97,110,100,108,101,95,118,97,108,117,101,59,10]; byte_text(&code[..]); }
         } else if record != 0 {
-            temporary(copy(node)); { let code: [u8;16] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(record)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            temporary(copy(allocation)); { let code: [u8;16] = [46,100,101,115,116,114,111,121,61,100,101,115,116,114,111,121]; byte_text(&code[..]); } number(copy(record)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
         }
         if record != 0 && types[record] > 0 && (initial == 0 || fields) {
             if fields {
-                temporary(copy(node)); { let code: [u8;20] = [95,112,97,121,108,111,97,100,46,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
+                temporary(copy(allocation)); { let code: [u8;20] = [95,112,97,121,108,111,97,100,46,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
             } else {
-                { let code: [u8;2] = [40,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;19] = [46,115,108,111,116,41,45,62,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
+                { let code: [u8;2] = [40,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(allocation)); { let code: [u8;19] = [46,115,108,111,116,41,45,62,108,105,118,101,61,116,114,117,101,59,10]; byte_text(&code[..]); }
             }
         }
         if initial != 0 {
-            { let code: [u8;2] = [42,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;6] = [46,115,108,111,116,61]; byte_text(&code[..]); } temporary(initial);
+            { let code: [u8;2] = [42,40]; byte_text(&code[..]); } c_type(copy(element)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(allocation)); { let code: [u8;6] = [46,115,108,111,116,61]; byte_text(&code[..]); } temporary(copy(initial));
             if fields { { let code: [u8;8] = [95,112,97,121,108,111,97,100]; byte_text(&code[..]); } }
             { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
         }
     }
-    owned
+    if emit && fallible {
+        emit_pool_try_success(copy(node),copy(allocation));
+        let otherwise:[u8;7]=[125,101,108,115,101,123,10];byte_text(&otherwise[..]);
+        if initial!=0 && needs_cleanup(copy(element),true) {
+            if fields {
+                let clean=copy(node)+2000000000;
+                declaration(copy(element),copy(clean));character(61);temporary(copy(allocation));let suffix:[u8;10]=[95,112,97,121,108,111,97,100,59,10];byte_text(&suffix[..]);
+                drop_value(copy(element),clean,false);
+            }else{drop_value(copy(element),copy(initial),false);}
+        }
+        let close:[u8;2]=[125,10];byte_text(&close[..]);
+    }
+    outcome
 }
 
 
