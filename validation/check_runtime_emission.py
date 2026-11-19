@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from runtime_sources import UNPACK, pack
+from runtime_sources import UNPACK, pack, packed_literal
 
 
 def expand(stream):
@@ -62,9 +62,8 @@ def main():
         assert expand(pack(sample)) == sample
     # Execute the actual emitted Corbo decoder, including its 64 KiB history wrap.
     sample = samples[-1]
-    encoded = ','.join(map(str, pack(sample)))
     source = 'fn character(byte:i32){@unchecked{@c{putchar((int)${byte});}}}\n' + UNPACK
-    source += 'fn main(){let bytes:[u8;' + str(len(pack(sample))) + ']=[' + encoded + '];resource_unpack(&bytes[..]);}'
+    source += 'fn main(){' + packed_literal(sample) + '}'
     path = args.keep / 'decode.crb'
     path.write_text(source)
     generated = args.keep / 'decode.c'

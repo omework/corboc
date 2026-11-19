@@ -1,3 +1,4 @@
+use bootstrap::lock_contracts::validate_effect_annotations;
 use bootstrap::value_summaries::{borrowed_record_type,symbolic_record};
 use bootstrap::native_checks::check_raw_addresses;
 use bootstrap::constants::validate_constants;
@@ -36,6 +37,8 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
         let status = validate_standalone_declarations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(env_call), package);
         if status != 0 { return status; }
     }
+    let effect_annotations = validate_effect_annotations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
+    if effect_annotations != 0 { return 8; }
     let raw_addresses = check_raw_addresses(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
     if raw_addresses != 0 { return raw_addresses; }
     let constants = validate_constants(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);

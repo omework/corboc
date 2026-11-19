@@ -232,3 +232,21 @@ pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:
     values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,exclusive:false};
     values[point]=CheckedValue{ty:300,state:1,mutable:graph[formal].mutable,target:0,loan_parent:copy(marker),origin_call:copy(nominal),exclusive:false};true
 }
+
+/// Instantiate a returned record using the same per-field graph as tuple components.
+/// Call arguments have already been evaluated and reserved by signature checking.
+pub fn instantiate_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], function: u64, call: u64, annotation: u64) -> i64 {
+    let body = graph[annotation].next_sibling;
+    let mut tail = graph[body].first_child;
+    while tail != 0 && graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+    if nodes[tail].kind != 6 && nodes[tail].kind != 10 { return -9; }
+    let instance = instantiate_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], function, copy(call), graph[tail].first_child, annotation, 0);
+    if instance == 0 || values[instance].ty != 300 { return -9; }
+    let members = values[instance].loan_parent;
+    let shape = values[instance].origin_call;
+    values[call] = CheckedValue { ty: 300, state: 1, mutable: false, target: 0,
+        loan_parent: members, origin_call: shape, exclusive: false };
+    300
+}

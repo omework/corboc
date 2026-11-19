@@ -2,7 +2,7 @@ use bootstrap::places::bind_record_pool;
 use bootstrap::regional_calls::scalar_vector_owner_element;
 use bootstrap::scalar_options::{scalar_option_annotation, scalar_option, checked_option_payload, option_borrow, option_borrow_return, copy_option_borrow, option_allocation, option_handle, option_resource_return, record_borrow, slice_borrow, check_option_reference};
 use bootstrap::places::{bind_record_field, resolve_record_receiver};
-use bootstrap::process_arguments::read_argument_value;
+use bootstrap::process_arguments::{read_argument_value, shared_text_annotation, argument_text_type};
 use bootstrap::results::{result_annotation, result_variant, construct_result, check_envelope_payload};
 use bootstrap::model::result_type;
 use bootstrap::lowering_types::signed;
@@ -670,6 +670,9 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
             let mut declared: u64 = 0;
             if nodes[child].kind == 4 {
                 expected = verify_primitive(&source[0..source.len()], nodes[child].name_start, nodes[child].name_end);
+                if expected == 0 && shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) {
+                    expected = argument_text_type();
+                }
                 if expected == 0 {
                     expected = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(child));

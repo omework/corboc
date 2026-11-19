@@ -1,0 +1,1 @@
+fn identity(value:&i64)->&i64{&*value}fn main(){let n:i64=42;let v=identity(&n);print(*v);}

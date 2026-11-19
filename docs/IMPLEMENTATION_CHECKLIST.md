@@ -1,3 +1,18 @@
+## Documentation coverage gaps (compiler/core)
+
+- [x] Replay the nine historical failures without changing their sources or accepted rules.
+- [x] Integrate function structural contracts and explicit returned-borrow arguments.
+- [x] Integrate branch/lock signature metadata, temporary joins and aggregate lock-result dependencies.
+- [x] Integrate and validate batched exact numeric try_from, typed text length, named slice comparison and C address operands.
+- [x] Accept usize-bearing records in custom buffered adapters.
+- [x] Execute 18 focused programs, seven refusals and the six/seven callable regressions.
+- [x] Validate the compact resource representation, history wrap and runtime-only boundary.
+- [x] Install the compiler; compare its own emitted C byte for byte.
+- [x] Update historical observations, documentation replay and the [cycle report](DOCUMENTATION_COVERAGE_CYCLE.md).
+
+No new language decision remains for these nine forms. Platform limits and
+unexercised compositions are listed in the report.
+
 # General callable support (compiler/core)
 
 - [x] Reuse the existing closure and `fn` / `&fn` / `&mut fn` syntax.

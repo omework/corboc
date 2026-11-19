@@ -1,0 +1,2 @@
+fn identity(value: &i64) -> &i64 { &*value }
+fn main() { let mut n: i64 = 42; let view = identity(&n); n = 1; print(*view); }

@@ -1,0 +1,12 @@
+fn main() {
+    let exact: f64 = 1.5;
+    match f32::try_from(exact) { Ok(value) => { drop(value); print(true); }, Err(error) => { drop(error); print(false); } }
+    let rounded: f64 = 0.1;
+    match f32::try_from(rounded) { Ok(value) => { drop(value); print(false); }, Err(error) => { drop(error); print(true); } }
+    let integer: u64 = 9007199254740993;
+    match f64::try_from(integer) { Ok(value) => { drop(value); print(false); }, Err(error) => { drop(error); print(true); } }
+    let negative: f64 = -1.0;
+    match u64::try_from(negative) { Ok(value) => { drop(value); print(false); }, Err(error) => { drop(error); print(true); } }
+    let outside: f64 = 10000000000000000000000000000000000000000.0;
+    match f32::try_from(outside) { Ok(value) => { drop(value); print(false); }, Err(error) => { drop(error); print(true); } }
+}

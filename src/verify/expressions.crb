@@ -1,3 +1,4 @@
+use bootstrap::signatures::move_slice_argument;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::scalar::pointer_integer_type;
 use bootstrap::propagation::check_propagation;
@@ -593,7 +594,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let member = &source[nodes[node].name_start..nodes[node].name_end];
         if values[binding].ty == 744 && member.content_eq(&name[..]) {
             let argument = graph[child].next_sibling;
-            if nodes[argument].kind != 13 || graph[argument].next_sibling != 0 { return -9; }
+            if (nodes[argument].kind != 13 && nodes[argument].kind != 7) || graph[argument].next_sibling != 0 { return -9; }
             if values[binding].state != 1
                 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
                 return 0 - violation(4, nodes[child].start);
@@ -601,8 +602,10 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
                 &graph[0..graph.len()], binding, copy(child), false);
             if conflict != 0 { return if conflict > 0 { 0 - violation(5, nodes[child].start) } else { -9 }; }
-            let operand = bind_slice(&source[0..source.len()], &nodes[0..nodes.len()],
-                &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), copy(argument), 0);
+            let operand = if nodes[argument].kind == 7 {
+                move_slice_argument(&nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), 744)
+            } else { bind_slice(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), copy(argument), 0) };
             if operand < 0 { return operand; }
             if operand == 0 || values[argument].ty != 744 || values[argument].exclusive { return -9; }
             if expected != 0 && expected != 3 { return 0 - violation(1, start); }

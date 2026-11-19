@@ -1,3 +1,12 @@
+## Documentation coverage follow-up
+
+| Rules / mechanism | Executed evidence | Scope and limits |
+| --- | --- | --- |
+| N1/N8: structural contracts and numeric/text typing | Concrete function candidates, inferred output, forwarding, numeric bounds/exactness and descriptors executed. | Nine historical observations resolved; bounded expansion remains. |
+| N4/N5/N6: returned loans, native boundary and lock lifetime | Explicit borrowed returns and relays, C operands, persistent aggregate lock results, drop release and expected invalid variants. | Targets and reservations checked through existing dependency graphs; arbitrary result shapes not claimed. |
+| N7 and composition regressions | Buffered sink flush, callable cleanup/iterator composition and actual resource decoder all execute under fatal UBSan. | 26 executions, 20 expected refusals, two runtime-only accepts and five packing round trips on macOS ARM64. |
+| Bootstrap and traceability | Final compiler installed; self-emitted C byte-identical; all 33 README blocks synchronized. | One reconstruction comparison, no full historical/platform campaign or independent audit. [Report](DOCUMENTATION_COVERAGE_CYCLE.md). |
+
 # Compiler extraction verification matrix
 
 | Property | Evidence | Status |

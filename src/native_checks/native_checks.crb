@@ -382,7 +382,7 @@ pub fn check_raw_addresses(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                         return report_violation(4, offset);
                     }
                 } else if kind == 16 { return report_violation(4, offset); }
-                else if kind != 8 && kind != 51 {
+                else if kind != 8 && kind != 51 && kind != 77 {
                     if kind == 39 && graph[parent].first_child == use_node {
                         let mut arm = graph[use_node].next_sibling;
                         while arm != 0 {

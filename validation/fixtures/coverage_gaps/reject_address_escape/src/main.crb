@@ -1,0 +1,1 @@
+fn main() { let mut n: i64 = 42; let mut pointer: usize = 0; @unchecked { let address = addr(&mut n); pointer = address; } print(pointer); }

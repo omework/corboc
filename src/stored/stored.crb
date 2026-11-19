@@ -358,6 +358,15 @@ pub fn record_loan_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], copy(root), copy(expression), copy(exclusive));
         if conflict > 0 { return 0 - violation(5, nodes[expression].start); }
         if conflict < 0 { return -9; }
+    } else if nodes[expression].kind == 13 && (nodes[place].kind == 17 || nodes[place].kind == 18) {
+        if graph[expression].mutable != exclusive { return 0 - violation(1, nodes[expression].start); }
+        let (actual, target) = check_scalar_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(place), copy(exclusive), true);
+        if actual < 0 { return actual; }
+        if actual == 0 { return -9; }
+        if actual != scalar { return 0 - violation(1, nodes[expression].start); }
+        root = copy(target);
+        parent = if values[target].ty == 734 { target } else { 0 };
     } else if nodes[expression].kind == 17 && !exclusive && nodes[place].kind == 7 {
         let from = graph[place].binding;
         if nodes[from].kind != 3 || values[from].ty != 300 || values[from].state != 1 { return -9; }

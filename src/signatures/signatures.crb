@@ -1,3 +1,5 @@
+use bootstrap::lock_contracts::retain_lock;
+use bootstrap::value_summaries::instantiate_record;
 use bootstrap::value_dependencies::external_dependencies;
 use bootstrap::model::reserve_summary;
 use bootstrap::loans::reserves;
@@ -565,6 +567,12 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     result = 310;
                     values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
                         loan_parent: 0, origin_call: copy(parameter), exclusive: false };
+                } else if borrowed_record_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0)
+                    && !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0) {
+                    if mode != 1 { return -9; }
+                    result = instantiate_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &mut values[0..values.len()], copy(function), copy(call), copy(parameter));
+                    if result < 0 { return result; }
                 } else if plain_structure(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, 0) {
                     if mode != 1 { return -9; }
                     result = 300;
@@ -628,6 +636,9 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         values[call] = CheckedValue { ty: copy(result), state: 1, mutable: false,
             target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
     }
+    let lock = retain_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], copy(function), copy(call));
+    if lock < 0 { return lock; }
     let borrowed = option_borrow(copy(result));
     if borrowed != 0 || (((result > 20 && result < 60) || record_borrow(copy(result))
         || slice_borrow(copy(result))) && expected == result) {

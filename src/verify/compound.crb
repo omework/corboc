@@ -1,3 +1,4 @@
+use bootstrap::places::writable_reference_projection;
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
 use bootstrap::loans::{loan_conflict_after, live_roots};
 use bootstrap::places::check_scalar_projection;
@@ -22,6 +23,12 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if element <= 0 { return if element == 0 { -9 } else { element }; }
         ty = element;
         binding = base;
+    } else if kind == 14 && nodes[graph[place].first_child].kind == 17 {
+        let (scalar, holder) = writable_reference_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], graph[place].first_child, copy(place));
+        if scalar < 0 { return scalar; }
+        ty = scalar;
+        binding = holder;
     } else if kind == 7 || kind == 14 {
         let mut name = copy(place);
         while nodes[name].kind == 14 { name = graph[name].first_child; }

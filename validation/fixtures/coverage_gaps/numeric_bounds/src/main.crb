@@ -1,0 +1,2 @@
+fn narrow(value: u64) { match u8::try_from(value) { Ok(value) => { print(value); }, Err(error) => { drop(error); print(false); } } }
+fn main() { narrow(0); narrow(255); narrow(256); narrow(18446744073709551615); }

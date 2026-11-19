@@ -1075,16 +1075,21 @@ pub fn verify_task(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if kind == 16 {
         let join: [u8; 4] = [106,111,105,110];
         let method = &source[nodes[expression].name_start..nodes[expression].name_end];
-        if !method.content_eq(&join[..]) || nodes[child].kind != 7 { return 0; }
-        let binding = graph[child].binding;
-        let ty = values[binding].ty;
+        if !method.content_eq(&join[..]) { return 0; }
+        let named = nodes[child].kind == 7;
+        let binding = if named { graph[child].binding } else { copy(child) };
+        let ty = if named { values[binding].ty } else {
+            verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(child), 0, 1)
+        };
+        if ty < 0 { return ty; }
         if (ty < 620 || ty > 629) && (ty < 3300 || ty >= 3400)
-            && !nested_async_launch(copy(ty)) && result_task_kind(ty) != 2 { return 0; }
+            && !nested_async_launch(copy(ty)) && result_task_kind(copy(ty)) != 2 { return 0; }
         if graph[child].next_sibling != 0 || in_async(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expression)) {
             return 0 - violation(8, nodes[expression].start);
         }
-        let moved = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            &mut values[0..values.len()], copy(child), 0, 1);
+        let moved = if named { verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(child), 0, 1) } else { copy(ty) };
         if moved < 0 { return moved; }
         let result = if result_task_kind(copy(moved)) == 2 { result_task_code(3, task_output(copy(moved))) }
             else if moved < 650 { moved + 10 } else { moved + 200 };

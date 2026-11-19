@@ -1,0 +1,1 @@
+fn main(){let text:&str="ok";print(text.byte_len());}

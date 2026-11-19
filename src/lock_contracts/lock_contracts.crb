@@ -1,0 +1,108 @@
+use bootstrap::calls::lookup_record_method;
+use bootstrap::declarations::nominal_declaration;
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Preserve lock-contract reservations independently of concrete receiver names.
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, reserve_summary, constructor_arguments};
+use bootstrap::verify::violation;
+
+/// Returns the parameter named by a lock contract and its through-result mode.
+pub fn lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, bool) {
+    let word: [u8; 4] = [108,111,99,107];
+    let mut annotation = function + 1;
+    while annotation < nodes.len() as u64 && nodes[annotation].start < nodes[function].end {
+        if nodes[annotation].parent == function && nodes[annotation].kind == 58 {
+            let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+            if name.content_eq(&word[..]) {
+                let property = graph[annotation].first_child;
+                let on = &source[nodes[property].name_start..nodes[property].name_end];
+                let mut parameter = graph[function].first_child;
+                while nodes[parameter].kind == 3 {
+                    let name = &source[nodes[parameter].name_start..nodes[parameter].name_end];
+                    if on.content_eq(&name[0..name.len()]) { return (parameter, nodes[property].kind == 60); }
+                    parameter = graph[parameter].next_sibling;
+                }
+                return (0, nodes[property].kind == 60);
+            }
+        }
+        annotation += 1;
+    }
+    (0, false)
+}
+
+/// Attach an independent lifetime reservation to a returned aggregate graph.
+pub fn retain_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], function: u64, call: u64) -> i64 {
+    let (formal, through) = lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+    if !through || formal == 0 { return 0; }
+    let mut parameter = graph[function].first_child;
+    let callee = graph[call].first_child;
+    let mut actual = if nodes[call].kind == 16 { copy(callee) } else { graph[callee].next_sibling };
+    while parameter != formal && nodes[parameter].kind == 3 {
+        parameter = graph[parameter].next_sibling;
+        actual = graph[actual].next_sibling;
+    }
+    if actual == 0 || values[actual].target == 0 { return 0 - violation(1, nodes[call].start); }
+    let marker = values[call].loan_parent;
+    if values[call].ty != 300 || !constructor_arguments(values[marker].ty) { return -9; }
+    if values[marker].ty != 5012 { return -9; }
+    let slot = reserve_summary(&mut values[0..values.len()], nodes.len() as u64, 2);
+    if slot == 0 { return -9; }
+    let entry = slot + 1;
+    values[slot] = CheckedValue { ty: 5019, state: 1, mutable: false,
+        target: values[actual].target, loan_parent: values[actual].loan_parent, origin_call: 0, exclusive: true };
+    let previous = values[marker].origin_call;
+    values[entry] = CheckedValue { ty: 5014, state: 1, mutable: false,
+        target: slot, loan_parent: previous, origin_call: 0, exclusive: true };
+    values[marker] = CheckedValue { ty: 5012, state: 1, mutable: false,
+        target: 0, loan_parent: 0, origin_call: entry, exclusive: false };
+    0
+}
+
+/// Validate contract names against the actual signature, even before any call.
+pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+    let lock: [u8; 4] = [108,111,99,107];
+    let branch: [u8; 6] = [98,114,97,110,99,104];
+    let join: [u8; 4] = [106,111,105,110];
+    let waiting: [u8; 5] = [97,119,97,105,116];
+    let handle: [u8; 15] = [114,117,110,116,105,109,101,58,58,72,97,110,100,108,101];
+    let asynchronous: [u8; 20] = [114,117,110,116,105,109,101,58,58,65,115,121,110,99,72,97,110,100,108,101];
+    let mut item: u64 = 1;
+    while item < nodes.len() as u64 {
+        let function = nodes[item].parent;
+        if nodes[item].kind == 58 && (nodes[function].kind == 1 || nodes[function].kind == 35) {
+            let name = &source[nodes[item].name_start..nodes[item].name_end];
+            if name.content_eq(&lock[..]) {
+                let (target, through) = lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+                if target == 0 { return violation(1, nodes[item].start); }
+                if through {
+                    let mut result = graph[function].first_child;
+                    while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+                    if nodes[result].kind != 4 { return violation(1, nodes[item].start); }
+                }
+            } else if name.content_eq(&branch[..]) && graph[item].first_child != 0 {
+                let property = graph[item].first_child;
+                let mut result = graph[function].first_child;
+                while nodes[result].kind == 3 { result = graph[result].next_sibling; }
+                if nodes[result].kind != 4 { return violation(1, nodes[item].start); }
+                let method = &source[nodes[property].name_start..nodes[property].name_end];
+                let inner = graph[result].first_child;
+                let mut end = nodes[result].start;
+                while end < nodes[result].end && source[end] != 60 { end += 1; }
+                let prefix = &source[nodes[result].start..end];
+                if inner != 0 && prefix.content_eq(&handle[..]) {
+                    if !method.content_eq(&join[..]) { return violation(8, nodes[property].start); }
+                } else if inner != 0 && prefix.content_eq(&asynchronous[..]) {
+                    if !method.content_eq(&waiting[..]) { return violation(8, nodes[property].start); }
+                } else {
+                    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
+                    if nominal == 0 || lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &source[nodes[nominal].name_start..nodes[nominal].name_end], &method[0..method.len()], true) == 0 {
+                        return violation(8, nodes[property].start);
+                    }
+                }
+            }
+        }
+        item += 1;
+    }
+    0
+}

@@ -1,0 +1,6 @@
+#(type: V)
+#(type: T<V> with { fn number(&self) -> V; })
+fn read(source: &T) -> V { source.number() }
+struct Answer { value: i64 }
+impl Answer { fn number(&self) -> i64 { (*self).value } }
+fn main() { let answer = Answer { value: 42 }; print(read(&answer)); }

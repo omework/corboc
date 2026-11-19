@@ -1,0 +1,1 @@
+#(type: T with {fn number(&self)->i64;})fn read(source:&T)->i64{source.number()}struct Answer{value:i64}impl Answer{fn number(&self)->i64{(*self).value}}fn main(){let a=Answer{value:42};print(read(&a));}

@@ -1,0 +1,22 @@
+struct Cell { value: i64 }
+struct View { value: &mut i64 }
+impl Cell {
+    #(lock: on=self)
+    fn increment(&mut self) {
+        let value = &mut (*self).value;
+        *value += 1;
+    }
+    #(lock: on=self, through_result=true)
+    fn reserve(&mut self) -> View {
+        View { value: &mut (*self).value }
+    }
+}
+fn main() {
+    let mut cell = Cell { value: 41 };
+    cell.increment();
+    {
+        let mut view = cell.reserve();
+        *view.value += 1;
+    }
+    print(cell.value);
+}

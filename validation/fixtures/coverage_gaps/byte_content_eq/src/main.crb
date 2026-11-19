@@ -1,0 +1,1 @@
+fn main(){let a:[u8;2]=[1,2];let b:[u8;2]=[1,2];let x=&a[..];let y=&b[..];print(x.content_eq(y));}

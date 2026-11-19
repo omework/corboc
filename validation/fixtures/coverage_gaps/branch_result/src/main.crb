@@ -1,0 +1,4 @@
+async fn work() -> i64 { 42 }
+#(branch: join=result.join())
+fn launch() -> runtime::Handle<i64> { runtime::spawn(work()) }
+fn main() { match launch().join() { Ok(value) => { print(value); }, Err(error) => { drop(error); } } }

@@ -1,0 +1,3 @@
+fn identity(value: &i64) -> &i64 { &*value }
+fn relay(value: &i64) -> &i64 { identity(&*value) }
+fn main() { let n: i64 = 42; let v = relay(&n); print(*v); }

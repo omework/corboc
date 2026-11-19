@@ -1,0 +1,7 @@
+#(type: T with { fn number(&self) -> i64; })
+fn read(source: &T) -> i64 { source.number() }
+struct First { n: i64 }
+struct Second { n: i64 }
+impl First { fn number(&self) -> i64 { (*self).n } }
+impl Second { fn number(&self) -> i64 { (*self).n + 1 } }
+fn main() { let a = First { n: 20 }; let b = Second { n: 21 }; print(read(&a)); print(read(&b)); }

@@ -1,0 +1,1 @@
+fn main(){let n:u64=255;match u8::try_from(n){Ok(v)=>{print(v);},Err(e)=>{drop(e);}}}

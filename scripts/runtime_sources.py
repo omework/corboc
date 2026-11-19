@@ -70,21 +70,30 @@ def pack(data):
 
 
 def packed_literal(data):
-    encoded=pack(data)
-    values=','.join(map(str,encoded))
-    return '    { let bytes:[u8;'+str(len(encoded))+']=['+values+']; resource_unpack(&bytes[..]); }\n'
+    # ASCII hex avoids one AST expression per packed byte during bootstrapping.
+    encoded = pack(data).hex()
+    return ('    { let encoded = "' + encoded + '"; '
+            'let bytes = encoded.as_bytes(); resource_unpack(bytes); }\n')
 
 
-UNPACK = """fn resource_unpack(input:&[u8]) {
+UNPACK = """fn resource_nibble(byte:u8) -> u8 {
+    if byte <= 57 { byte - 48 } else { byte - 87 }
+}
+fn resource_byte(input:&[u8], at:u64) -> u8 {
+    let hi = resource_nibble(input[at * 2]);
+    let lo = resource_nibble(input[at * 2 + 1]);
+    hi * 16 + lo
+}
+fn resource_unpack(input:&[u8]) {
     let mut history:[u8;65536]=[0;65536];
     let mut at:u64=0;let mut written:u64=0;
-    while at<input.len() as u64 {
-        let token=input[at] as u64;at=at+1;
+    while at<(input.len() as u64)/2 {
+        let token=resource_byte(&input[0..input.len()], copy(at)) as u64;at=at+1;
         if token<128 {
             let end=at+token+1;
-            while at<end {let byte=input[at];history[written%65536]=copy(byte);character(byte as i32);written=written+1;at=at+1;}
+            while at<end {let byte=resource_byte(&input[0..input.len()], copy(at));history[written%65536]=copy(byte);character(byte as i32);written=written+1;at=at+1;}
         } else {
-            let distance=input[at] as u64+(input[at+1] as u64)*256;at=at+2;
+            let distance=resource_byte(&input[0..input.len()], copy(at)) as u64+(resource_byte(&input[0..input.len()], at+1) as u64)*256;at=at+2;
             let mut remaining=(token&127)+3;
             while remaining!=0 {let byte=history[(written-distance)%65536];history[written%65536]=copy(byte);character(byte as i32);written=written+1;remaining=remaining-1;}
         }

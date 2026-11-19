@@ -1,3 +1,7 @@
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::scalar::verify_primitive;
+use bootstrap::generics::{numeric_conversion, specialize_conversion};
+use bootstrap::generics::{function_template, specialize_functions};
 use bootstrap::callables::{has_callables, specialize_callables};
 use bootstrap::lowering_types::unsigned as raw_offset;
 use bootstrap::lowering_types::signed as source_offset;
@@ -2282,6 +2286,23 @@ fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [
         }
         node = node + 1;
     }
+    // Branch/lock contracts are metadata, not signature parameters. Keep their
+    // AST ownership and child links while presenting an ordinary call signature.
+    node = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 1 || nodes[node].kind == 35 {
+            let mut first = graph[node].first_child;
+            let branch: [u8; 6] = [98,114,97,110,99,104];
+            let lock: [u8; 4] = [108,111,99,107];
+            while nodes[first].kind == 58 {
+                let word = &source[nodes[first].name_start..nodes[first].name_end];
+                if !word.content_eq(&branch[..]) && !word.content_eq(&lock[..]) { break; }
+                first = graph[first].next_sibling;
+            }
+            set_child(&mut graph[0..graph.len()], copy(node), first);
+        }
+        node += 1;
+    }
     let context = ExitContext { function: 0, loop_target: 0 };
     let visible = resolve_node(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()], &mut graph[0..graph.len()], 0, 0, 0, 0, &context, track_fields);
     drop(visible);
@@ -2648,6 +2669,18 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         let kind = nodes[candidate].kind;
         if (kind == 58 || kind == 67) && (nodes[nodes[candidate].parent].kind == 28 || nodes[nodes[candidate].parent].kind == 29)
             && !deferred_iterator(&source[0..source.len()], &nodes[..node], nodes[candidate].parent) { generic = true; }
+        if kind == 58 && nodes[nodes[candidate].parent].parent == 0
+            && (nodes[nodes[candidate].parent].kind == 1 || nodes[nodes[candidate].parent].kind == 35) {
+            let type_name: [u8; 4] = [116,121,112,101];
+            let name = &source[nodes[candidate].name_start..nodes[candidate].name_end];
+            if name.content_eq(&type_name[..]) { generic = true; }
+        }
+        if kind == 36 {
+            let suffix: [u8; 10] = [58,58,116,114,121,95,102,114,111,109];
+            if nodes[candidate].end >= nodes[candidate].start + 10
+                && same_bytes(&source[nodes[candidate].end - 10..nodes[candidate].end], &suffix[..])
+                && verify_primitive(&source[0..source.len()], nodes[candidate].name_start, nodes[candidate].name_end) != 0 { generic = true; }
+        }
         candidate = candidate + 1;
     }
     if check != 0 && (generic || has_pipeline(&source[0..source.len()], &tokens[0..tokens.len()])) {
@@ -2731,6 +2764,12 @@ fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
         return specialize_factory(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], factory, expanded, offsets);
     }
     if generic {
+        let (conversion_status, conversion_written) = specialize_conversion(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+            &mut expanded[0..expanded.len()], &mut offsets[0..offsets.len()]);
+        if conversion_status != 0 || conversion_written != 0 { return (conversion_status, conversion_written); }
+        let (status, written) = specialize_functions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
+            &mut expanded[0..expanded.len()], &mut offsets[0..offsets.len()]);
+        if status != 0 || written != 0 { return (status, written); }
         return specialize_structs(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets);
     }
     specialize_pipelines(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets)

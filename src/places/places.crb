@@ -267,7 +267,8 @@ pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         }
         if graph[annotation].first_child != 0 { return false; }
         let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
-        if spelling.content_eq(&address_width[..]) { return false; }
+        // usize is an ordinary fixed primitive. Raw-address provenance is
+        // tracked at addr(), independently of the integer's storage width.
         if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
             let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], annotation);
@@ -810,4 +811,33 @@ pub fn slice_length(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let result = verify_primitive(&pointer[..], 0, 5);
     if expected != 0 && expected != result { return 0 - violation(1, nodes[call].start); }
     result
+}
+
+/// Resolve a write through a scalar reference stored in an aggregate field.
+/// The pointee reservation and the containing aggregate remain independent.
+pub fn writable_reference_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], projection: u64, expression: u64) -> (i64, u64) {
+    let (record, holder, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], graph[projection].first_child);
+    if record < 0 { return (record, 0); }
+    if record != 300 { return (-9, 0); }
+    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], layout);
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(projection));
+    let annotation = graph[field].first_child;
+    let referent = graph[annotation].first_child;
+    let scalar = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
+    if field == 0 || source[nodes[annotation].start] != 38 || referent == 0 || graph[referent].first_child != 0 || scalar == 0 { return (-9, 0); }
+    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
+        return (0 - private_layout_violation(nodes[projection].start), 0);
+    }
+    let writable = if values[holder].ty == 734 { values[holder].exclusive } else { values[holder].mutable };
+    if !writable || !borrow_mutable(&source[nodes[annotation].start..nodes[referent].start]) {
+        return (0 - violation(5, nodes[expression].start), 0);
+    }
+    let live = if values[holder].ty == 734 { live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(holder)) }
+        else { live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(holder)) };
+    if !live { return (0 - violation(4, nodes[expression].start), 0); }
+    let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], copy(holder), expression, true);
+    if conflict != 0 { return (if conflict > 0 { 0 - violation(5, nodes[projection].start) } else { -9 }, 0); }
+    return (scalar, holder);
 }

@@ -40,7 +40,7 @@ pub fn external_roots(nodes: &[AstNode], graph: &[StaticNode], values: &[Checked
         let mut argument = graph[graph[call].first_child].next_sibling;
         while argument != 0 {
             if values[argument].state == 1 && !external_roots(&nodes[0..nodes.len()],
-                &graph[0..graph.len()], &values[0..values.len()], graph[argument].binding) {
+                &graph[0..graph.len()], &values[0..values.len()], if values[argument].target != 0 { copy(argument) } else { graph[argument].binding }) {
                 return false;
             }
             argument = graph[argument].next_sibling;
@@ -126,6 +126,7 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 // sequence. A negative result requires control-flow liveness to decide.
 pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) -> bool {
     let ty = values[loan].ty;
+    if ty == 5019 { return values[loan].target == target; }
     if ty >= 81 && ty <= 87 {
         let mut item = values[loan].origin_call;
         while item != 0 {
@@ -310,6 +311,7 @@ fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[Check
 // serve as its own symbolic root.
 pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> bool {
     let reference_type = values[loan].ty;
+    if reference_type == 5019 { return values[values[loan].target].state == 1; }
     if constructor_arguments(copy(reference_type)) {
         let mut summary_entry = values[loan].origin_call;
         while summary_entry != 0 {
@@ -394,7 +396,7 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> b
         let mut argument = graph[graph[call].first_child].next_sibling;
         while argument != 0 {
             if values[argument].state == 1 && !live_roots(&values[0..values.len()], &graph[0..graph.len()],
-                graph[argument].binding) { return false; }
+                if values[argument].target != 0 { copy(argument) } else { graph[argument].binding }) { return false; }
             argument = graph[argument].next_sibling;
         }
     }
@@ -492,6 +494,7 @@ fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u6
 fn bootstrap_task_reserves(values: &[CheckedValue], graph: &[StaticNode], node: u64,
     target: u64, exclusive: bool) -> bool {
     let ty = values[node].ty;
+    if ty == 5019 { return values[node].target == target; }
     if constructor_arguments(copy(ty)) {
         let mut entry=values[node].origin_call;
         while entry!=0 {
@@ -848,8 +851,19 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             &graph[0..graph.len()], &tokens[0..tokens.len()], graph[parameter].first_child);
         if input == 0 { return -9; }
         if input >= 20 {
-            if nodes[argument].kind != 7 { return -9; }
-            let binding = graph[argument].binding;
+            let mut binding = graph[argument].binding;
+            if nodes[argument].kind == 13 {
+                let checked = check_single_loan_argument(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &values[0..values.len()], graph[parameter].first_child, copy(argument));
+                if checked < 0 { return checked; }
+                let place = graph[argument].first_child;
+                let reborrow = nodes[place].kind == 14;
+                let from = graph[if reborrow { graph[place].first_child } else { copy(place) }].binding;
+                values[argument] = CheckedValue { ty: copy(input), state: 1, mutable: false,
+                    target: if reborrow { values[from].target } else { copy(from) },
+                    loan_parent: if reborrow { copy(from) } else { 0 }, origin_call: 0, exclusive: input >= 40 };
+                binding = copy(argument);
+            } else if nodes[argument].kind != 7 { return -9; }
             if binding == 0 || values[binding].state != 1 || values[binding].ty >= 100
                 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
                 return 0 - violation(4, nodes[argument].start);
@@ -876,8 +890,10 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             if conflict < 0 { return -9; }
             if values[graph[parameter].first_child].state == 1 {
                 // Argument nodes have no binding state of their own.
-                values[argument] = CheckedValue { ty: 0, state: 1, mutable: false,
-                    target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                if nodes[argument].kind == 7 {
+                    values[argument] = CheckedValue { ty: 0, state: 1, mutable: false,
+                        target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                }
                 if first == 0 { first = binding; }
             }
         } else {

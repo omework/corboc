@@ -28,6 +28,14 @@ fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64
 fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     ctx: &Lowering, node: u64) -> i64 {
     let receiver = graph[node].first_child;
+    let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
+    if graph[receiver].next_sibling == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &byte_len[..]) {
+        if (*ctx).emit {
+            declaration(7, copy(node)); character(61); local(graph[receiver].binding);
+            { let code: [u8; 6] = [46,108,101,110,59,10]; byte_text(&code[..]); }
+        }
+        return 7;
+    }
     let name: [u8; 8] = [97,115,95,98,121,116,101,115];
     if graph[receiver].next_sibling != 0 || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..]) { return -1; }
     if (*ctx).emit {

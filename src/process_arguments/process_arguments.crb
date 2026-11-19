@@ -79,8 +79,10 @@ pub fn read_argument_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if nodes[point].kind != 16 || index != 0 { return -9; }
     let len: [u8; 3] = [108,101,110];
     let bytes: [u8; 8] = [97,115,95,98,121,116,101,115];
+    let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
     let member = &source[nodes[point].name_start..nodes[point].name_end];
-    if ty == argument_list_type() && member.content_eq(&len[..]) {
+    if (ty == argument_list_type() && member.content_eq(&len[..]))
+        || (ty == argument_text_type() && member.content_eq(&byte_len[..])) {
         let result = pointer_integer_type();
         if expected != 0 && expected != result { return 0 - violation(1, nodes[point].start); }
         return result;
