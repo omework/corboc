@@ -219,4 +219,26 @@
         }
         status
     }
+    // mkdir is idempotent only for a directory; an existing ordinary file is an error.
+    pub fn ensure_directory(path: &[u8]) -> bool {
+        let mut created: i32 = 0;
+        @unchecked {
+            let address = addr(&path[0]);
+            @asm {
+                mov x0, ${address}
+                mov w1, #511
+                bl _mkdir
+                cbz w0, 1f
+                mov x0, ${address}
+                bl _opendir
+                cbz x0, 2f
+                bl _closedir
+                1:
+                mov w9, #1
+                mov ${created}, w9
+                2:
+            }
+        }
+        created == 1
+    }
 #(endif)

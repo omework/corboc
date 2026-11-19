@@ -66,3 +66,14 @@ repository's `docs/cycles/BARE_TYPE_ANNOTATION_CYCLE.md`.
 | Direct regressions / build | Seven related cases, the README text package and a compiler rebuild pass; successive updated C emissions match. | No broad corpus, other-platform execution or independent safety audit claimed |
 
 See [TEXT_SPLIT_CYCLE.md](TEXT_SPLIT_CYCLE.md).
+
+
+## Package-root build defaults (build/CLI)
+
+| Mechanism | Executed evidence | Limits |
+| --- | --- | --- |
+| Manifest selection / output paths | Defaults, configured and empty [bin], -o forms, package paths with spaces, directory creation and reuse execute. | Nine build-and-run commands on macOS ARM64 |
+| Existing package resolution | Two modules, path dependencies, STD imports and both [bin]/[dependencies] orders execute. | Existing pinned STD; no language-rule change |
+| Diagnostics / publication | Eight expected failures, prior binary hash preservation and temporary-workspace cleanup pass. | 18 focused checks overall; other native build drivers remain unimplemented |
+
+[Report and reproduction](PACKAGE_BUILD_DEFAULTS_CYCLE.md).

@@ -22,7 +22,8 @@ use bootstrap::package_link::{link_package, prepare_native_exports};
 use std::env::args;
 #(if: target.os == "macos" && target.arch == "aarch64")
     use bootstrap::build_driver::{stdlib_path, workspace_path, redirect_stdout, restore_stdout,
-        toolchain, publish, clean, diagnostic};
+        toolchain, publish, clean, diagnostic, ensure_directory};
+    use bootstrap::packages::binary_output;
     use bootstrap::packages::append;
 #(endif)
 
@@ -2822,23 +2823,41 @@ fn main() -> i32 {
     match args() {
         Err(error) => { drop(error); return 6; },
         Ok(arguments) => {
+            if arguments.len() != 0 {
+                let command = arguments[0];
+                let bytes = command.as_bytes();
+                let build_flag: [u8; 5] = [98,117,105,108,100];
+                if bytes.content_eq(&build_flag[..]) {
+                    let current: [u8; 1] = [46];
+                    let output_flag: [u8; 2] = [45,111];
+                    if arguments.len() == 1 { return build_default(&current[..]); }
+                    let first = arguments[1];
+                    let first_bytes = first.as_bytes();
+                    if arguments.len() == 2 {
+                        if first_bytes.len() == 0 || first_bytes[0] == 45 { return build_usage(); }
+                        return build_default(first_bytes);
+                    }
+                    if arguments.len() == 3 {
+                        if !first_bytes.content_eq(&output_flag[..]) { return build_usage(); }
+                        let output = arguments[2];
+                        let output_bytes = output.as_bytes();
+                        return build_package(&current[..], output_bytes);
+                    }
+                    if arguments.len() == 4 {
+                        let option = arguments[2];
+                        let option_bytes = option.as_bytes();
+                        if !option_bytes.content_eq(&output_flag[..]) { return build_usage(); }
+                        let output = arguments[3];
+                        let output_bytes = output.as_bytes();
+                        return build_package(first_bytes, output_bytes);
+                    }
+                    return build_usage();
+                }
+            }
             if arguments.len() == 2 || arguments.len() == 4 {
                 let flag = arguments[0];
                 let check_flag: [u8; 7] = [45, 45, 99, 104, 101, 99, 107];
                 let bytes = flag.as_bytes();
-                let build_flag: [u8; 5] = [98, 117, 105, 108, 100]; // build
-                if bytes.content_eq(&build_flag[..]) {
-                    if arguments.len() != 4 { return build_usage(); }
-                    let option = arguments[2];
-                    let option_bytes = option.as_bytes();
-                    let output_flag: [u8; 2] = [45, 111]; // -o
-                    if !option_bytes.content_eq(&output_flag[..]) { return build_usage(); }
-                    let directory = arguments[1];
-                    let directory_bytes = directory.as_bytes();
-                    let output = arguments[3];
-                    let output_bytes = output.as_bytes();
-                    return build_package(directory_bytes, output_bytes);
-                }
                 let package_flag_bytes: [u8; 16] = [45, 45, 101, 109, 105, 116, 45, 112, 97, 99, 107, 97, 103, 101, 45, 99]; // --emit-package-c
                 let package_flag = &package_flag_bytes[..];
                 if bytes.content_eq(&package_flag[0..package_flag.len()]) {
@@ -2939,9 +2958,30 @@ fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
 
 #(if: target.os == "macos" && target.arch == "aarch64")
 fn build_usage() -> i32 {
-    let message: [u8; 38] = [117, 115, 97, 103, 101, 58, 32, 99, 111, 114, 98, 111, 99, 32, 98, 117, 105, 108, 100, 32, 80, 65, 67, 75, 65, 71, 69, 32, 45, 111, 32, 79, 85, 84, 80, 85, 84, 10]; // usage: corboc build PACKAGE -o OUTPUT
+    let message: [u8; 42] = [117,115,97,103,101,58,32,99,111,114,98,111,99,32,98,117,105,108,100,32,91,80,65,67,75,65,71,69,93,32,91,45,111,32,79,85,84,80,85,84,93,10]; // usage: corboc build [PACKAGE] [-o OUTPUT]
     diagnostic(&message[..]);
     6
+}
+
+// Default outputs live under the selected package root, independent of the caller's cwd.
+fn build_default(root: &[u8]) -> i32 {
+    let mut output: [u8; 4096] = [0; 4096];
+    let (status, directory, end) = binary_output(&root[0..root.len()], &mut output[..]);
+    if status != 0 {
+        let message: [u8; 44] = [99,111,114,98,111,99,58,32,99,97,110,110,111,116,32,114,101,97,100,32,112,97,99,107,97,103,101,32,98,105,110,97,114,121,32,115,101,116,116,105,110,103,115,10];
+        diagnostic(&message[..]);
+        dependency_diagnostic(copy(status));
+        return status;
+    }
+    output[directory] = 0;
+    let created = ensure_directory(&output[..directory + 1]);
+    output[directory] = 47;
+    if !created {
+        let message: [u8; 38] = [99,111,114,98,111,99,58,32,99,97,110,110,111,116,32,99,114,101,97,116,101,32,98,117,105,108,100,32,100,105,114,101,99,116,111,114,121,10];
+        diagnostic(&message[..]);
+        return 11;
+    }
+    build_package(root, &output[..end])
 }
 
 fn build_package(root: &[u8], output: &[u8]) -> i32 {
@@ -3048,6 +3088,7 @@ fn build_in_workspace(root: &[u8], stdlib: &[u8], source: &[u8], binary: &[u8], 
 
 #(if: target.os == "linux" || target.os == "windows" || target.arch == "x86_64")
 fn build_usage() -> i32 { 6 }
+fn build_default(root: &[u8]) -> i32 { drop(root); 6 }
 fn build_package(root: &[u8], output: &[u8]) -> i32 {
     drop(root);
     drop(output);

@@ -1,3 +1,15 @@
+## Package-root build defaults (build/CLI)
+
+- [x] Accept package-root build and optional explicit package paths.
+- [x] Read optional [bin].name with a package-name fallback.
+- [x] Create the default package-relative build directory and retain -o precedence.
+- [x] Preserve module/dependency parsing and failed-build publication behavior.
+- [x] Complete the compiler development build and 18 focused checks.
+- [x] Pin the published specification, complete the final install build and execute the actual README command.
+- [x] Update both READMEs and the [cycle report](PACKAGE_BUILD_DEFAULTS_CYCLE.md).
+
+No open design decision. Native build driver support remains macOS ARM64 only.
+
 ## Borrowed text splitting (STD API / compiler integration)
 
 - [x] Keep the splitter algorithm in the STD and route native convenience calls to it.

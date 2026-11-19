@@ -63,13 +63,39 @@ build/install/
   share/corbo/stdlib/src/
 ```
 
-`corboc build` automatically finds the STD relative to its installed executable:
+`corboc build` automatically finds the STD relative to its installed executable.
+From a package root, it creates `build/<package-name>`:
 
 ```sh
+corboc build
+./build/bootstrap
+```
+
+The optional manifest setting overrides the binary name:
+
+```toml
+[bin]
+name = "my-program"
+```
+
+Without `[bin]` or its `name`, `[package].name` supplies the name. Binary names
+are portable filename components: ASCII letters, digits, `_`, `-` and `.`, with
+at least one letter, digit or `_`. A default output always lives under the
+selected package, even when building it from elsewhere. `-o` takes precedence
+and its relative path is resolved from the caller's working directory:
+
+```sh
+corboc build /path/to/package
+corboc build -o program
 corboc build /path/to/package -o program
-./program
 corboc build . -o build/install/bin/corboc-next
 ```
+
+The filename policy adds `.exe` for Windows targets. The native package build
+driver currently supports macOS ARM64 only; the other native drivers remain
+unimplemented. Explicit output parent directories must already exist.
+The compiler self-package remains named `bootstrap` internally, so its default
+binary is `build/bootstrap`; use `-o` to choose a `corboc` installation path.
 
 The C header is installed for external helpers. The standalone C memory library
 build remains owned by the locked language repository's `scripts/build_c_runtime.py`.

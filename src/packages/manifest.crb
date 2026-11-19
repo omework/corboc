@@ -1,8 +1,12 @@
+use bootstrap::package_io::read_source;
+
 struct Manifest {
     name_start: u64,
     name_end: u64,
     dependencies_start: u64,
     dependencies_end: u64,
+    bin_name_start: u64,
+    bin_name_end: u64,
     valid: bool,
 }
 
@@ -57,17 +61,21 @@ fn line_tail(source: &[u8], start: u64, end: u64) -> bool {
 }
 
 fn read_manifest(source: &[u8]) -> Manifest {
-    let invalid = Manifest { name_start: 0, name_end: 0, dependencies_start: 0, dependencies_end: 0, valid: false };
+    let invalid = Manifest { name_start: 0, name_end: 0, dependencies_start: 0, dependencies_end: 0, bin_name_start: 0, bin_name_end: 0, valid: false };
     let mut name_start: u64 = 0;
     let mut name_end: u64 = 0;
     let mut dependencies_start: u64 = 0;
     let mut dependencies_end: u64 = 0;
     let mut section: u64 = 0;
+    let mut bin_name_start: u64 = 0;
+    let mut bin_name_end: u64 = 0;
+    let mut binary = false;
     let mut package = false;
     let mut dependencies = false;
     let mut line: u64 = 0;
     let heading: [u8; 9] = [91,112,97,99,107,97,103,101,93]; // [package]
     let table: [u8; 14] = [91,100,101,112,101,110,100,101,110,99,105,101,115,93]; // [dependencies]
+    let bin_heading: [u8; 5] = [91,98,105,110,93]; // [bin]
     let name: [u8; 4] = [110,97,109,101]; // name
     while line < source.len() as u64 {
         let end = line_end(&source[0..source.len()], copy(line));
@@ -87,24 +95,37 @@ fn read_manifest(source: &[u8]) -> Manifest {
                     dependencies = true;
                     dependencies_start = end + 1;
                     dependencies_end = source.len() as u64;
+                } else if end - at >= 5 && same_text(&source[at..at + 5], &bin_heading[..])
+                    && line_tail(&source[0..source.len()], at + 5, copy(end)) {
+                    if binary { return invalid; }
+                    section = 3;
+                    binary = true;
                 } else { return invalid; }
-            } else if section == 1 {
-                if name_end != 0 || end - at < 4 || !same_text(&source[at..at + 4], &name[..]) { return invalid; }
+            } else if section == 1 || section == 3 {
+                if (section == 1 && name_end != 0) || (section == 3 && bin_name_end != 0)
+                    || end - at < 4 || !same_text(&source[at..at + 4], &name[..]) { return invalid; }
                 let equal = horizontal(&source[0..source.len()], at + 4, copy(end));
                 if equal == end || source[equal] != 61 { return invalid; }
                 let quote = horizontal(&source[0..source.len()], equal + 1, copy(end));
                 let last = quoted_end(&source[0..source.len()], copy(quote), copy(end));
-                if last == 0 || identifier(&source[0..source.len()], quote + 1, copy(last)) != last
-                    || !line_tail(&source[0..source.len()], last + 1, copy(end)) { return invalid; }
-                name_start = quote + 1;
-                name_end = last;
+                if last == 0 || !line_tail(&source[0..source.len()], last + 1, copy(end)) { return invalid; }
+                if section == 1 {
+                    if identifier(&source[0..source.len()], quote + 1, copy(last)) != last { return invalid; }
+                    name_start = quote + 1;
+                    name_end = last;
+                } else {
+                    if !binary_file_name(&source[quote + 1..last]) { return invalid; }
+                    bin_name_start = quote + 1;
+                    bin_name_end = last;
+                }
             } else if section != 2 { return invalid; }
         }
         line = end + 1;
     }
     let valid = name_end != 0;
     Manifest { name_start: name_start, name_end: name_end, dependencies_start: dependencies_start,
-        dependencies_end: dependencies_end, valid: valid }
+        dependencies_end: dependencies_end, bin_name_start: bin_name_start,
+        bin_name_end: bin_name_end, valid: valid }
 }
 
 fn read_dependency(source: &[u8], start: u64, end: u64) -> Dependency {
@@ -162,3 +183,56 @@ fn read_dependency(source: &[u8], start: u64, end: u64) -> Dependency {
     }
     invalid
 }
+
+// A binary name is one portable filename component, not an output path.
+fn binary_file_name(name: &[u8]) -> bool {
+    if name.len() == 0 { return false; }
+    let mut index: usize = 0;
+    let mut substantive = false;
+    while index < name.len() {
+        let byte = name[index];
+        if name_byte(copy(byte)) { substantive = true; }
+        else if byte != 45 && byte != 46 { return false; }
+        index = index + 1;
+    }
+    substantive
+}
+
+// Select a package-relative default, retaining a separate NUL-terminated directory.
+// Returned lengths exclude terminators; the second is the directory prefix length.
+pub fn binary_output(root: &[u8], output: &mut [u8]) -> (i32, usize, usize) {
+    let manifest_file: [u8; 12] = [112,97,99,107,97,103,101,46,116,111,109,108];
+    let mut path: [u8; 4096] = [0; 4096];
+    let end = resolve_path(&root[0..root.len()], &manifest_file[..], &mut path[..]);
+    if end == 0 { return (11, 0, 0); }
+    let mut buffer: [u8; 65536] = [0; 65536];
+    let (status, count) = read_source(&path[..end + 1], &mut buffer[..]);
+    if status != 0 { return (11, 0, 0); }
+    let parsed = read_manifest(&buffer[..count]);
+    if !parsed.valid { return (12, 0, 0); }
+    let first = if parsed.bin_name_end == 0 { parsed.name_start } else { parsed.bin_name_start };
+    let last = if parsed.bin_name_end == 0 { parsed.name_end } else { parsed.bin_name_end };
+    let name = &buffer[first..last];
+    let suffix: [u8; 7] = [47,98,117,105,108,100,47]; // /build/
+    if root.len() == 0 || root.len() + 7 + name.len() + 5 > output.len() { return (4, 0, 0); }
+    let start = append(&mut output[0..output.len()], 0, &root[0..root.len()]);
+    let directory = append(&mut output[0..output.len()], start, &suffix[..]);
+    let written = append(&mut output[0..output.len()], copy(directory), &name[0..name.len()]);
+    let finished = executable_suffix(&mut output[0..output.len()], written);
+    output[finished] = 0;
+    return (0, directory - 1, finished);
+}
+
+#(if: target.os == "windows")
+fn executable_suffix(output: &mut [u8], start: usize) -> usize {
+    let extension: [u8; 4] = [46,101,120,101];
+    append(&mut output[0..output.len()], start, &extension[..])
+}
+#(endif)
+
+#(if: target.os == "macos" || target.os == "linux")
+fn executable_suffix(output: &mut [u8], start: usize) -> usize {
+    drop(output);
+    start
+}
+#(endif)
