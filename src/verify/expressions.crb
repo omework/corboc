@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::check_text;
 use bootstrap::signatures::move_slice_argument;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::scalar::pointer_integer_type;
@@ -64,6 +65,10 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let kind = nodes[node].kind;
     let start = nodes[node].start;
     let child = graph[node].first_child;
+    if kind==7 || kind==9 || kind==13 || kind==17 {
+        let text=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(mode));
+        if text<0{return text;}if text!=0{if expected!=0 && expected!=text{return 0-violation(1,start);}return text;}
+    }
     if kind==79{return check_propagation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],node,expected,mode);}
     if kind == 15 && resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(child)) != 0 { return 0 - violation(1, start); }

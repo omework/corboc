@@ -55,3 +55,14 @@ repository's `docs/cycles/BARE_TYPE_ANNOTATION_CYCLE.md`.
 | Iterator composition / documentation | Callback plus STD filter/map/reduce/collect executed; updated README and former rejected fixture also executed. | Eight distinct programs and seven refusals overall; no broad corpus or platform rerun |
 
 [Detailed results, reproduction and limits](GENERAL_CALLABLES_CYCLE.md).
+
+
+## Borrowed text splitting
+
+| Rules / mechanism | Executed evidence | Limits |
+| --- | --- | --- |
+| TX1/TX4, N1 | UTF-8 views, byte contents, optional text results and generic Iter forwarding execute. | macOS ARM64, O1 with fatal UBSan |
+| N4/N5/N6 | Piece/cursor and separator independence execute; early destruction and mutation refused. | Twelve successful programs and four refusals; existing per-field graphs reused |
+| Direct regressions / build | Seven related cases, the README text package and a compiler rebuild pass; successive updated C emissions match. | No broad corpus, other-platform execution or independent safety audit claimed |
+
+See [TEXT_SPLIT_CYCLE.md](TEXT_SPLIT_CYCLE.md).

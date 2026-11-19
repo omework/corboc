@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::{completion_call,emit_completion};
 use bootstrap::lowering_c::lower_c;
 use bootstrap::socket_runtime::{socket_wait_call, emit_socket_wait};
@@ -193,6 +194,12 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         }
         return expected;
     }
+    if kind==13 {
+        let text=lower_text_view(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(node));if text!=0{return text;}
+    }
+    if kind==7 && expected==2000138 && pool_type(types[graph[node].binding])==7600140 {
+        if emit { declaration(2000138,copy(node)); { let code:[u8;28]=[61,123,40,99,111,110,115,116,32,117,105,110,116,56,95,116,42,41,40,40,82,101,103,105,111,110,42,41];byte_text(&code[..]);}local(graph[node].binding);{let code:[u8;23]=[46,115,108,111,116,41,45,62,100,97,116,97,44,40,40,82,101,103,105,111,110,42,41];byte_text(&code[..]);}local(graph[node].binding);{let code:[u8;14]=[46,115,108,111,116,41,45,62,108,101,110,125,59,10];byte_text(&code[..]);} }return 2000138;
+    }
     if kind == 9 && source[nodes[node].start] == 34 {
         return lower_text_literal(&source[0..source.len()], &nodes[node], node, expected, emit);
     }
@@ -284,8 +291,15 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         types[node] = copy(ty);
         return ty;
     }
+    if kind==16 {
+        let callee=split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node));
+        let receiver_type=guess(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(child));
+        if callee!=0 && (receiver_type==2000138 || pool_type(copy(receiver_type))==7600140 || (nodes[child].kind==9 && source[nodes[child].start]==34)) {
+            return compile_function_call(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,node,callee,child,0);
+        }
+    }
     if kind == 16 && types[graph[child].binding] == 2000138 {
-        return argument_bytes(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ctx, node);
+        return argument_bytes(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, node);
     }
     if kind == 16 {
         let method = lower_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],

@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::value_summaries::borrowed_record_type;
 use bootstrap::scalar_options::option_handle;
 use bootstrap::results::{result_annotation, plain_data_type};
@@ -567,6 +568,14 @@ fn instantiate_slice_constructor(source: &[u8], nodes: &[AstNode], graph: &[Stat
 
 pub fn instantiate_constructor_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], call: u64, function: u64, output: u64, asynchronous: bool) -> i64 {
+    let nominal_text=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(output));
+    let mut text_field=graph[nominal_text].first_child;
+    while !asynchronous && text_field!=0 {
+        if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[text_field].first_child){
+            let first=if nodes[call].kind==16{graph[call].first_child}else{graph[graph[call].first_child].next_sibling};
+            return check_signature(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],function,first,300,1,call);
+        }text_field=graph[text_field].next_sibling;
+    }
     let parameter = graph[function].first_child;
     let reference_record = if nodes[parameter].kind == 3 {
         record_parameter(&source[0..source.len()], &nodes[0..nodes.len()],

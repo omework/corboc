@@ -1,3 +1,18 @@
+## Borrowed text splitting (STD API / compiler integration)
+
+- [x] Keep the splitter algorithm in the STD and route native convenience calls to it.
+- [x] Retain UTF-8 text-field, constructor and optional-result storage dependencies.
+- [x] Lower checked text slices and evaluated descriptor operations.
+- [x] Forward text results through the existing generic Iter wrapper.
+- [x] Reject premature source/ separator destruction and source mutation.
+- [x] Execute twelve successful programs, four refusals, seven related regressions and the README text package.
+- [x] Build the compiler from its updated C emission and compare the next emission byte for byte.
+- [x] Pin the published STD, complete the install build and run the example with automatic STD resolution.
+- [x] Record [evidence and limits](TEXT_SPLIT_CYCLE.md).
+
+No language arbitration remains. `corbo.lock` pins the published STD revision
+`d15cd7b6d6a567c4b7e98211b7fb0c7e2e5a7a90`.
+
 ## Documentation coverage gaps (compiler/core)
 
 - [x] Replay the nine historical failures without changing their sources or accepted rules.

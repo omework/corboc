@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{shared_text_annotation, argument_text_type};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use bootstrap::calls::{bootstrap_callee,associated_callee,lookup_record_method};
 use bootstrap::places::resolve_record_receiver;
@@ -56,6 +57,7 @@ fn external_place(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],fu
 }
 
 pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64)->i64 {
+    if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return argument_text_type();}
     let reference=scalar_reference_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
     if reference!=0{return reference;}
     let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(shape);drop(exclusive);
@@ -101,7 +103,7 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
     }
     let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
     let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return 0;}
-    if kind==13 || (ty>20 && ty<60) || ty==734 || (ty>=741 && ty<=749) {
+    if kind==13 || (ty>20 && ty<60) || ty==734 || (ty>=741 && ty<=749)||ty==2000138 {
         let actual=external_place(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(function),copy(call),copy(expression),0);if actual==0{return 0;}
         let target=if values[actual].target==0{copy(actual)}else{values[actual].target};let parent=if values[actual].ty==734{values[actual].loan_parent}else{0};
         let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
@@ -199,7 +201,7 @@ pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],no
         if ty==300 {
             let nested=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
             if !borrowed_record_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nested,depth+1){return false;}
-        }else if !((ty>=1 && ty<=9)||(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)){return false;}
+        }else if !((ty>=1 && ty<=9)||(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)||ty==2000138){return false;}
         field=graph[field].next_sibling;
     }true
 }
@@ -218,7 +220,7 @@ pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:
             let nested=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
             if !symbolic_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(value),copy(formal),nested,depth+1){return false;}
         }else {
-            let borrowed=(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749);
+            let borrowed=(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)||ty==2000138;
             let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
             let origin=if ty==734{graph[annotation].first_child}else{shape};
             let exclusive=exclusive || (ty>40 && ty<60) || (ty==734 && source[nodes[annotation].start+1]==109);

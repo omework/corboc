@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::socket_runtime::socket_wait_call;
 use bootstrap::regional_calls::region_vector_element;
@@ -328,7 +329,7 @@ fn unavailable_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ca
     let receiver = graph[call].first_child;
     let kind = nodes[receiver].kind;
     // Standalone literal text has no method receiver in the Rust verifier.
-    if kind == 9 && source[nodes[receiver].start] == 34 { return true; }
+    if kind == 9 && source[nodes[receiver].start] == 34 { return split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],call)==0; }
     if kind != 7 { return false; }
     let binding = graph[receiver].binding;
     if binding == 0 { return true; }
@@ -756,7 +757,8 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 if nodes[allocation].kind == 16 && nodes[receiver].kind == 7 && nodes[pool].kind == 66 {
                     let vector = graph[graph[pool].first_child].first_child;
                     let scalar = region_vector_element(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(vector));
-                    if scalar != 2 && scalar != 4 && inline_vector_shape(&source[0..source.len()], &nodes[0..nodes.len()],
+                    let string_name:[u8;6]=[83,116,114,105,110,103];let vector_name=&source[nodes[vector].name_start..nodes[vector].name_end];
+                    if !vector_name.content_eq(&string_name[..]) && scalar != 2 && scalar != 4 && inline_vector_shape(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], vector) == 0 {
                         return report_violation(1, nodes[at].start);
                     }

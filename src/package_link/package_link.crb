@@ -240,6 +240,9 @@ fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstN
     let module: [u8; 9] = [115,116,100,58,58,105,116,101,114];
     let owner = file_at(&files[0..files.len()], nodes[item].start);
     let path = &names[files[owner].module_start..files[owner].module_end];
+    let text_module:[u8;9]=[115,116,100,58,58,116,101,120,116];
+    let split:[u8;5]=[115,112,108,105,116];let actual=&source[nodes[item].name_start..nodes[item].name_end];
+    if files[owner].package==64 && path.content_eq(&text_module[..]) && nodes[item].kind==1 && actual.content_eq(&split[..]){return 9;}
     if files[owner].package != 64 || !path.content_eq(&module[..]) { return 0; }
     let spelling = &source[nodes[item].name_start..nodes[item].name_end];
     let name0: [u8; 4] = [73,116,101,114];
@@ -348,7 +351,7 @@ fn inaccessible_package(names: &[u8], files: &[PackageFile], owner: u64, namespa
 }
 
 // Include all package units and the standard modules they reference.
-fn select_units(names: &[u8], files: &[PackageFile], nodes: &[AstNode], imports: &[Import],
+fn select_units(source:&[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], imports: &[Import],
     edits: &[Edit], selected: &mut [bool]) {
     let mut file: u64 = 0;
     while file < files.len() as u64 {
@@ -359,6 +362,10 @@ fn select_units(names: &[u8], files: &[PackageFile], nodes: &[AstNode], imports:
     let mut changed = true;
     while changed {
         changed = false;
+        let text_module:[u8;9]=[115,116,100,58,58,116,101,120,116];let split:[u8;5]=[115,112,108,105,116];
+        let mut text_file:u64=0;let mut candidate:u64=0;
+        while candidate<files.len() as u64{let path=&names[files[candidate].module_start..files[candidate].module_end];if files[candidate].package==64 && path.content_eq(&text_module[..]){text_file=copy(candidate);}candidate=candidate+1;}
+        if text_file!=0 && !selected[text_file]{let mut node:u64=1;while node<nodes.len() as u64{if nodes[node].kind==16 && selected[file_at(&files[0..files.len()],nodes[node].start)]{let name=&source[nodes[node].name_start..nodes[node].name_end];if name.content_eq(&split[..]){selected[text_file]=true;changed=true;break;}}node=node+1;}}
         let mut index: u64 = 0;
         while index < imports.len() as u64 {
             let owner = imports[index].file;
@@ -622,7 +629,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
     }
     let mut selected: [bool; 256] = [false; 256];
     if files.len() > 256 { return (4, 0, 0); }
-    select_units(&names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &entries[..count],
+    select_units(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &entries[..count],
         &edits[..], &mut selected[..]);
     let mut file: u64 = 0;
     let mut cursor: usize = 0;
@@ -683,7 +690,10 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 }
                 let iterator = iter_symbol(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
                     &nodes[0..nodes.len()], copy(target));
-                if iterator != 0 {
+                if iterator==9 {
+                    let helper:[u8;18]=[95,95,99,111,114,98,111,95,116,101,120,116,95,115,112,108,105,116];
+                    if output.len()-written<18{return (4,0,0);}let mut letter:usize=0;while letter<18{output[written]=helper[letter];written=written+1;letter=letter+1;}
+                }else if iterator != 0 {
                     let adapter: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
                     let prefix: [u8; 13] = [95,95,99,111,114,98,111,95,105,116,101,114,95];
                     let width: usize = if iterator == 1 { 18 } else { 13 };

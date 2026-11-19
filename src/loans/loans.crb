@@ -147,11 +147,11 @@ pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target
             &graph[0..graph.len()], parent, target));
     }
     if stored_array_view(copy(ty)) { return values[loan].target == target; }
-    if ty >= 741 && ty <= 749 {
+    if (ty >= 741 && ty <= 749) || ty==2000138 {
         let parent = values[loan].loan_parent;
         let root = values[loan].target;
         let storage = values[root].ty;
-        if (storage == 294 || storage == 298 || storage == 299) && values[root].target == target { return true; }
+        if (storage == 294 || storage == 297 || storage == 298 || storage == 299) && values[root].target == target { return true; }
         return loan != target && (values[loan].target == target || parent == target
             || (parent != 0 && reserves(&values[0..values.len()], &graph[0..graph.len()], parent, target)));
     }
@@ -234,7 +234,7 @@ pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target
                 constructor_field_value(&graph[0..graph.len()], &values[0..values.len()], parent, copy(field))
             } else if ty == 300 && parent != 0 { parent } else { copy(field) };
             let field_type = values[actual].ty;
-            if field_type >= 741 && field_type <= 749
+            if (field_type >= 741 && field_type <= 749) || field_type==2000138
                 && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target)) { return true; }
             if (field_type == 296 || field_type == 300 || field_type == 301)
                 && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target)) { return true; }
@@ -296,7 +296,7 @@ fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[Check
         let nested = ty == 300 || ty == 301 || ty == 310;
         let points_to_target = if nested || (ty >= 81 && ty <= 87) {
             reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target))
-        } else if ty >= 741 && ty <= 749 {
+        } else if (ty >= 741 && ty <= 749) || ty==2000138 {
             reserves(&values[0..values.len()], &graph[0..graph.len()], copy(actual), copy(target))
         } else { ((ty > 20 && ty < 60) || ty == 734 || ty == 752) && values[actual].target == target };
         // A nested descriptor can contain an exclusive loan. Until the
@@ -346,7 +346,9 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> b
     }
     let target = values[loan].target;
     let ty = values[loan].ty;
+    if ty==2000138 && target==0{return true;}
     if ty == 734 || option_borrow(copy(ty)) != 0 {
+        if option_borrow(copy(ty))==2000138 && target==0{return true;}
         let parent = values[loan].loan_parent;
         return target != 0 && values[target].state == 1
             && (parent == 0 || (values[parent].state == 1 && live_roots(&values[0..values.len()], &graph[0..graph.len()], parent)));
@@ -359,7 +361,7 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> b
         if field != 0 { return live_roots(&values[0..values.len()], &graph[0..graph.len()], field); }
         let mut item = graph[shape].first_child;
         while item != 0 {
-            if values[item].ty >= 741 && values[item].ty <= 749
+            if (values[item].ty >= 741 && values[item].ty <= 749 || values[item].ty==2000138)
                 && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(item)) { return false; }
             if values[item].ty > 20 && values[item].ty < 60 && values[values[item].target].state != 1 {
                 return false;
@@ -368,10 +370,10 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> b
         }
         return true;
     }
-    if ty >= 741 && ty <= 749 {
+    if (ty >= 741 && ty <= 749) || ty==2000138 {
         let parent = values[loan].loan_parent;
         let storage = values[target].ty;
-        if (storage == 294 || storage == 298 || storage == 299) && values[values[target].target].state != 1 {
+        if (storage == 294 || storage == 297 || storage == 298 || storage == 299) && values[values[target].target].state != 1 {
             return false;
         }
         return target != 0 && values[target].state == 1

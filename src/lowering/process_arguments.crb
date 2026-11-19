@@ -1,6 +1,6 @@
 use bootstrap::model::{AstNode, StaticNode, result_payload};
 use bootstrap::lowering_annotations::word;
-use bootstrap::lowering_types::{declaration, local, nominal_type, number, temporary, unsigned};
+use bootstrap::lowering_types::{pool_type, declaration, local, nominal_type, number, temporary, unsigned};
 use bootstrap::lowering_text::string_bytes;
 use bootstrap::process_arguments::argument_text_type;
 use bootstrap::target_c::{byte_text, character};
@@ -26,12 +26,13 @@ fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64
 }
 
 fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    ctx: &Lowering, node: u64) -> i64 {
+    types:&mut [i64], ctx: &Lowering, node: u64) -> i64 {
     let receiver = graph[node].first_child;
+    let actual=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(receiver),2000138);if actual!=2000138{return -1;}
     let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
     if graph[receiver].next_sibling == 0 && word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &byte_len[..]) {
         if (*ctx).emit {
-            declaration(7, copy(node)); character(61); local(graph[receiver].binding);
+            declaration(7, copy(node)); character(61); temporary(copy(receiver));
             { let code: [u8; 6] = [46,108,101,110,59,10]; byte_text(&code[..]); }
         }
         return 7;
@@ -39,10 +40,10 @@ fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let name: [u8; 8] = [97,115,95,98,121,116,101,115];
     if graph[receiver].next_sibling != 0 || !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &name[..]) { return -1; }
     if (*ctx).emit {
-        let binding = graph[receiver].binding;
+        let binding = copy(receiver);
         declaration(2000004, node); { let code: [u8; 12] = [61,123,40,117,105,110,116,56,95,116,42,41]; byte_text(&code[..]); }
-        local(copy(binding)); { let code: [u8; 6] = [46,100,97,116,97,44]; byte_text(&code[..]); }
-        local(binding); { let code: [u8; 7] = [46,108,101,110,125,59,10]; byte_text(&code[..]); }
+        temporary(copy(binding)); { let code: [u8; 6] = [46,100,97,116,97,44]; byte_text(&code[..]); }
+        temporary(binding); { let code: [u8; 7] = [46,108,101,110,125,59,10]; byte_text(&code[..]); }
     }
     2000004
 }
@@ -63,4 +64,33 @@ fn lower_process_arguments(nodes: &[AstNode], graph: &[StaticNode], ctx: &Loweri
         number(invalid); character(58); number(unavailable); { let code: [u8; 4] = [59,10,125,10]; byte_text(&code[..]); }
     }
     ty
+}
+
+fn lower_text_view(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)->i64 {
+    let place=graph[node].first_child;let base=graph[place].first_child;let range=graph[base].next_sibling;
+    if nodes[node].kind!=13 || graph[node].mutable || nodes[place].kind!=18 || nodes[range].kind!=46{return 0;}
+    let binding=graph[base].binding;let shape=guess(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(base));
+    let string=nodes[base].kind==7 && pool_type(copy(shape))==7600140;
+    if shape!=2000138 && !string{return 0;}
+    if string {
+        if (*ctx).emit { declaration(2000138,copy(base)); { let code: [u8; 28] = [61,123,40,99,111,110,115,116,32,117,105,110,116,56,95,116,42,41,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8; 23] = [46,115,108,111,116,41,45,62,100,97,116,97,44,40,40,82,101,103,105,111,110,42,41]; byte_text(&code[..]); } local(binding); { let code: [u8; 14] = [46,115,108,111,116,41,45,62,108,101,110,125,59,10]; byte_text(&code[..]); } }
+    }else{
+        let actual=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(base),2000138);if actual!=2000138{return -1;}
+    }
+    let first=graph[range].first_child;let has_start=nodes[range].start!=nodes[range].name_start;
+    let last=if has_start{graph[first].next_sibling}else{copy(first)};
+    let mut bound=copy(first);
+    while bound!=0{
+        let actual=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(bound),0);if actual<1 || actual>7 || actual==3{return -1;}
+        if (*ctx).emit && actual<=2 { { let code: [u8; 3] = [105,102,40]; byte_text(&code[..]); } temporary(copy(bound)); { let code: [u8; 23] = [60,48,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); } }
+        bound=graph[bound].next_sibling;
+    }
+    if (*ctx).emit{
+        { let code: [u8; 16] = [117,105,110,116,54,52,95,116,32,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(copy(node));character(61);if has_start{temporary(first);}else{character(48);} { let code: [u8; 18] = [59,10,117,105,110,116,54,52,95,116,32,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node));character(61);
+        if last!=0{temporary(last);}else{temporary(copy(base));{ let code: [u8; 4] = [46,108,101,110]; byte_text(&code[..]); }}character(59);character(10);
+        { let code: [u8; 10] = [105,102,40,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(copy(node));{ let code: [u8; 8] = [62,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node));{ let code: [u8; 9] = [124,124,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node));character(62);temporary(copy(base));{ let code: [u8; 4] = [46,108,101,110]; byte_text(&code[..]); } { let code: [u8; 21] = [41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        { let code: [u8; 10] = [105,102,40,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(copy(node)); { let code: [u8; 1] = [60]; byte_text(&code[..]); } temporary(copy(base)); { let code: [u8; 24] = [46,108,101,110,38,38,40,40,40,99,111,110,115,116,32,117,105,110,116,56,95,116,42,41]; byte_text(&code[..]); } temporary(copy(base)); { let code: [u8; 14] = [46,100,97,116,97,41,91,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(copy(node)); { let code: [u8; 32] = [93,38,49,57,50,41,61,61,49,50,56,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        { let code: [u8; 10] = [105,102,40,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node)); { let code: [u8; 1] = [60]; byte_text(&code[..]); } temporary(copy(base)); { let code: [u8; 24] = [46,108,101,110,38,38,40,40,40,99,111,110,115,116,32,117,105,110,116,56,95,116,42,41]; byte_text(&code[..]); } temporary(copy(base)); { let code: [u8; 14] = [46,100,97,116,97,41,91,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node)); { let code: [u8; 32] = [93,38,49,57,50,41,61,61,49,50,56,41,97,114,105,116,104,109,101,116,105,99,95,101,114,114,111,114,40,41,59,10]; byte_text(&code[..]); }
+        declaration(2000138,copy(node));{ let code: [u8; 18] = [61,123,40,99,111,110,115,116,32,117,105,110,116,56,95,116,42,41]; byte_text(&code[..]); } temporary(copy(base));{ let code: [u8; 13] = [46,100,97,116,97,43,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(copy(node));{ let code: [u8; 8] = [44,116,101,120,116,95,104,105]; byte_text(&code[..]); } number(copy(node));{ let code: [u8; 8] = [45,116,101,120,116,95,108,111]; byte_text(&code[..]); } number(node);{ let code: [u8; 3] = [125,59,10]; byte_text(&code[..]); }
+    }2000138
 }

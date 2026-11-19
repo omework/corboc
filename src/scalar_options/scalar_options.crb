@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{argument_text_type, shared_text_annotation, check_text};
 use bootstrap::results::payload_type;
 use bootstrap::places::inline_array;
 use bootstrap::lowering_types::{option_code, optional, option_payload};
@@ -100,6 +101,7 @@ pub fn borrow_shape(ty: i64) -> u64 {
 }
 
 pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+    if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return argument_text_type();}
     let scalar = scalar_reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
     if scalar != 0 { return scalar; }
@@ -127,6 +129,7 @@ pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 pub fn borrow_exclusive(ty: i64) -> bool {
+    if ty==2000138{return false;}
     if record_borrow(copy(ty)) || slice_borrow(copy(ty)) { return ty % 2 == 1; }
     ty >= 40
 }
@@ -191,7 +194,7 @@ pub fn option_borrow(ty: i64) -> i64 {
     if !optional(copy(ty)) { return 0; }
     let payload = option_leaf(ty);
     if (payload > 20 && payload <= 29) || (payload > 40 && payload <= 49)
-        || record_borrow(copy(payload)) || slice_borrow(copy(payload)) { return payload; }
+        || payload==2000138 || record_borrow(copy(payload)) || slice_borrow(copy(payload)) { return payload; }
     0
 }
 
@@ -346,6 +349,11 @@ pub fn shared_option_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 
 pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) -> i64 {
+    if reference==2000138 {
+        let actual=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),1);
+        if actual<=0{return if actual<0{actual}else{-9};}
+        copy_option_borrow(&mut values[0..values.len()],expression,result,copy(ty),false);return ty;
+    }
     let start = nodes[expression].start;
     let mutable = reference >= 40;
     let element = reference % 20;
@@ -469,7 +477,7 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
 
 pub fn option_borrow_return(nodes: &[AstNode], values: &[CheckedValue], value: u64) -> bool {
     let root = values[value].target;
-    root == 0 || (nodes[root].kind == 3 && values[root].target == root)
+    root == 0 || values[root].ty==5018 || (nodes[root].kind==4 && nodes[nodes[root].parent].kind==3) || (nodes[root].kind == 3 && values[root].target == root)
 }
 
 pub fn copy_option_borrow(values: &mut [CheckedValue], from: u64, to: u64, ty: i64, mutable: bool) {

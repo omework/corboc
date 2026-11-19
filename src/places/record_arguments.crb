@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::regional_calls::region_signature;
 use bootstrap::declarations::{layout_visible, verification_field};
 use bootstrap::scalar::verify_primitive;
@@ -56,7 +57,7 @@ fn record_with_record_loans(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         let target = graph[annotation].first_child;
         let (slice, slice_element, slice_exclusive) = slice_parameter(&source[0..source.len()],
             &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
-        if slice != 0 {
+        if slice != 0 || shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) {
             loans = true;
         } else if source[nodes[annotation].start] == 38 && target != 0 && graph[target].first_child == 0 {
             let declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],

@@ -2,7 +2,7 @@ use bootstrap::places::bind_record_pool;
 use bootstrap::regional_calls::scalar_vector_owner_element;
 use bootstrap::scalar_options::{scalar_option_annotation, scalar_option, checked_option_payload, option_borrow, option_borrow_return, copy_option_borrow, option_allocation, option_handle, option_resource_return, record_borrow, slice_borrow, check_option_reference};
 use bootstrap::places::{bind_record_field, resolve_record_receiver};
-use bootstrap::process_arguments::{read_argument_value, shared_text_annotation, argument_text_type};
+use bootstrap::process_arguments::{read_argument_value, shared_text_annotation, argument_text_type, split_callee};
 use bootstrap::results::{result_annotation, result_variant, construct_result, check_envelope_payload};
 use bootstrap::model::result_type;
 use bootstrap::lowering_types::signed;
@@ -385,6 +385,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 return (0 - status, 0);
             }
         } else if kind == 5 && nodes[initializer].kind == 16
+            && split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(initializer))==0
             && !slice_view(values[graph[graph[initializer].first_child].binding].ty)
             && !(values[graph[graph[initializer].first_child].binding].ty >= 2701
                 && values[graph[graph[initializer].first_child].binding].ty <= 2708)
@@ -764,7 +765,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                     loan_parent: members, origin_call: shape, exclusive: false };
             } else if option_borrow(copy(ty)) != 0 {
                 copy_option_borrow(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
-            } else if ((ty > 20 && ty < 60) || ty == 734 || slice_view(copy(ty)))
+            } else if ((ty > 20 && ty < 60) || ty == 734 || ty==2000138 || slice_view(copy(ty)))
                 && values[origin].state == 1 {
                 copy_option_borrow(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if is_scalar_array(copy(ty)) && values[origin].state == 1 {
@@ -1017,6 +1018,9 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                     exclusive: values[item].exclusive };
                 values[item] = moved;
             } else if vector == 297 {
+                let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(child),true);
+                if conflict>0{return (violation(5,start),0);}
+                if conflict<0{return (unsupported_statement(&nodes[0..nodes.len()],node),0);}
                 let push_str: [u8; 8] = [112,117,115,104,95,115,116,114];
                 if !method.content_eq(&push_str[..]) || nodes[argument].kind != 9
                     || source[nodes[argument].start] != 34 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }

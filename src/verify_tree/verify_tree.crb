@@ -416,8 +416,13 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
                     continue;
                 }
                 if ty == 0 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+                if ty==2000138 {
+                    values[annotation]=CheckedValue{ty:2000138,state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:0,exclusive:false};
+                    values[child]=CheckedValue{ty:ty,state:1,mutable:false,target:annotation,loan_parent:0,origin_call:0,exclusive:false};
+                    child=graph[child].next_sibling;continue;
+                }
                 let target: u64 = if ty >= 20 && ty != 310 && !task_value(copy(ty)) && !is_scalar_array(copy(ty)) && !map_value(copy(ty)) { copy(child) } else { 0 };
-                let exclusive = ty >= 40 && !(ty >= 710 && ty < 720);
+                let exclusive = ty >= 40 && ty!=2000138 && !(ty >= 710 && ty < 720);
                 values[child] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[child].mutable || (ty >= 96 && ty <= 99) || (ty >= 101 && ty <= 107),
                     target: target, loan_parent: 0, origin_call: shape, exclusive: exclusive };
             } else if nodes[child].kind == 4 {

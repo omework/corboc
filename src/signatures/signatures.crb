@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{check_text, returned_text_field, split_callee};
 use bootstrap::lock_contracts::retain_lock;
 use bootstrap::value_summaries::instantiate_record;
 use bootstrap::value_dependencies::external_dependencies;
@@ -134,7 +135,7 @@ pub fn check_slice_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 
 // Resolve a field summary through borrowed record layers and constructor
 // argument mappings. A unique concrete origin is required.
-fn shared_result_member(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+pub fn shared_result_member(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &[CheckedValue], owner: u64, field: u64, depth: u64) -> u64 {
     if owner == 0 || depth >= 128 { return 0; }
     if values[owner].ty == 734 {
@@ -181,7 +182,9 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut input = copy(argument);
     let mut reserved: [u64; 64] = [0; 64];
     let mut reservations: u64 = 0;
-    if nodes[call].kind == 16 {
+    let text_extension=nodes[call].kind==16 && nodes[nodes[function].parent].kind!=49 && split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call))==function;
+    if text_extension{input=graph[call].first_child;}
+    if nodes[call].kind == 16 && !text_extension {
         let receiver = graph[call].first_child;
         if value_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(function)) {
@@ -290,10 +293,11 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             }
         }
         if actual == 0 && shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(ty_node)) {
-            actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()],
-                copy(input), argument_text_type(), 3);
+            actual = if text_extension && input==graph[call].first_child { values[input].ty }else{verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()],
+                copy(input), argument_text_type(), 1)};
             if actual < 0 { return actual; }
             if actual != argument_text_type() { return 0 - violation(1, nodes[input].start); }
+            if reservations==64{return -9;}reserved[reservations]=copy(input);reservations=reservations+1;
         }
         if actual == 0 {
             let record = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -640,7 +644,23 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         &mut values[0..values.len()], copy(function), copy(call));
     if lock < 0 { return lock; }
     let borrowed = option_borrow(copy(result));
-    if borrowed != 0 || (((result > 20 && result < 60) || record_borrow(copy(result))
+    if borrowed==2000138 || result==2000138 {
+        let field=returned_text_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(function));
+        let mut actual=if field!=0 && reservations==1 {
+            let receiver=reserved[0];shared_result_member(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],values[receiver].target,copy(field),0)
+        }else if reservations==1{reserved[0]}else{0};
+        if actual==0 && field!=0 && reservations==1 {
+            let receiver=reserved[0];let formal=values[receiver].target;
+            if values[receiver].ty==734 && nodes[formal].kind==3 {
+                let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,2);if slot==0{return -9;}
+                values[slot]=CheckedValue{ty:5018,state:1,mutable:false,target:formal,loan_parent:0,origin_call:copy(field),exclusive:false};
+                actual=slot+1;values[actual]=CheckedValue{ty:2000138,state:1,mutable:false,target:slot,loan_parent:0,origin_call:copy(field),exclusive:false};
+            }
+        }
+        if actual==0{return -9;}
+        let root=values[actual].target;let parent=values[actual].loan_parent;
+        values[call]=CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:parent,origin_call:field,exclusive:false};
+    } else if borrowed != 0 || (((result > 20 && result < 60) || record_borrow(copy(result))
         || slice_borrow(copy(result))) && expected == result) {
         if reservations != 1 || nodes[function].kind != 1 { return -9; }
         let entry = graph[function].first_child;

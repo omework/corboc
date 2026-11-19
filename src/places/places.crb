@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{shared_text_annotation, check_text};
 use bootstrap::lowering_types::array_code;
 use bootstrap::value_dependencies::live_owned_fields;
 use bootstrap::ownership::check_owned_struct;
@@ -519,6 +520,7 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], copy(annotation)) != 0 {
             return (450, binding, annotation);
         }
+        if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return (2000138,binding,field);}
         if graph[annotation].first_child != 0 { return (0, 0, 0); }
         let ty = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
         if ty != 0 { return (ty, binding, 0); }
@@ -680,6 +682,13 @@ fn check_slice_bound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 // Preserve both the storage root and the reborrowed descriptor.
 pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], destination: u64, expression: u64, annotation: u64) -> i64 {
+    let text=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),0);
+    if text<0{return text;}
+    if text==2000138 {
+        if annotation!=0 && !shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation){return 0-violation(1,nodes[expression].start);}
+        let root=values[expression].target;let parent=values[expression].loan_parent;let origin=values[expression].origin_call;
+        values[destination]=CheckedValue{ty:text,state:1,mutable:graph[destination].mutable,target:root,loan_parent:parent,origin_call:origin,exclusive:false};return 1;
+    }
     let place = graph[expression].first_child;
     let base = graph[place].first_child;
     let range = graph[base].next_sibling;

@@ -1,3 +1,7 @@
+use bootstrap::places::scalar_place;
+use bootstrap::loans::{live_roots,loan_conflict};
+use bootstrap::signatures::shared_result_member;
+use bootstrap::declarations::{verification_field,nominal_declaration};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, result_type, result_payload};
 use bootstrap::scalar::{is_integer, pointer_integer_type};
 use bootstrap::verify::{verify_expr, violation};
@@ -76,7 +80,7 @@ pub fn read_argument_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         }
         return argument_text_type();
     }
-    if nodes[point].kind != 16 || index != 0 { return -9; }
+    if nodes[point].kind != 16 || index != 0 { return 0; }
     let len: [u8; 3] = [108,101,110];
     let bytes: [u8; 8] = [97,115,95,98,121,116,101,115];
     let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
@@ -90,8 +94,114 @@ pub fn read_argument_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if ty == argument_text_type() && member.content_eq(&bytes[..]) && destination != 0 {
         // Process argument storage lives independently of either descriptor.
         values[destination] = CheckedValue { ty: 744, state: 1, mutable: false,
-            target: copy(destination), loan_parent: 0, origin_call: 0, exclusive: false };
+            target: if values[binding].target==0{copy(destination)}else{values[binding].target}, loan_parent: values[binding].loan_parent, origin_call: 0, exclusive: false };
         return 744;
     }
-    return -9;
+    return 0;
+}
+
+/// Checks an immutable UTF-8 descriptor without losing its external storage root.
+/// Zero denotes an expression outside this text path; negative values are diagnostics.
+pub fn check_text(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,mode:i64)->i64 {
+    let kind=nodes[expression].kind;
+    let child=graph[expression].first_child;
+    if kind==19{return check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],child,mode);}
+    if kind==9 && source[nodes[expression].start]==34 {
+        if mode==2{return 0-violation(5,nodes[expression].start);}
+        values[expression]=CheckedValue{ty:2000138,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};return 2000138;
+    }
+    if kind==7 {
+        let binding=graph[expression].binding;
+        if values[binding].ty!=2000138{return 0;}
+        if values[binding].state!=1{return 0-violation(6,nodes[expression].start);}
+        if mode==2{return 0-violation(5,nodes[expression].start);}
+        let root=values[binding].target;let parent=values[binding].loan_parent;let origin=values[binding].origin_call;let mutable=values[binding].mutable;
+        if root!=0 && !live_roots(&values[0..values.len()],&graph[0..graph.len()],copy(binding)){return 0-violation(4,nodes[expression].start);}
+        values[expression]=CheckedValue{ty:2000138,state:1,mutable:false,target:copy(root),loan_parent:copy(parent),origin_call:copy(origin),exclusive:false};
+        if mode==1 || mode==3{values[binding]=CheckedValue{ty:2000138,state:2,mutable:mutable,target:root,loan_parent:parent,origin_call:origin,exclusive:false};}
+        return 2000138;
+    }
+    if kind==17 {
+        let (ty,holder,field)=scalar_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression));
+        if ty<0{return 0;}if ty!=2000138{return 0;}
+        let owner=if values[holder].ty==734{values[holder].target}else{copy(holder)};
+        let member=shared_result_member(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(owner),copy(field),0);
+        let mut root:u64=0;let mut parent:u64=0;
+        if member!=0{root=values[member].target;parent=values[member].loan_parent;}
+        else if nodes[owner].kind==3 {
+            root=graph[field].first_child;
+            values[root]=CheckedValue{ty:5018,state:1,mutable:false,target:owner,loan_parent:0,origin_call:copy(field),exclusive:false};
+        }else{return -9;}
+        if mode==2{return 0-violation(5,nodes[expression].start);}
+        values[expression]=CheckedValue{ty:2000138,state:1,mutable:false,target:root,loan_parent:parent,origin_call:field,exclusive:false};return 2000138;
+    }
+    if kind!=13 || graph[expression].mutable{return 0;}
+    let base=graph[child].first_child;
+    let range=graph[base].next_sibling;
+    if nodes[child].kind!=18 || nodes[range].kind!=46{return 0;}
+    let mut text=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(base),0);
+    if text<0{return text;}
+    let binding=graph[base].binding;
+    if text==0 && nodes[base].kind==7 && values[binding].ty==297 {
+        if values[binding].state!=1 || values[values[binding].target].state!=1{return 0-violation(4,nodes[base].start);}
+        let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(expression),false);
+        if conflict!=0{return if conflict>0{0-violation(5,nodes[expression].start)}else{-9};}
+        values[base]=CheckedValue{ty:2000138,state:1,mutable:false,target:binding,loan_parent:0,origin_call:0,exclusive:false};text=2000138;
+    }
+    if text==0{return 0;}
+    let mut bound=graph[range].first_child;
+    while bound!=0 {
+        let actual=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(bound),0,0);
+        if actual<0{return actual;}if !is_integer(actual){return 0-violation(1,nodes[bound].start);}
+        bound=graph[bound].next_sibling;
+    }
+    let root=values[base].target;let parent=values[base].loan_parent;let origin=values[base].origin_call;
+    values[expression]=CheckedValue{ty:2000138,state:1,mutable:false,target:root,loan_parent:parent,origin_call:origin,exclusive:false};return text;
+}
+
+fn text_field(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],layout:u64,expression:u64,depth:u64)->u64 {
+    if expression==0 || depth>=128{return 0;}
+    let kind=nodes[expression].kind;
+    if kind==7{return text_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],layout,graph[graph[expression].binding].initializer,depth+1);}
+    if kind==13 || kind==18 || kind==19 || kind==14{return text_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],layout,graph[expression].first_child,depth+1);}
+    if kind==17{return verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],layout,expression);}0
+}
+
+/// Names a shared text field only when every Some return forwards that same field.
+/// The returned bytes are then independent of the mutable cursor descriptor.
+pub fn returned_text_field(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],function:u64)->u64 {
+    let formal=graph[function].first_child;let output=graph[formal].next_sibling;let body=graph[output].next_sibling;
+    let layout=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nodes[function].parent);
+    if nodes[formal].kind!=3 || nodes[body].kind!=2 || nodes[layout].kind!=28{return 0;}
+    let some:[u8;4]=[83,111,109,101];let mut selected:u64=0;let mut at=body+1;
+    while at<nodes.len() as u64 && nodes[at].start<nodes[body].end {
+        let first=graph[at].first_child;
+        if nodes[at].kind==15 && nodes[first].kind==7 && graph[first].binding==0 {
+            let name=&source[nodes[first].name_start..nodes[first].name_end];
+            if name.content_eq(&some[..]) {
+                let field=text_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(layout),graph[first].next_sibling,0);
+                if field==0 || (selected!=0 && selected!=field){return 0;}selected=field;
+            }
+        }at=at+1;
+    }selected
+}
+
+/// Finds the STD implementation behind the native text convenience method.
+pub fn split_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],call:u64)->u64 {
+    if nodes[call].kind!=16{return 0;}
+    let split:[u8;5]=[115,112,108,105,116];let name=&source[nodes[call].name_start..nodes[call].name_end];if !name.content_eq(&split[..]){return 0;}
+    let helper:[u8;18]=[95,95,99,111,114,98,111,95,116,101,120,116,95,115,112,108,105,116];
+    let mut function=graph[0].first_child;
+    while function!=0{let spelling=&source[nodes[function].name_start..nodes[function].name_end];if nodes[function].kind==1 && spelling.content_eq(&helper[..]){return function;}function=graph[function].next_sibling;}0
+}
+
+/// Auto-borrows the native receiver; explicit ordinary arguments retain their usual move behavior.
+pub fn split_receiver(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],call:u64)->i64 {
+    let receiver=graph[call].first_child;let binding=graph[receiver].binding;
+    if nodes[receiver].kind==7 && values[binding].ty==297 {
+        if values[binding].state!=1 || values[values[binding].target].state!=1{return 0-violation(4,nodes[receiver].start);}
+        let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(receiver),false);if conflict!=0{return if conflict>0{0-violation(5,nodes[receiver].start)}else{-9};}
+        values[receiver]=CheckedValue{ty:2000138,state:1,mutable:false,target:binding,loan_parent:0,origin_call:0,exclusive:false};return 2000138;
+    }
+    check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],receiver,0)
 }

@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{split_callee,split_receiver};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::ownership::plain_structure;
 use bootstrap::tasks::instantiate_constructor_result;
@@ -35,6 +36,13 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if kind == 15 && values[node].ty == 2000139 && is_process_arguments_result(copy(expected))
         && is_process_arguments_call(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(node)) { return expected; }
+    if kind==16 {
+        let extension=split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node));
+        if extension!=0 {
+            let text=split_receiver(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node));if text<0{return text;}
+            if text==2000138{return check_signature(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],extension,copy(child),expected,mode,node);}
+        }
+    }
     if kind == 16 || kind == 18 {
         let argument = read_argument_value(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(node), 0, copy(expected), copy(mode));

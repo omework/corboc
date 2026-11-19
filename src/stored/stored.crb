@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::{shared_text_annotation, check_text};
 use bootstrap::regional_calls::region_signature;
 use bootstrap::value_dependencies::{scope_contains};
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue, constructor_arguments, constructor_field_value};
@@ -247,6 +248,15 @@ pub fn bind_stored_array_view(nodes: &[AstNode], graph: &[StaticNode],
 
 pub fn record_loan_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], field: u64, annotation: u64, destination: u64) -> i64 {
+    if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) {
+        let expression=graph[field].first_child;
+        let checked=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),1);
+        if checked<=0{return if checked<0{checked}else{0-violation(1,nodes[expression].start)};}
+        let root=values[expression].target;
+        if root!=0 && !scope_contains(&graph[0..graph.len()],graph[root].scope,graph[destination].scope){return 0-violation(4,nodes[expression].start);}
+        let parent=values[expression].loan_parent;let origin=values[expression].origin_call;
+        values[field]=CheckedValue{ty:2000138,state:1,mutable:false,target:root,loan_parent:parent,origin_call:origin,exclusive:false};return 1;
+    }
     let (slice, element, exclusive) = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
     if slice != 0 {

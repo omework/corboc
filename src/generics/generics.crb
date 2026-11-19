@@ -1,3 +1,4 @@
+use bootstrap::process_arguments::split_callee;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Resolve constrained record templates before ordinary ownership analysis.
 use bootstrap::model::{AstNode, StaticNode, Token, token_at};
@@ -200,7 +201,8 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
         let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
         if kind == 16 {
-            let function = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, id);
+            let resolved = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, copy(id));
+            let function=if resolved!=0{resolved}else{split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(id))};
             let returned = output(&nodes[0..nodes.len()], &graph[0..graph.len()], function);
         let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], returned); return packed(&inferred);
         }

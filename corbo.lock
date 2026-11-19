@@ -2,7 +2,7 @@
 # Update this revision deliberately and regenerate runtime_sources before building.
 [corbo]
 git = "git@github.com:omework/din-lang.git"
-rev = "0e49415e87b380e38ffe2c0c52bffcc81dc34df8"
+rev = "d15cd7b6d6a567c4b7e98211b7fb0c7e2e5a7a90"
 stdlib = "stdlib/src"
 runtime = "runtime"
 runtime_implementation = "corbo"

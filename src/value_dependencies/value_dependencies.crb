@@ -24,7 +24,7 @@ pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u
         }
         return true;
     }
-    if slice_view(copy(ty)) {
+    if slice_view(copy(ty)) || ty==2000138 {
         return live_roots(&values[0..values.len()], &graph[0..graph.len()], owner);
     }
     if ty == 470 {
@@ -94,10 +94,10 @@ pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, po
         }
         return false;
     }
-    if slice_view(copy(ty)) {
+    if slice_view(copy(ty)) || ty==2000138 {
         let root = values[holder].target;
         let storage = values[root].ty;
-        return (storage == 294 || storage == 298 || storage == 299) && values[root].target == pool;
+        return (storage == 294 || storage == 297 || storage == 298 || storage == 299) && values[root].target == pool;
     }
     if ty == 752 { return false; }
     if ty == 470 {
@@ -202,7 +202,7 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
         }
         return true;
     }
-    if slice_view(copy(ty)) || ty == 734 || (ty>20 && ty<60) {
+    if slice_view(copy(ty)) || ty==2000138 || ty == 734 || (ty>20 && ty<60) {
         if values[values[owner].target].ty==5018{return true;}
         let parent = values[owner].loan_parent;
         return scope_contains(&graph[0..graph.len()], graph[values[owner].target].scope, copy(scope))
@@ -323,11 +323,11 @@ pub fn result_fields_external(nodes: &[AstNode], graph: &[StaticNode], values: &
         return true;
     }
     let root = values[owner].target;
-    if slice_view(copy(ty)) {
+    if slice_view(copy(ty)) || ty==2000138 {
         let parent = values[owner].loan_parent;
         if parent != 0 && (nodes[parent].kind != 3 || nodes[parent].parent != function) { return false; }
     }
-    if (ty > 20 && ty < 60) || (ty >= 201 && ty <= 207) || ty == 301 || ty == 734 || slice_view(copy(ty)) {
+    if (ty > 20 && ty < 60) || (ty >= 201 && ty <= 207) || ty == 301 || ty == 734 || slice_view(copy(ty)) || (ty==2000138 && root!=0) {
         let external=values[root].ty==5018;
         let formal = if external{values[root].target}else if nodes[root].kind == 4 { nodes[root].parent } else { copy(root) };
         if !external && values[formal].ty==300 && values[formal].target==0{return false;}

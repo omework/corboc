@@ -552,7 +552,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     }
                 } else if option_borrow(copy(ty)) != 0 {
                     let reference = option_borrow(copy(ty));
-                    absent = values[option].target == 0;
+                    absent = reference!=2000138 && values[option].target == 0;
                     if graph[binder].declaration && !absent {
                         let mut binder_ty = copy(reference);
                         if record_borrow(copy(reference)) { binder_ty = 734; }
