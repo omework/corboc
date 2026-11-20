@@ -123,3 +123,12 @@ regressions completed. Three API and three bounded-layout probes per non-host
 target completed as detailed in the report. No independent audit claimed.
 
 [Cycle evidence](BINARY_TIME_BOUNDED_CYCLE.md).
+
+## Async-default API organization
+
+No new normative rule. Existing resource/borrow checks are exercised through the
+new default async and explicit sync imports. Buffered File borrow refusals,
+TCP split lifetime refusal and TLS privacy/refusal regressions are retained.
+Targeted executions cover macOS ARM64/x86-64, Linux x86-64 (timers also ARM64),
+Windows x86-64 under Wine; Windows ARM64 is compile-only. Runtime primitives
+are unchanged. [Cycle report](ASYNC_DEFAULT_API_CYCLE.md).

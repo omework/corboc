@@ -1,3 +1,15 @@
+## Async-default APIs (API/STD organization)
+
+- [x] Move async I/O/waits to default packages and blocking APIs under sync.
+- [x] Keep shared options, metadata, addresses and time values common.
+- [x] Migrate corboc imports/namespace metadata and compile the active compiler.
+- [x] Update EN/FR READMEs, runnable examples, API guides and generated reference.
+- [x] Execute affected File/buffered/network/timer regressions and TLS interop.
+- [x] Complete targeted platform probes; Windows ARM64 remains compile-only.
+- [x] Pin the committed async-default STD revision in corbo.lock.
+
+No open language decision; no async TLS transport introduced. [Evidence](ASYNC_DEFAULT_API_CYCLE.md).
+
 ## Bounded strings, binary encoding and time (core + STD API)
 
 - [x] Parse literal type arguments and specialize `String<N>` to fixed inline storage.

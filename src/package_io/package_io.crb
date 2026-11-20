@@ -1,4 +1,5 @@
-use std::io::{File, FileMode};
+use std::io::sync::{File};
+use std::io::{FileMode};
 
 // Paths supplied to this layer include their terminating zero.
 pub fn read_source(path: &[u8], buffer: &mut [u8]) -> (i32, usize) {
