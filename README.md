@@ -63,6 +63,24 @@ build/install/
   share/corbo/stdlib/src/
 ```
 
+## Create a package
+
+```sh
+corboc new my_package
+cd my_package
+corboc build
+./build/my_package
+```
+
+`new` creates `package.toml`, an empty `src/main.crb`, `.gitignore` and a short
+README. It refuses any existing destination, including an empty directory, and
+does not initialize Git. The name is a single package identifier: ASCII letters,
+digits and underscores, starting with a letter or underscore (up to 255 bytes).
+`std` and `runtime` are reserved; paths and hyphenated names are not accepted.
+Filesystem/platform filename restrictions also apply. If writing the scaffold
+fails after creating the directory, the partial directory is retained and an
+error is reported.
+
 `corboc build` automatically finds the STD relative to its installed executable.
 From a package root, it creates `build/<package-name>`:
 

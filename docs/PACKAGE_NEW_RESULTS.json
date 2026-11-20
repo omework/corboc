@@ -1,0 +1,128 @@
+{
+  "host": {
+    "checks": [
+      {
+        "case": "create",
+        "passed": true
+      },
+      {
+        "case": "scaffold",
+        "passed": true
+      },
+      {
+        "case": "existing-package-refused",
+        "passed": true
+      },
+      {
+        "case": "existing-file-refused",
+        "passed": true
+      },
+      {
+        "case": "existing-empty-directory-refused",
+        "passed": true
+      },
+      {
+        "case": "build-generated-package",
+        "passed": true
+      },
+      {
+        "case": "run-generated-package",
+        "passed": true
+      },
+      {
+        "case": "missing-name",
+        "passed": true
+      },
+      {
+        "case": "extra-argument",
+        "passed": true
+      },
+      {
+        "case": "invalid-names-have-no-filesystem-effects",
+        "passed": true
+      }
+    ],
+    "build_exercised": true
+  },
+  "installed": {
+    "checks": [
+      {
+        "case": "create",
+        "passed": true
+      },
+      {
+        "case": "scaffold",
+        "passed": true
+      },
+      {
+        "case": "existing-package-refused",
+        "passed": true
+      },
+      {
+        "case": "existing-file-refused",
+        "passed": true
+      },
+      {
+        "case": "existing-empty-directory-refused",
+        "passed": true
+      },
+      {
+        "case": "build-generated-package",
+        "passed": true
+      },
+      {
+        "case": "run-generated-package",
+        "passed": true
+      },
+      {
+        "case": "missing-name",
+        "passed": true
+      },
+      {
+        "case": "extra-argument",
+        "passed": true
+      },
+      {
+        "case": "invalid-names-have-no-filesystem-effects",
+        "passed": true
+      }
+    ],
+    "build_exercised": true
+  },
+  "platform_module_checks": [
+    {
+      "target": "macos",
+      "status": "executed",
+      "checks": [
+        "scaffold",
+        "existing-path-refused",
+        "invalid-name",
+        "usage"
+      ]
+    },
+    {
+      "target": "linux",
+      "status": "executed",
+      "checks": [
+        "scaffold",
+        "existing-path-refused",
+        "invalid-name",
+        "usage"
+      ]
+    },
+    {
+      "target": "windows",
+      "status": "executed",
+      "checks": [
+        "scaffold",
+        "existing-path-refused",
+        "invalid-name",
+        "usage"
+      ]
+    },
+    {
+      "target": "windows-arm64",
+      "status": "compiled_only"
+    }
+  ]
+}

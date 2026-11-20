@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Creates an isolated package scaffold without overwriting an existing path.
+use std::io::sync::File;
+use std::io::{FileMode, FilePerm};
+
+/// Checks a portable package identifier before using it as a directory name.
+fn valid_name(name: &[u8]) -> bool {
+    if name.len() == 0 || name.len() > 255 { return false; }
+    let mut at: usize = 0;
+    while at < name.len() {
+        let byte = name[at];
+        let letter = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || byte == 95;
+        if !letter && (at == 0 || byte < 48 || byte > 57) { return false; }
+        at += 1;
+    }
+    let std_name = "std";
+    let runtime_name = "runtime";
+    let std_name_bytes = std_name.as_bytes();
+    let runtime_name_bytes = runtime_name.as_bytes();
+    !name.content_eq(std_name_bytes) && !name.content_eq(runtime_name_bytes)
+}
+
+/// Writes a diagnostic on the native standard-error stream.
+fn message(text: &str) {
+    let bytes = text.as_bytes();
+    report(bytes);
+}
+
+/// Returns the usage status without touching the filesystem.
+pub fn usage() -> i32 {
+    message("usage: corboc new <package_name>\n");
+    6
+}
+
+/// Writes a complete file, retrying partial writes and closing on scope exit.
+fn write_file(path: &[u8], bytes: &[u8]) -> bool {
+    let mut file = match File::create(path, FileMode::WRITE_ONLY, FilePerm.DefaultMode) {
+        Ok(file) => { file },
+        Err(_error) => { return false; },
+    };
+    let length = bytes.len();
+    let mut written: usize = 0;
+    while written < length {
+        let remaining = &bytes[written..length];
+        let count = match file.write(remaining) {
+            Ok(count) => { count },
+            Err(_error) => { return false; },
+        };
+        if count == 0 { return false; }
+        written += count;
+    }
+    true
+}
+
+/// Appends bounded bytes while retaining the output's trailing NUL.
+fn append(output: &mut [u8], offset: usize, bytes: &[u8]) -> usize {
+    let mut i: usize = 0;
+    while i < bytes.len() {
+        output[offset + i] = bytes[i];
+        i += 1;
+    }
+    offset + bytes.len()
+}
+
+/// Creates one new child directory and its minimal runnable package.
+pub fn run(name: &[u8]) -> i32 {
+    if !valid_name(&name[0..name.len()]) {
+        message("corboc: invalid package name; use letters, digits and underscores, starting with a letter or underscore (std and runtime are reserved)\n");
+        return 6;
+    }
+    let mut directory: [u8; 512] = [0; 512];
+    let end = append(&mut directory[..], 0, &name[0..name.len()]);
+    if !create_directory(&directory[..end+1]) {
+        message("corboc: cannot create package directory; existing paths are never overwritten\n");
+        return 11;
+    }
+    if !populate(&name[0..name.len()]) {
+        message("corboc: cannot write package scaffold; partial directory retained\n");
+        return 11;
+    }
+    0
+}
+
+/// Populates only the freshly created directory; no Git repository is initialized.
+fn populate(name: &[u8]) -> bool {
+    let mut path: [u8; 512] = [0; 512];
+    let root = append(&mut path[..], 0, &name[0..name.len()]);
+    let child = "/src";
+    let child_bytes = child.as_bytes();
+    let end = append(&mut path[..], copy(root), child_bytes);
+    if !create_directory(&path[..end+1]) { return false; }
+
+    let mut manifest: [u8; 512] = [0; 512];
+    let prefix = "[package]\nname = \"";
+    let prefix_bytes = prefix.as_bytes();
+    let begin = append(&mut manifest[..], 0, prefix_bytes);
+    let finish = append(&mut manifest[..], begin, &name[0..name.len()]);
+    let suffix = "\"\n";
+    let suffix_bytes = suffix.as_bytes();
+    let count = append(&mut manifest[..], finish, suffix_bytes);
+    let file = "/package.toml";
+    let file_bytes = file.as_bytes();
+    let end = append(&mut path[..], copy(root), file_bytes);
+    path[end] = 0;
+    if !write_file(&path[..end+1], &manifest[..count]) { return false; }
+
+    let file = "/src/main.crb";
+    let file_bytes = file.as_bytes();
+    let end = append(&mut path[..], copy(root), file_bytes);
+    path[end] = 0;
+    let code = "fn main() {\n}\n";
+    let code_bytes = code.as_bytes();
+    if !write_file(&path[..end+1], code_bytes) { return false; }
+
+    let file = "/.gitignore";
+    let file_bytes = file.as_bytes();
+    let end = append(&mut path[..], copy(root), file_bytes);
+    path[end] = 0;
+    let ignore = "/build/\n.DS_Store\n";
+    let ignore_bytes = ignore.as_bytes();
+    if !write_file(&path[..end+1], ignore_bytes) { return false; }
+
+    let mut readme: [u8; 512] = [0; 512];
+    let heading = "# ";
+    let heading_bytes = heading.as_bytes();
+    let begin = append(&mut readme[..], 0, heading_bytes);
+    let finish = append(&mut readme[..], begin, &name[0..name.len()]);
+    let text = "\n\nA Corbo package.\n\n## Build\n\n```sh\ncorboc build\n```\n";
+    let text_bytes = text.as_bytes();
+    let count = append(&mut readme[..], finish, text_bytes);
+    let file = "/README.md";
+    let file_bytes = file.as_bytes();
+    let end = append(&mut path[..], root, file_bytes);
+    path[end] = 0;
+    write_file(&path[..end+1], &readme[..count])
+}

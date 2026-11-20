@@ -1,3 +1,14 @@
+## Package scaffolding (CLI/build tooling)
+
+- [x] Add corboc new with a minimal runnable package and no implicit Git initialization.
+- [x] Validate names and refuse all existing destinations before file writes.
+- [x] Execute ten focused CLI checks, including generated-package build/run.
+- [x] Check native module boundaries on macOS/Linux/Windows; Windows ARM64 compile-only.
+- [x] Update EN/FR language quick starts and compiler documentation.
+- [x] Install the compiler with its pinned STD and run the same focused CLI checks.
+
+[Evidence and limits](PACKAGE_NEW_CYCLE.md). No core/grammar change.
+
 ## Async-default APIs (API/STD organization)
 
 - [x] Move async I/O/waits to default packages and blocking APIs under sync.

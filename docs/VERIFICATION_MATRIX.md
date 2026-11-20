@@ -132,3 +132,11 @@ TCP split lifetime refusal and TLS privacy/refusal regressions are retained.
 Targeted executions cover macOS ARM64/x86-64, Linux x86-64 (timers also ARM64),
 Windows x86-64 under Wine; Windows ARM64 is compile-only. Runtime primitives
 are unchanged. [Cycle report](ASYNC_DEFAULT_API_CYCLE.md).
+
+## Package scaffolding CLI
+
+No new language rule. Ten focused checks cover creation/build/run, no-overwrite
+behavior and malformed names/arguments on macOS ARM64. The production module
+also executes on macOS x86-64, Linux x86-64 and Windows x86-64; Windows ARM64 is
+compile-only. Partial-directory rollback and hostile filesystem races are not
+claimed. [Evidence](PACKAGE_NEW_CYCLE.md).

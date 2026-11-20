@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Minimal host directory/diagnostic boundaries for package scaffolding.
+#(if: target.os == "macos" && target.arch == "aarch64")
+fn create_directory(path: &[u8]) -> bool {
+    let mut status: i32 = -1;
+    @unchecked {
+        let address = addr(&path[0]);
+        @asm {
+            mov x0, ${address}
+            mov w1, #511
+            bl _mkdir
+            mov ${status}, w0
+        }
+    }
+    status == 0
+}
+fn report(bytes: &[u8]) {
+    let length = bytes.len();
+    @unchecked {
+        let address = addr(&bytes[0]);
+        @asm {
+            mov w0, #2
+            mov x1, ${address}
+            mov x2, ${length}
+            bl _write
+        }
+    }
+}
+#(endif)
+
+#(if: target.os == "macos" && target.arch == "x86_64")
+fn create_directory(path: &[u8]) -> bool {
+    let mut status: i32 = -1;
+    @unchecked {
+        let address = addr(&path[0]);
+        @asm {
+            mov rdi, ${address}
+            mov esi, 511
+            call _mkdir
+            mov ${status}, eax
+        }
+    }
+    status == 0
+}
+fn report(bytes: &[u8]) {
+    let length = bytes.len();
+    @unchecked {
+        let address = addr(&bytes[0]);
+        @asm {
+            mov edi, 2
+            mov rsi, ${address}
+            mov rdx, ${length}
+            call _write
+        }
+    }
+}
+#(endif)
+
+#(if: target.os == "linux" && target.arch == "x86_64")
+fn create_directory(path: &[u8]) -> bool {
+    let mut status: i32 = -1;
+    @unchecked {
+        let address = addr(&path[0]);
+        @asm {
+            mov rdi, ${address}
+            mov esi, 511
+            call mkdir
+            mov ${status}, eax
+        }
+    }
+    status == 0
+}
+fn report(bytes: &[u8]) {
+    let length = bytes.len();
+    @unchecked {
+        let address = addr(&bytes[0]);
+        @asm {
+            mov edi, 2
+            mov rsi, ${address}
+            mov rdx, ${length}
+            call write
+        }
+    }
+}
+#(endif)
+
+#(if: target.os == "windows" && target.arch == "aarch64")
+fn create_directory(path: &[u8]) -> bool {
+    let mut status: u32 = 0;
+    @unchecked {
+        let address = addr(&path[0]);
+        @asm {
+            mov x0, ${address}
+            mov x1, #0
+            bl CreateDirectoryA
+            mov ${status}, w0
+        }
+    }
+    status != 0
+}
+fn report(bytes: &[u8]) {
+    let length = bytes.len();
+    let mut written: u32 = 0;
+    @unchecked {
+        let address = addr(&bytes[0]);
+        let count = addr(&mut written);
+        @asm {
+            mov w0, #-12
+            bl GetStdHandle
+            mov x1, ${address}
+            mov x2, ${length}
+            mov x3, ${count}
+            mov x4, #0
+            bl WriteFile
+        }
+    }
+}
+#(endif)
+
+#(if: target.os == "windows" && target.arch == "x86_64")
+fn create_directory(path: &[u8]) -> bool {
+    let mut status: u32 = 0;
+    @unchecked {
+        let address = addr(&path[0]);
+        @asm {
+            sub rsp, 32
+            mov rcx, ${address}
+            xor edx, edx
+            call CreateDirectoryA
+            mov ${status}, eax
+            add rsp, 32
+        }
+    }
+    status != 0
+}
+fn report(bytes: &[u8]) {
+    let length = bytes.len();
+    let mut written: u32 = 0;
+    @unchecked {
+        let address = addr(&bytes[0]);
+        let count = addr(&mut written);
+        @asm {
+            sub rsp, 48
+            mov ecx, -12
+            call GetStdHandle
+            mov rcx, rax
+            mov rdx, ${address}
+            mov r8, ${length}
+            mov r9, ${count}
+            mov QWORD PTR [rsp + 32], 0
+            call WriteFile
+            add rsp, 48
+        }
+    }
+}
+#(endif)

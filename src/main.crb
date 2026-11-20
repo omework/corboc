@@ -21,6 +21,7 @@ use bootstrap::package_io::read_source;
 use bootstrap::packages::{PackageFile, read_package};
 use bootstrap::package_link::{link_package, prepare_native_exports};
 use std::env::args;
+use bootstrap::package_new::{run as new_package, usage as new_usage};
 #(if: target.os == "macos" && target.arch == "aarch64")
     use bootstrap::build_driver::{stdlib_path, workspace_path, redirect_stdout, restore_stdout,
         toolchain, publish, clean, diagnostic, ensure_directory};
@@ -2993,6 +2994,13 @@ fn main() -> i32 {
             if arguments.len() != 0 {
                 let command = arguments[0];
                 let bytes = command.as_bytes();
+                let new_flag: [u8; 3] = [110,101,119];
+                if bytes.content_eq(&new_flag[..]) {
+                    if arguments.len() != 2 { return new_usage(); }
+                    let name = arguments[1];
+                    let name_bytes = name.as_bytes();
+                    return new_package(name_bytes);
+                }
                 let build_flag: [u8; 5] = [98,117,105,108,100];
                 if bytes.content_eq(&build_flag[..]) {
                     let current: [u8; 1] = [46];
