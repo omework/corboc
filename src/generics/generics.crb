@@ -141,6 +141,7 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         }
         return type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], graph[binding].initializer, depth + 1);
     }
+    if kind == 94 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 9 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 37 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 19 || kind == 38 {
@@ -229,10 +230,29 @@ fn primitive_type(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
     0
 }
 
+// Numeric literal arguments denote values, independently of decimal/hex spelling.
+fn literal_bound(source: &[u8], node: &AstNode) -> u64 {
+    let mut at = (*node).start;
+    let mut base: u64 = 10;
+    if (*node).end - at > 2 && source[at] == 48 && (source[at+1] == 120 || source[at+1] == 88) { base = 16; at += 2; }
+    let mut value: u64 = 0;
+    while at < (*node).end {
+        let digit = bootstrap::model::hex_digit(source[at]) as u64;
+        if digit >= base || value > (18446744073709551615 - copy(digit)) / copy(base) { return 18446744073709551615; }
+        value = value * copy(base) + digit;
+        at += 1;
+    }
+    value
+}
+
 fn same_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a: &ConcreteType, b: &ConcreteType, depth: u64) -> bool {
     if depth >= 128 || (*a).reference != (*b).reference || (*a).slice != (*b).slice { return false; }
     if (*a).instance != 0 || (*b).instance != 0 { return (*a).instance == (*b).instance; }
     if (*a).node == (*b).node { return true; }
+    if nodes[(*a).node].kind == 94 || nodes[(*b).node].kind == 94 {
+        if nodes[(*a).node].kind != 94 || nodes[(*b).node].kind != 94 { return false; }
+        return literal_bound(&source[0..source.len()], &nodes[(*a).node]) == literal_bound(&source[0..source.len()], &nodes[(*b).node]);
+    }
     let scalar = primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*a).node);
     if scalar != 0 { return scalar == primitive_type(&source[0..source.len()], &nodes[0..nodes.len()], (*b).node); }
     if !text_equal(&source[0..source.len()], &nodes[(*a).node], &nodes[(*b).node]) { return false; }
@@ -442,6 +462,7 @@ fn write_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: &Concr
         let cursor = put(&mut output[0..output.len()], cursor, &source[nodes[item].start..nodes[item].end]);
         return put(output, cursor, &close[..]);
     }
+    if nodes[(*ty).node].kind == 94 { return put(output, start, &source[nodes[(*ty).node].start..nodes[(*ty).node].end]); }
     if nodes[(*ty).node].kind == 4 { return put(output, start, &source[nodes[(*ty).node].start..nodes[(*ty).node].end]); }
     put(output, start, &source[nodes[(*ty).node].name_start..nodes[(*ty).node].name_end])
 }
@@ -711,7 +732,9 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                             instance_count[0]=copy(count);
                             let ty = decoded(resolved_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(argument), 0, &mut instances[..], &mut stored_types[..], &mut instance_count[..], 0));
                             count=instance_count[0];
-                            if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), graph[parameter].first_child, &ty, &mut types[..], &instances[..], &stored_types[..], 0) { return (report_violation(1, nodes[call].start), 0); }
+                            let pattern = graph[parameter].first_child;
+                            if parameter_pattern(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(pattern), 0)
+                                && !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), pattern, &ty, &mut types[..], &instances[..], &stored_types[..], 0) { return (report_violation(1, nodes[call].start), 0); }
                             parameter = graph[parameter].next_sibling;
                             argument = graph[argument].next_sibling;
                         }

@@ -184,10 +184,25 @@ fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Tok
                     }part=graph[copy(part)].next_sibling;
                 }
                 if function==0{return 0;}
+                // Explicit static-call arguments remain authoritative inside a
+                // specialized impl, including literal bounds such as String<N>.
+                if tokens[token+1].kind==23 {
+                    let annotation=graph[name].first_child;
+                    let mut supplied=graph[annotation].first_child;let mut index:u64=0;
+                    while supplied!=0 {
+                        if index>=32{return 0;}
+                        let raw=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(supplied));
+                        let code=resolved_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&raw,copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1);
+                        if code==0{return 0;}types[index]=decoded(code);
+                        supplied=graph[supplied].next_sibling;index=index+1;
+                    }
+                }
                 let mut formal=graph[function].first_child;let mut argument=graph[copy(name)].next_sibling;
                 while nodes[copy(formal)].kind==3 && argument!=0 {
                     let actual=decoded(resolved_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(argument),copy(environment),&mut instances[0..instances.len()],&mut stored[0..stored.len()],&mut count[0..count.len()],depth+1));
-                    if !unify_instance(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),graph[copy(formal)].first_child,&actual,&mut types[..],&instances[0..instances.len()],&stored[0..stored.len()],depth+1){return 0;}
+                    let pattern=graph[formal].first_child;
+                    if parameter_pattern(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(pattern),0)
+                        && !unify_instance(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),pattern,&actual,&mut types[..],&instances[0..instances.len()],&stored[0..stored.len()],depth+1){return 0;}
                     formal=graph[copy(formal)].next_sibling;argument=graph[copy(argument)].next_sibling;
                 }
                 if argument!=0 || nodes[copy(formal)].kind==3{return 0;}

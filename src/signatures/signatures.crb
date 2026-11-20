@@ -32,7 +32,7 @@ use bootstrap::places::{inline_array, inline_array_type, scalar_array_type, scal
 use bootstrap::collections::map_type;
 use bootstrap::map_entries::{dependent_map, direct_entry_effect};
 use bootstrap::scalar::verify_primitive;
-use bootstrap::verify::{verify_expr, violation, readonly_scalar};
+use bootstrap::verify::{verify_expr, violation, readonly_scalar, scalar_known_type};
 
 fn readonly_argument_use(nodes: &[AstNode], graph: &[StaticNode], point: u64, argument: u64, record: bool) -> bool {
     let mut parent = nodes[point].parent;
@@ -295,6 +295,9 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             }
         }
         if actual == 0 && shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(ty_node)) {
+            if nodes[input].kind == 9 && source[nodes[input].start] != 34 { return 0 - violation(1, nodes[input].start); }
+            let known = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], copy(input));
+            if known >= 1 && known <= 9 { return 0 - violation(1, nodes[input].start); }
             actual = if text_extension && input==graph[call].first_child { values[input].ty }else{verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()],
                 copy(input), argument_text_type(), 1)};
             if actual < 0 { return actual; }
@@ -658,7 +661,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let lock = retain_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(function), copy(call));
     if lock < 0 { return lock; }
-    let borrowed = option_borrow(copy(result));
+    // Result text views retain the same caller root as direct/optional views.
+    let borrowed = if result_type(copy(result)) && bootstrap::model::result_payload(copy(result),true)==2000138 {
+        2000138
+    } else { option_borrow(copy(result)) };
     if borrowed==2000138 || result==2000138 {
         let field=returned_text_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(function));
         let mut actual=if field!=0 && reservations==1 {

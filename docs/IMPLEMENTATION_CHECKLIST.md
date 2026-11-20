@@ -1,3 +1,19 @@
+## Bounded strings, binary encoding and time (core + STD API)
+
+- [x] Parse literal type arguments and specialize `String<N>` to fixed inline storage.
+- [x] Preserve generic private layouts, returned text dependencies and nominal allocation borrows.
+- [x] Implement explicit little/big-endian primitive conversion with caller buffers.
+- [x] Implement monotonic Duration/Instant, blocking Timer and worker-backed async waits.
+- [x] Execute nine functional programs under fatal UBSan and ten expected refusals.
+- [x] Execute two directly related constant/generic regressions under fatal UBSan.
+- [x] Execute binary/time and bounded-layout probes on supported host/target combinations.
+- [x] Complete byte-identical stage2/stage3 compiler self-emission with the development STD.
+- [x] Regenerate API references and document platform and publication limits.
+
+No open language decision. Windows ARM64 execution remains deferred. The
+STD pin now references the published lot; the matching development
+bundle is retained. See [evidence and limits](BINARY_TIME_BOUNDED_CYCLE.md).
+
 ## Pool construction and recoverable allocation (core + STD API)
 
 - [x] Parse `Pool<T>::new(capacity)`; reject the former constructor.

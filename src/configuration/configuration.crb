@@ -5,12 +5,40 @@ use bootstrap::constants::{constant_type, resolve_constant};
 use bootstrap::scalar::verify_literal;
 use bootstrap::verify::report_violation;
 
-/// Avoid configuration work for ordinary compilation units.
-pub fn has_configuration(tokens: &[Token]) -> bool {
+/// A generic recipe retains its parameter-sized arrays until specialization.
+fn deferred_length(source: &[u8], nodes: &[AstNode], position: u64, end: u64) -> bool {
+    let name = &source[position..end];
+    let mut parameter: usize = 1;
+    while parameter < nodes.len() {
+        if nodes[parameter].kind == 67 {
+            let declared = &source[nodes[parameter].name_start..nodes[parameter].name_end];
+            if name.content_eq(declared) {
+                let mut owner = nodes[parameter].parent;
+                while owner != 0 && nodes[owner].parent != 0 { owner = nodes[owner].parent; }
+                if position >= nodes[owner].start && position < nodes[owner].end { return true; }
+                let owner_name = &source[nodes[owner].name_start..nodes[owner].name_end];
+                let mut implementation: usize = 1;
+                while implementation < nodes.len() {
+                    if nodes[implementation].kind == 49 && position >= nodes[implementation].start && position < nodes[implementation].end {
+                        let actual = &source[nodes[implementation].name_start..nodes[implementation].name_end];
+                        if owner_name.content_eq(actual) { return true; }
+                    }
+                    implementation += 1;
+                }
+            }
+        }
+        parameter += 1;
+    }
+    false
+}
+
+/// Avoid configuration work for ordinary compilation units and generic array bounds.
+pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) -> bool {
     let mut i: usize = 0;
     while i + 3 < tokens.len() {
         if tokens[i].kind == 71 && (tokens[i + 2].annotation == 31 || tokens[i + 2].annotation == 32) { return true; }
-        if tokens[i].kind == 14 && tokens[i + 1].kind == 1 && tokens[i + 2].kind == 40 { return true; }
+        if tokens[i].kind == 14 && tokens[i + 1].kind == 1 && tokens[i + 2].kind == 40
+            && !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[i+1].start, tokens[i+1].end) { return true; }
         i += 1;
     }
     false
@@ -167,7 +195,8 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         }
         let symbol = references[token];
         let array_length = token != 0 && tokens[token - 1].kind == 14 && tokens[token + 1].kind == 40
-            && tokens[token].kind == 1;
+            && tokens[token].kind == 1
+            && !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[token].start, tokens[token].end);
         if array_length {
             if symbol == 0 || nodes[symbols[symbol - 1]].kind != 76 { drop(report_violation(1,copy(at))); state[2] = 8; return; }
             let constant = symbols[symbol - 1];

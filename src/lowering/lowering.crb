@@ -271,6 +271,15 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if nodes[place].kind == 7 {
             let binding = graph[place].binding;
             let ty = types[binding];
+            let payload = pool_type(copy(ty));
+            if ty >= 6000000 && ty < 7000000 && payload >= 3000000 && payload < 4000000 {
+                let pointer = payload + 1000000;
+                if emit {
+                    declaration(copy(pointer), node); character(61); character(40); c_type(copy(pointer)); character(41);
+                    local(binding); { let code: [u8;7] = [46,115,108,111,116,59,10]; byte_text(&code[..]); }
+                }
+                return pointer;
+            }
             if (ty >= 1000000 && ty < 2000000) || (ty >= 4000000 && ty < 5000000) {
                 if emit {
                     declaration(copy(ty), node); character(61);

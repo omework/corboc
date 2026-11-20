@@ -186,6 +186,18 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     // borrowed record argument; its destination is a new reference binding.
     if nodes[place].kind == 14 && nodes[projected].kind == 7 {
         let from = graph[projected].binding;
+        if values[from].ty == 301 {
+            if values[from].state != 1 || values[values[from].target].state != 1
+                || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(from)) { return 0 - violation(4, nodes[initializer].start); }
+            let exclusive = graph[initializer].mutable;
+            if exclusive && !values[from].mutable { return 0 - violation(5, nodes[initializer].start); }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], copy(from), copy(initializer), copy(exclusive));
+            if conflict < 0 { return -9; }
+            if conflict > 0 { return 0 - violation(5, nodes[initializer].start); }
+            values[destination] = CheckedValue { ty: 734, state: 1, mutable: graph[destination].mutable,
+                target: copy(from), loan_parent: 0, origin_call: values[from].origin_call, exclusive: exclusive };
+            return 1;
+        }
         if values[from].ty == 734 {
             let shape = values[from].origin_call;
             let checked = check_record_argument(&source[0..source.len()], &nodes[0..nodes.len()],

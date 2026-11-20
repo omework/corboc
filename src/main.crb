@@ -1062,11 +1062,16 @@ fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
         if tokens[index].kind == 23 {
             index = index + 1;
             while true {
-                let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                    copy(index), copy(count), copy(free));
-                if next == 0 { return (0, 0); }
-                index = next;
-                count = used;
+                if tokens[index].kind == 8 {
+                    nodes[count] = syntax_leaf(94, copy(free), &tokens[index]);
+                    index += 1; count += 1;
+                } else {
+                    let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                        copy(index), copy(count), copy(free));
+                    if next == 0 { return (0, 0); }
+                    index = next;
+                    count = used;
+                }
                 if tokens[index].kind != 11 { break; }
                 index = index + 1;
             }
@@ -2720,7 +2725,7 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         node = node + 1;
     }
     if check == 4 { return 0; }
-    if check != 0 && has_configuration(&tokens[0..tokens.len()]) {
+    if check != 0 && has_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()]) {
         return parse_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()]);
     }
@@ -2857,11 +2862,98 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             let previous = &current[..length];
             if previous.content_eq(&expanded[..written]) { return 7; }
         }
+        // Private generic layouts produce one visibility record per concrete
+        // instance; an omitted template is not itself an output declaration.
+        let mut generic_layout = false;
         let mut item: usize = 0;
         while item < view {
-            views[item] = LayoutVisibility { kind: views[item].kind, name: offsets[views[item].name],
-                start: offsets[views[item].start], end: offsets[views[item].end] };
-            item = item + 1;
+            let mut end = views[item].name;
+            while end < length && ((current[end] >= 48 && current[end] <= 57) || (current[end] >= 65 && current[end] <= 90) || (current[end] >= 97 && current[end] <= 122) || current[end] == 95) { end += 1; }
+            while end < length && current[end] <= 32 { end += 1; }
+            if views[item].kind == 0 && end < length && current[end] == 60 { generic_layout = true; }
+            item += 1;
+        }
+        if generic_layout {
+            let (error, count) = scan_tokens(&expanded[..written], &mut tokens[..], 2);
+            if error != 0 { return error; }
+            let selected = select_target(&expanded[..written], &mut tokens[..count+3]);
+            if selected == 0 { return 7; }
+            mark_nominal_names(&expanded[..written], &mut tokens[..selected]);
+            let count = parse_nodes(&tokens[..selected], &mut syntax[..]);
+            if count == 0 { return 7; }
+            let mut mapped = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+            let prefix: [u8;20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
+            let mut stored: usize = 0;
+            item = 0;
+            while item < view {
+                let mut end = views[item].name;
+                while end < length && ((current[end] >= 48 && current[end] <= 57) || (current[end] >= 65 && current[end] <= 90) || (current[end] >= 97 && current[end] <= 122) || current[end] == 95) { end += 1; }
+                let old_start = views[item].name;
+                let name_length = end - old_start;
+                let mut candidate: u64 = 1;
+                let mut found = false;
+                while candidate < count {
+                    if syntax[candidate].parent == 0 && (syntax[candidate].kind == 28 || views[item].kind != 0) {
+                        let actual_start = syntax[candidate].name_start;
+                        let actual_end = syntax[candidate].name_end;
+                        let actual_length = actual_end - actual_start;
+                        let direct = actual_start == offsets[views[item].name]
+                            && same_bytes(&expanded[actual_start..actual_end], &current[old_start..end]);
+                        let minimum: u64 = name_length + 21;
+                        let mut instance = false;
+                        if views[item].kind == 0 && syntax[candidate].kind == 28 && actual_length > minimum {
+                            let prefix_end = actual_start + 20;
+                            let origin_end = prefix_end + copy(name_length);
+                            instance = same_bytes(&expanded[actual_start..prefix_end], &prefix[..])
+                                && same_bytes(&expanded[prefix_end..origin_end], &current[old_start..end]) && expanded[origin_end] == 95;
+                        }
+                        if direct || instance {
+                            if stored == 4096 { return 4; }
+                            let mut upper = syntax[candidate].end;
+                            if instance {
+                                let mut implementation: u64 = 1;
+                                while implementation < count {
+                                    if syntax[implementation].kind == 49 {
+                                        let owner_start = syntax[implementation].name_start;
+                                        let owner_end = syntax[implementation].name_end;
+                                        if same_bytes(&expanded[owner_start..owner_end], &expanded[actual_start..actual_end]) && syntax[implementation].end > upper { upper = syntax[implementation].end; }
+                                    }
+                                    implementation += 1;
+                                }
+                            }
+                            mapped[stored] = LayoutVisibility { kind: views[item].kind, name: actual_start,
+                                start: if instance { syntax[candidate].start } else { offsets[views[item].start] },
+                                end: if instance { upper } else { offsets[views[item].end] } };
+                            stored += 1; found = true;
+                        }
+                    }
+                    candidate += 1;
+                }
+                while end < length && current[end] <= 32 { end += 1; }
+                if !found && (views[item].kind != 0 || end == length || current[end] != 60) { return 9; }
+                item += 1;
+            }
+            // emit_static_tree consumes records in declaration order.
+            item = 1;
+            while item < stored {
+                let mut at = copy(item);
+                while at > 0 && mapped[at-1].name > mapped[at].name {
+                    let saved = LayoutVisibility { kind: mapped[at-1].kind, name: mapped[at-1].name, start: mapped[at-1].start, end: mapped[at-1].end };
+                    mapped[at-1] = LayoutVisibility { kind: mapped[at].kind, name: mapped[at].name, start: mapped[at].start, end: mapped[at].end };
+                    mapped[at] = saved; at -= 1;
+                }
+                item += 1;
+            }
+            item = 0;
+            while item < stored { views[item] = LayoutVisibility { kind: mapped[item].kind, name: mapped[item].name, start: mapped[item].start, end: mapped[item].end }; item += 1; }
+            view = stored;
+        } else {
+            item = 0;
+            while item < view {
+                views[item] = LayoutVisibility { kind: views[item].kind, name: offsets[views[item].name],
+                    start: offsets[views[item].start], end: offsets[views[item].end] };
+                item += 1;
+            }
         }
         if env != 0 { env = offsets[env]; }
         byte = 0;

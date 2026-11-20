@@ -419,6 +419,12 @@ fn select_units(source:&[u8], names: &[u8], files: &[PackageFile], nodes: &[AstN
 }
 
 fn private_layout(module: &[u8], name: &[u8]) -> bool {
+    let root: [u8;3] = [115,116,100];
+    let bounded: [u8;13] = [66,111,117,110,100,101,100,83,116,114,105,110,103];
+    if module.content_eq(&root[..]) && name.content_eq(&bounded[..]) { return true; }
+    let time: [u8;9] = [115,116,100,58,58,116,105,109,101];
+    let async_time: [u8;15] = [115,116,100,58,58,116,105,109,101,58,58,97,115,121,110];
+    if module.content_eq(&time[..]) || module.content_eq(&async_time[..]) { return true; }
     let io: [u8; 7] = [115, 116, 100, 58, 58, 105, 111]; // std::io
     let file: [u8; 4] = [70, 105, 108, 101]; // File
     if module.content_eq(&io[..]) { return name.content_eq(&file[..]); }
@@ -629,6 +635,32 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             if target == 0 && end - start >= generated.len() as u64 {
                 let prefix = &source[start..start + (generated.len() as u64)];
                 if prefix.content_eq(&generated[0..generated.len()]) { return (13, 0, 0); }
+            }
+            // String<N> selects the STD fixed-layout template, while bare String
+            // retains its existing native growing representation.
+            let string: [u8;6] = [83,116,114,105,110,103];
+            let bounded: [u8;13] = [66,111,117,110,100,101,100,83,116,114,105,110,103];
+            let actual_name = &source[start..end];
+            let target_name = &source[nodes[target].name_start..nodes[target].name_end];
+            let mut is_string = actual_name.content_eq(&string[..]);
+            if target != 0 {
+                let native = native_std_type(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], copy(target));
+                is_string = native && target_name.content_eq(&string[..]);
+            }
+            if is_string && tokens[last+1].kind == 23 && tokens[last+2].kind != 8 { return (report_violation(1,start),0,0); }
+            if is_string && tokens[last+1].kind == 23 && tokens[last+2].kind == 8 {
+                let mut candidate: usize = 0;
+                let mut found: u64 = 0;
+                while candidate < symbols_end {
+                    let declaration = symbols[candidate];
+                    let owner = file_at(&files[0..files.len()], nodes[declaration].start);
+                    let declaration_name = &source[nodes[declaration].name_start..nodes[declaration].name_end];
+                    if files[owner].package == 64 && nodes[declaration].kind == 28
+                        && declaration_name.content_eq(&bounded[..]) { found = declaration; }
+                    candidate += 1;
+                }
+                if found == 0 { return (report_violation(1, start),0,0); }
+                target = found;
             }
             if target != 0 && target != main_node && (!type_name || nominal(nodes[target].kind)) {
                 edits[start] = Edit { end: end, target: target };
