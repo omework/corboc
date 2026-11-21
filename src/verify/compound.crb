@@ -38,7 +38,7 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if values[binding].state != 1 { return 0 - violation(6, start); }
         let writable = if kind == 7 { values[binding].mutable }
             else if nested_loan(values[binding].ty) { values[binding].ty >= 1930 }
-            else { values[binding].exclusive };
+            else { values[binding].writable };
         if !writable { return 0 - violation(5, start); }
         ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(place), 0, 0);
@@ -53,7 +53,7 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let selector = if values[place].state == 6 { values[place].origin_call } else { 0 };
     let selector_kind = if values[place].state == 6 { values[place].loan_parent } else { 0 };
     values[statement] = CheckedValue { ty: 0, state: 5, mutable: false,
-        target: copy(binding), loan_parent: selector_kind, origin_call: selector, exclusive: false };
+        target: copy(binding), loan_parent: selector_kind, origin_call: selector, writable: false };
     let expected = if shift { 0 } else { copy(ty) };
     let mut operand: i64 = 0;
     if nodes[right].kind == 2 {
@@ -66,7 +66,7 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &mut values[0..values.len()], copy(right), expected, 0);
     }
     values[statement] = CheckedValue { ty: 0, state: 0, mutable: false,
-        target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+        target: 0, loan_parent: 0, origin_call: 0, writable: false };
     if operand < 0 { return operand; }
     if values[binding].state != 1 { return 0 - violation(6, start); }
     if values[binding].target != 0 && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {

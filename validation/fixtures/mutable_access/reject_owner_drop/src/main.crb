@@ -1,0 +1,12 @@
+//! Mutation permission does not authorize invalidating a live referenced place.
+/// An owning record with a referenced scalar field.
+struct Cell { value: i64 }
+/// Destroying the owner before the references' uses must remain rejected.
+fn main() {
+    let mut cell = Cell { value: 0 };
+    let first = &mut cell.value;
+    let second = &mut cell.value;
+    drop(cell);
+    print(*first);
+    print(*second);
+}

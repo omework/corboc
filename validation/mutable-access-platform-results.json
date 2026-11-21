@@ -1,0 +1,18 @@
+[
+  {
+    "target": "macos",
+    "status": "executed: three mutable references, one real atomic lock, all joins"
+  },
+  {
+    "target": "linux",
+    "status": "executed: three mutable references, one real atomic lock, all joins"
+  },
+  {
+    "target": "windows",
+    "status": "executed: three mutable references, one real atomic lock, all joins"
+  },
+  {
+    "target": "windows-arm64",
+    "status": "compiled; execution deferred"
+  }
+]

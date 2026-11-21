@@ -167,3 +167,40 @@ Scope: repository/build organization, not a language-rule or backend-algorithm c
 No language decision is open. Native compiler self-hosting is exercised on the
 macOS ARM64 host; this extraction does not broaden platform validation claims.
 Windows ARM64 remains deferred.
+
+## Subdb propagation cleanup
+
+- [x] Stop partial-expression cleanup at lexical blocks.
+- [x] Rebuild the compiler and execute the focused cleanup regression under fatal UBSan.
+- [x] Compile and execute the affected Subdb persistence examples.
+- [x] Record the evidence and retain the existing published STD pin.
+
+## SubDB facade compiler integration
+
+- [x] Promote independently contracted instance methods with explicit receiver modes.
+- [x] Infer receiver payload types after `?`.
+- [x] Reuse structural fixed-value summaries for returns and native worker captures.
+- [x] Keep owned fixed-array fields inline across record returns/moves.
+- [x] Accept disjoint field arguments; MA1–MA6 also allows proven content-only aliasing.
+- [x] Move named fixed-record values into arrays while rejecting later reuse.
+- [x] Execute four focused regressions under fatal UBSan and reject three invalid forms.
+- [x] Run the SubDB facade and retain focused evidence, without changing the STD lock.
+
+See [the cycle report](SUBDB_FACADE_CYCLE.md) and the sibling SubDB validation report
+for application/platform evidence and limits. Release installation is unchanged.
+
+## Mutable references as mutation permission (core semantic change)
+
+- [x] Record the user-approved MA1–MA6 decision in the language specification.
+- [x] Inspect permission/exclusivity coupling and identify affected compiler mechanisms.
+- [x] Record [the source-impact inventory](MUTABLE_ACCESS_PLAN.md).
+- [x] Separate mutation permission, validity dependencies and explicit lock exclusion.
+- [x] Apply effect-based compatibility through calls, projections and reborrows.
+- [x] Preserve per-branch completion and synchronization proofs across captures/results.
+- [x] Complete 9 fatal-UBSan executions, 10 refusals and supported-target native capture checks.
+
+Implementation and focused validation are complete. See
+[the cycle report](MUTABLE_ACCESS_CYCLE.md) for bounded-summary limitations and
+platform evidence. Unknown required proofs remain refusals. The STD/runtime pin
+now references committed Corbo revision `d54cf3063861498fc721b78d9bbd11ba6ac8f667`; the source-lock and
+regenerated-runtime checks pass. The release installation is unchanged.

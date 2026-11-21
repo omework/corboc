@@ -144,6 +144,19 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     if kind == 94 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 9 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 37 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
+    // A propagated Result/Option expression has its successful payload's type.
+    if kind == 79 {
+        let wrapped = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(child), depth + 1));
+        let inner = graph[wrapped.node].first_child;
+        let result_name: [u8; 6] = [82,101,115,117,108,116];
+        let option_name: [u8; 6] = [79,112,116,105,111,110];
+        let name = &source[nodes[wrapped.node].name_start..nodes[wrapped.node].name_end];
+        if inner != 0 && (same_bytes(&name[0..name.len()], &result_name[..]) || same_bytes(&name[0..name.len()], &option_name[..])) {
+            let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], inner);
+            return packed(&inferred);
+        }
+        return 0;
+    }
     if kind == 19 || kind == 38 {
         return type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1);
     }

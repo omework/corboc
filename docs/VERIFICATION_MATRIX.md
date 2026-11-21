@@ -140,3 +140,31 @@ behavior and malformed names/arguments on macOS ARM64. The production module
 also executes on macOS x86-64, Linux x86-64 and Windows x86-64; Windows ARM64 is
 compile-only. Partial-directory rollback and hostile filesystem races are not
 claimed. [Evidence](PACKAGE_NEW_CYCLE.md).
+
+## Lexical-binding cleanup on `?`
+
+N7/N8 backend correction: lexical blocks no longer contribute binding nodes to
+partial-expression temporary cleanup. A focused destructor trace executes under
+O1/fatal UBSan; Subdb integration and early-error paths execute as related
+regressions. This does not strengthen or change normative rules.
+[Report](SUBDB_PROPAGATION_CYCLE.md).
+
+## SubDB static facade and owned fixed fields
+
+Existing SC structural contracts and N4–N8 mechanisms: contracted instance-method
+promotion, payload-type inference through `?`, structural fixed-value summaries,
+inline owned array fields, disjoint call places and moves into fixed arrays.
+Four accepted programs execute with fatal UBSan; three invalid forms reject.
+The SubDB facade additionally exercises separate native reader threads, owned
+results and selected-index boundaries. No normative-rule change, Rust frontend
+update or general safety proof. [Report](SUBDB_FACADE_CYCLE.md).
+
+## Mutation permission revision — implemented, focused evidence
+
+MA1–MA6 revise N5 so that `&mut` supplies no uniqueness assumption. Separate
+permission and protection/effect facts admit mutable aliases and content-only
+calls; destruction and unresolved effects keep lifetime checks. Nineteen checks
+complete: nine fatal-UBSan executions and ten refusals. Native same-lock captures
+execute on macOS ARM64/x86-64, Linux x86-64 and Windows x86-64 under Wine;
+Windows ARM64 compiles only. The scope is focused, not an independent safety audit.
+[Report and limits](MUTABLE_ACCESS_CYCLE.md).

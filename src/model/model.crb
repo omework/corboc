@@ -35,6 +35,10 @@ pub struct StaticNode {
     field_name: u64,
     private_start: u64,
     private_end: u64,
+    /// Proven content-only access/parameter effect; zero is conservative.
+    access_mode: i64,
+    /// Canonical lock identity protecting this access or retained capture.
+    protection: u64,
 }
 
 // Linked metadata for private layouts and trusted standard-library runtime hooks.
@@ -73,7 +77,8 @@ pub struct CheckedValue {
     target: u64,
     loan_parent: u64,
     origin_call: u64,
-    exclusive: bool,
+    /// Write permission only; explicit lock intervals are separate summary markers.
+    writable: bool,
 }
 
 // A constructor call links its field template to its own argument range.

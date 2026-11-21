@@ -6,7 +6,7 @@ use bootstrap::task_vectors::{handle_vector, pooled_handle};
 use bootstrap::map_entries::{dependent_map, dependent_option, entry_reference, entry_targets, entry_payload_has_root};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, Token, token_at, constructor_arguments, constructor_field_value};
 use bootstrap::stored::{stored_loan_array, relayed_loan_array, selected_loan_union, stored_array_view, vector_reference_owner, returned_field, apply_returned_field, field_reborrow, apply_field_reborrow, returned_array_loan, apply_returned_array_loan};
-use bootstrap::tasks::task_value;
+use bootstrap::tasks::{task_value, future_type};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::verify::{violation, check_type, verify_expr};
 
@@ -64,7 +64,7 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
             return violation(4, offset);
         }
         let ty = loan_element(&values[0..values.len()], copy(binding));
-        if ty != result % 20 || values[binding].exclusive != (result >= 40) {
+        if ty != result % 20 || values[binding].writable != (result >= 40) {
             return violation(1, offset);
         }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
@@ -108,7 +108,7 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
             }
             let prefix = token_at(&tokens[0..tokens.len()], copy(offset));
             let exclusive = tokens[prefix + 1].kind == 16;
-            if exclusive && !values[binding].exclusive { return violation(5, offset); }
+            if exclusive && !values[binding].writable { return violation(5, offset); }
             let ty = loan_element(&values[0..values.len()], copy(binding));
             if ty != result % 20 || exclusive != (result >= 40) {
                 return violation(1, offset);
@@ -303,7 +303,7 @@ fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[Check
         } else { ((ty > 20 && ty < 60) || ty == 734 || ty == 752) && values[actual].target == target };
         // A nested descriptor can contain an exclusive loan. Until the
         // projected path is followed recursively, reserve it on reads too.
-        if selected && points_to_target && (write || nested || values[actual].exclusive) { return 2; }
+        if selected && points_to_target && (write || nested || values[actual].writable) { return 2; }
         field = graph[field].next_sibling;
     }
     0
@@ -411,9 +411,9 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> b
 
 fn exclusive_slice_field(values: &[CheckedValue], graph: &[StaticNode], holder: u64, target: u64) -> bool {
     let ty = values[holder].ty;
-    if ty>20 && ty<60{return values[holder].exclusive && reserves(&values[0..values.len()],&graph[0..graph.len()],holder,target);}
+    if ty>20 && ty<60{return values[holder].writable && reserves(&values[0..values.len()],&graph[0..graph.len()],holder,target);}
     if (ty >= 741 && ty <= 749) || ty == 734 {
-        return values[holder].exclusive
+        return values[holder].writable
             && reserves(&values[0..values.len()], &graph[0..graph.len()], holder, target);
     }
     if constructor_arguments(copy(ty)) {
@@ -451,7 +451,7 @@ fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u6
             copy(record), copy(target)) { return true; }
         let mut member = graph[values[record].origin_call].first_child;
         while member != 0 {
-            if values[member].exclusive && reserves(&values[0..values.len()], &graph[0..graph.len()],
+            if values[member].writable && reserves(&values[0..values.len()], &graph[0..graph.len()],
                 copy(member), copy(target)) { return true; }
             member = graph[member].next_sibling;
         }
@@ -470,12 +470,12 @@ fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u6
     }
     let mut capture = values[task].origin_call;
     while capture != 0 {
-        if (values[capture].target == target || values[capture].loan_parent == target) && values[capture].exclusive { return true; }
+        if (values[capture].target == target || values[capture].loan_parent == target) && values[capture].writable { return true; }
         let parent = values[capture].loan_parent;
-        if values[capture].exclusive && parent != 0 && parent != capture
+        if values[capture].writable && parent != 0 && parent != capture
             && reserves(&values[0..values.len()], &graph[0..graph.len()], parent, copy(target)) { return true; }
         let owner = values[capture].target;
-        if values[capture].exclusive
+        if values[capture].writable
             && (values[owner].ty == 300 || values[owner].ty == 301 || values[owner].ty == 310)
             && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(owner), copy(target)) { return true; }
         if values[capture].ty == 5000 && entry_payload_has_root(&values[0..values.len()],
@@ -486,7 +486,7 @@ fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u6
                 copy(owner), copy(target)) { return true; }
             let mut field = graph[values[owner].origin_call].first_child;
             while field != 0 {
-                if values[field].exclusive && values[field].target == target { return true; }
+                if values[field].writable && values[field].target == target { return true; }
                 field = graph[field].next_sibling;
             }
         }
@@ -594,17 +594,21 @@ pub fn loan_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[Static
 pub fn loan_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
     target: u64, point: u64, write: bool, from: u64) -> i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
-        &graph[0..graph.len()], target, point, write, from, 0)
+        &graph[0..graph.len()], copy(target), copy(point), copy(write), from, 0, !write || graph[point].access_mode == 1, point)
 }
 
 pub fn loan_conflict_excluding(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
     target: u64, point: u64, write: bool, excluded: u64) -> i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
-        &graph[0..graph.len()], target, copy(point), write, nodes[point].start, excluded)
+        &graph[0..graph.len()], target, copy(point), write, nodes[point].start, excluded, false, point)
 }
 
 fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
-    target: u64, point: u64, write: bool, from: u64, excluded: u64) -> i64 {
+    target: u64, point: u64, write: bool, from: u64, excluded: u64, permission_only: bool, proof: u64) -> i64 {
+    // Constructing an address does not read or write the referent. Its lifetime
+    // is still attached to the resulting reference by the ordinary binding path.
+    if permission_only && (nodes[point].kind == 13 || (nodes[point].kind == 5
+        && (nodes[graph[point].first_child].kind == 13 || nodes[graph[graph[point].first_child].next_sibling].kind == 13))) { return 0; }
     if write {
         let place = if nodes[point].kind == 21 { graph[point].first_child } else { copy(point) };
         let selector = if values[place].state == 6 && values[place].target == target { values[place].origin_call } else { 0 };
@@ -631,16 +635,23 @@ fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[Stati
     }
     let block = nodes[statement].parent;
     let mut uncertain = false;
-    let mut reference = graph[point].visible;
+    // A native worker has an isolated lexical environment. Its capture is
+    // acquired at the launch point, where sibling branch dependencies live.
+    let launch = if nodes[point].kind == 57 { nodes[nodes[point].parent].parent } else { copy(point) };
+    let mut reference = graph[launch].visible;
     while reference != 0 {
-        if reference != excluded && values[reference].state == 1 && (values[reference].ty == 300
+        if reference != excluded && !(permission_only && future_type(values[reference].ty)) && values[reference].state == 1 && (values[reference].ty == 300
             || values[reference].ty == 301 || values[reference].ty == 310 || option_handle(values[reference].ty) != 0 || handle_vector(values[reference].ty) || pooled_handle(values[reference].ty))
             && bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
-                copy(reference), copy(target), !write) { return 1; }
-        if reference != excluded && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(point), copy(reference))
+                copy(reference), copy(target), !write)
+            && (!permission_only || !protected_overlap(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), copy(proof))) { return 1; }
+        if reference != excluded && !(permission_only && future_type(values[reference].ty)) && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(point), copy(reference))
             && (values[reference].state == 1 || values[reference].state == 4)
+            && (!permission_only || explicit_lock_dependency(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), 0)
+                || ((task_value(values[reference].ty) || bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), !write))
+                    && !protected_overlap(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), copy(proof))))
             && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target))
-            && (write || exclusive_task_target(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target)) || values[reference].exclusive || values[reference].ty == 300 || (values[reference].ty >= 2111 && values[reference].ty <= 2117) || (values[reference].ty >= 1100 && values[reference].ty < 1200) || (values[reference].ty >= 481 && values[reference].ty <= 487)) {
+            && (write || exclusive_task_target(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target)) || values[reference].writable || values[reference].ty == 300 || (values[reference].ty >= 2111 && values[reference].ty <= 2117) || (values[reference].ty >= 1100 && values[reference].ty < 1200) || (values[reference].ty >= 481 && values[reference].ty <= 487)) {
             if task_value(values[reference].ty) {
                 if values[reference].state == 1 { return 1; }
                 uncertain = true;
@@ -742,7 +753,7 @@ pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[Sta
         if binding == 0 || values[binding].state != 1 || values[binding].target == 0 {
             return 0 - violation(4, start);
         }
-        if loan_element(&values[0..values.len()], copy(binding)) != expected || values[binding].exclusive != exclusive {
+        if loan_element(&values[0..values.len()], copy(binding)) != expected || values[binding].writable != exclusive {
             return 0 - violation(1, start);
         }
         if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
@@ -765,7 +776,7 @@ pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[Sta
         if graph[argument].mutable != exclusive || loan_element(&values[0..values.len()], copy(from)) != expected {
             return 0 - violation(1, start);
         }
-        if exclusive && !values[from].exclusive { return 0 - violation(5, start); }
+        if exclusive && !values[from].writable { return 0 - violation(5, start); }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], from, argument, exclusive);
         if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
         return 1;
@@ -865,7 +876,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 let from = graph[if reborrow { graph[place].first_child } else { copy(place) }].binding;
                 values[argument] = CheckedValue { ty: copy(input), state: 1, mutable: false,
                     target: if reborrow { values[from].target } else { copy(from) },
-                    loan_parent: if reborrow { copy(from) } else { 0 }, origin_call: 0, exclusive: input >= 40 };
+                    loan_parent: if reborrow { copy(from) } else { 0 }, origin_call: 0, writable: input >= 40 };
                 binding = copy(argument);
             } else if nodes[argument].kind != 7 { return -9; }
             if binding == 0 || values[binding].state != 1 || values[binding].ty >= 100
@@ -876,7 +887,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             while previous != argument {
                 let other = graph[previous].binding;
                 if other != 0 && values[other].target != 0
-                    && (input >= 40 || values[other].exclusive) {
+                    && (input >= 40 || values[other].writable) {
                     if exclusive_pair(&values[0..values.len()], &graph[0..graph.len()],
                         copy(binding), other) != 0 {
                         return 0 - violation(5, nodes[argument].start);
@@ -885,7 +896,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 previous = graph[previous].next_sibling;
             }
             let actual = loan_element(&values[0..values.len()], copy(binding));
-            if input % 20 != actual || values[binding].exclusive != (input >= 40) {
+            if input % 20 != actual || values[binding].writable != (input >= 40) {
                 return 0 - violation(1, nodes[argument].start);
             }
             let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
@@ -896,7 +907,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 // Argument nodes have no binding state of their own.
                 if nodes[argument].kind == 7 {
                     values[argument] = CheckedValue { ty: 0, state: 1, mutable: false,
-                        target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                        target: 0, loan_parent: 0, origin_call: 0, writable: false };
                 }
                 if first == 0 { first = binding; }
             }
@@ -917,7 +928,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                         if place != 0 && values[loan].target != 0
                             && reserves(&values[0..values.len()], &graph[0..graph.len()], copy(loan), copy(place)) {
                             if values[place].state != 1 { return 0 - violation(5, nodes[operand].start); }
-                            if values[loan].exclusive { return 0 - violation(5, nodes[operand].start); }
+                            if values[loan].writable { return 0 - violation(5, nodes[operand].start); }
                         }
                         other = graph[other].next_sibling;
                     }
@@ -932,6 +943,40 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if first == 0 { return -9; }
     let target = values[first].target;
     values[point] = CheckedValue { ty: copy(output), state: 1, mutable: false,
-        target: target, loan_parent: first, origin_call: call, exclusive: output >= 40 };
+        target: target, loan_parent: first, origin_call: call, writable: output >= 40 };
     output
+}
+
+/// A content access preserves storage; only synchronization and explicit lock intervals exclude it.
+pub fn access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool) -> i64 {
+    loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(point), write, nodes[point].start, 0, true, point)
+}
+
+/// Checks the final content write after evaluating its right-hand side once.
+pub fn access_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool, from: u64) -> i64 {
+    loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(point), write, from, 0, true, point)
+}
+
+/// Follows explicit retained-lock markers independently of ordinary writable references.
+fn explicit_lock_dependency(values: &[CheckedValue], graph: &[StaticNode], value: u64, target: u64, depth: u64) -> bool {
+    if value == 0 || depth > 64 { return false; }
+    let ty = values[value].ty;
+    if ty == 5019 { return values[value].target == target; }
+    if result_type(copy(ty)) { return explicit_lock_dependency(&values[0..values.len()], &graph[0..graph.len()], values[value].loan_parent, target, depth + 1); }
+    if (ty == 300 || ty == 475) && constructor_arguments(values[values[value].loan_parent].ty) {
+        return explicit_lock_dependency(&values[0..values.len()], &graph[0..graph.len()], values[value].loan_parent, target, depth + 1);
+    }
+    if constructor_arguments(copy(ty)) {
+        let mut entry = values[value].origin_call;
+        while entry != 0 {
+            if explicit_lock_dependency(&values[0..values.len()], &graph[0..graph.len()], summary_value(&values[0..values.len()], copy(entry)), copy(target), copy(depth) + 1) { return true; }
+            entry = summary_next(&graph[0..graph.len()], &values[0..values.len()], entry);
+        }
+    }
+    false
+}
+
+/// A delayed body begins execution here; its capture supplies the separate lock proof.
+pub fn launch_access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, launch: u64, capture: u64, write: bool) -> i64 {
+    loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(launch), write, nodes[launch].start, 0, true, capture)
 }

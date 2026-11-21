@@ -49,7 +49,7 @@ pub fn bind_asm_address(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], copy(binding), copy(argument), false);
         if conflict != 0 { return 0 - violation(5, nodes[argument].start); }
         values[statement] = CheckedValue { ty: pointer_integer_type(), state: 1, mutable: false,
-            target: target, loan_parent: binding, origin_call: 0, exclusive: false };
+            target: target, loan_parent: binding, origin_call: 0, writable: false };
         return 1;
     }
     if nodes[argument].kind != 13 { return -9; }
@@ -74,7 +74,7 @@ pub fn bind_asm_address(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if element < 0 { return element; }
     if element == 0 || root == 0 { return -9; }
     values[statement] = CheckedValue { ty: pointer_integer_type(), state: 1, mutable: false,
-        target: root, loan_parent: 0, origin_call: 0, exclusive: false };
+        target: root, loan_parent: 0, origin_call: 0, writable: false };
     1
 }
 

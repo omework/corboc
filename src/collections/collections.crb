@@ -121,7 +121,7 @@ pub fn verify_map_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut result = base + element;
     if exclusive { result = 940 + element; }
     values[destination] = CheckedValue { ty: copy(result), state: 1, mutable: false, target: target,
-        loan_parent: 0, origin_call: 0, exclusive: exclusive };
+        loan_parent: 0, origin_call: 0, writable: exclusive };
     result
 }
 
@@ -165,6 +165,6 @@ pub fn relay_collection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
         &mut values[0..values.len()], argument, 0, 3);
     if status < 0 { return status; }
     values[point] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[point].mutable,
-        target: pool, loan_parent: 0, origin_call: entries, exclusive: false };
+        target: pool, loan_parent: 0, origin_call: entries, writable: false };
     return ty;
 }

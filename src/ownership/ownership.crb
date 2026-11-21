@@ -57,7 +57,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
         if !spelling.content_eq(&method[..]) && !spelling.content_eq(&attempt[..]) { return -9; }
         let ty = pool_type + 100;
         values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: 0, exclusive: false };
+            loan_parent: 0, origin_call: 0, writable: false };
         return ty;
     }
     if pool_type < 93 || pool_type >= 200 { return -9; }
@@ -81,14 +81,14 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
             &graph[0..graph.len()], vector);
         if shape == 0 { return -9; }
         values[destination] = CheckedValue { ty: 294, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: shape, exclusive: false };
+            loan_parent: 0, origin_call: shape, writable: false };
         return 294;
     }
     if pool_type >= 94 && pool_type <= 98 {
         if argument != 0 { return -9; }
         let ty = pool_type + 201;
         values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: 0, exclusive: false };
+            loan_parent: 0, origin_call: 0, writable: false };
         return ty;
     }
     if pool_type == 99 {
@@ -129,7 +129,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
                 graph[target].next_sibling, copy(destination), variant, false);
             if ty < 0 { return ty; }
             values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: argument, exclusive: false };
+                loan_parent: 0, origin_call: argument, writable: false };
             return 301;
         }
         if nodes[argument].kind == 7 {
@@ -146,11 +146,11 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
             if conflict > 0 { return 0 - violation(5, start); }
             if conflict < 0 { return -9; }
             values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: copy(constructor), exclusive: false };
+                loan_parent: 0, origin_call: copy(constructor), writable: false };
             let mutable = values[origin].mutable;
             let target = values[origin].target;
             values[origin] = CheckedValue { ty: 300, state: 2, mutable: mutable, target: target,
-                loan_parent: 0, origin_call: constructor, exclusive: false };
+                loan_parent: 0, origin_call: constructor, writable: false };
             return 301;
         }
         if nodes[argument].kind == 37 {
@@ -181,7 +181,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
             if ty < 0 { return ty; }
         }
         values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-            loan_parent: 0, origin_call: constructor, exclusive: false };
+            loan_parent: 0, origin_call: constructor, writable: false };
         return 301;
     }
     let element = pool_type - 100;
@@ -207,7 +207,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
         if ty != element { return (0 - violation(1, start)); }
     }
     values[destination] = CheckedValue { ty: element + 200, state: 1, mutable: false,
-        target: root, loan_parent: 0, origin_call: 0, exclusive: false };
+        target: root, loan_parent: 0, origin_call: 0, writable: false };
     return element + 200;
 }
 
@@ -261,7 +261,7 @@ pub fn check_owned_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         let pool = values[destination].target;
         let constructor = values[destination].origin_call;
         values[destination] = CheckedValue { ty: 310, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: constructor, exclusive: false };
+            loan_parent: 0, origin_call: constructor, writable: false };
         return 310;
     }
     if declaration == 0 || nodes[declaration].kind != 28 { return -9; }
@@ -310,7 +310,7 @@ fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     }
     if count != expected { return 0 - violation(1, nodes[literal].start); }
     values[destination] = CheckedValue { ty: 470, state: 1, mutable: false, target: count,
-        loan_parent: 0, origin_call: literal, exclusive: false };
+        loan_parent: 0, origin_call: literal, writable: false };
     return 470;
 }
 
@@ -356,7 +356,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(annotation));
             if ty < 0 { return ty; }
             values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: length, exclusive: false };
+                loan_parent: 0, origin_call: length, writable: false };
         } else if source[nodes[annotation].start] == 38 {
             let ty = record_loan_field(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(given),
@@ -381,7 +381,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), copy(task_vector), false);
                 let pool = values[owner].target;
                 values[owner] = CheckedValue { ty: task_vector, state: 2, mutable: false, target: copy(pool),
-                    loan_parent: 0, origin_call: 0, exclusive: false };
+                    loan_parent: 0, origin_call: 0, writable: false };
                 if first_pool == 0 { first_pool = pool; }
                 given = graph[given].next_sibling;
                 continue;
@@ -407,7 +407,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), 296, false);
                 let chain = values[owner].origin_call;
                 values[owner] = CheckedValue { ty: 296, state: 2, mutable: false, target: copy(pool),
-                    loan_parent: 0, origin_call: chain, exclusive: false };
+                    loan_parent: 0, origin_call: chain, writable: false };
                 if first_pool == 0 { first_pool = pool; }
                 given = graph[given].next_sibling;
                 continue;
@@ -435,9 +435,9 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 let constructor = values[owner].origin_call;
                 let mutable = values[owner].mutable;
                 values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-                    target: copy(pool), loan_parent: 0, origin_call: copy(constructor), exclusive: false };
+                    target: copy(pool), loan_parent: 0, origin_call: copy(constructor), writable: false };
                 values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
-                    target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+                    target: pool, loan_parent: 0, origin_call: constructor, writable: false };
             } else if nodes[expression].kind == 16 {
                 let ty = check_pool_new(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     &mut values[0..values.len()], expression, copy(given));
@@ -495,9 +495,9 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let mutable = values[owner].mutable;
             let dependency = values[owner].loan_parent;
             values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-                target: copy(pool), loan_parent: dependency, origin_call: copy(constructor), exclusive: false };
+                target: copy(pool), loan_parent: dependency, origin_call: copy(constructor), writable: false };
             values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
-                target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+                target: pool, loan_parent: 0, origin_call: constructor, writable: false };
         } else {
             let expected = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
             if expected == 0 { return -9; }
@@ -506,7 +506,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             if ty < 0 { return ty; }
             if ty == 0 { return 0 - violation(1, nodes[given].start); }
             values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: 0, exclusive: false };
+                loan_parent: 0, origin_call: 0, writable: false };
         }
         if first_pool == 0 && values[given].ty >= 200 && values[given].ty != 734 && values[given].ty != 752
             && !task_value(values[given].ty) && !stored_loan_array(values[given].ty) { first_pool = values[given].target; }
@@ -531,6 +531,6 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         field = graph[field].next_sibling;
     }
     values[destination] = CheckedValue { ty: 300, state: 1, mutable: false,
-        target: first_pool, loan_parent: 0, origin_call: initializer, exclusive: false };
+        target: first_pool, loan_parent: 0, origin_call: initializer, writable: false };
     300
 }

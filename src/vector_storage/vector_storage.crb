@@ -133,13 +133,13 @@ pub fn record_vector_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if already_recorded && values[argument].target != source_pool { return -9; }
     let mutable = values[item].mutable;
     values[item] = CheckedValue { ty: copy(allocation), state: 2, mutable: mutable, target: copy(source_pool),
-        loan_parent: 0, origin_call: 0, exclusive: false };
+        loan_parent: 0, origin_call: 0, writable: false };
     if !already_recorded {
         let tail = values[vector].origin_call;
         values[argument] = CheckedValue { ty: allocation, state: 1, mutable: false, target: source_pool,
-            loan_parent: 0, origin_call: tail, exclusive: false };
+            loan_parent: 0, origin_call: tail, writable: false };
         values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
-            loan_parent: 0, origin_call: argument, exclusive: false };
+            loan_parent: 0, origin_call: argument, writable: false };
     }
     1
 }
@@ -186,7 +186,7 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         // The index is checked at runtime. The vector conservatively keeps
         // the pool dependency because it can still contain other slots.
         values[call] = CheckedValue { ty: 301, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: shape, exclusive: false };
+            loan_parent: 0, origin_call: shape, writable: false };
         return 301;
     }
     if indexed {
@@ -230,14 +230,14 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let owner = values[binding].target;
     if previous == 0 {
         values[binding] = CheckedValue { ty: ty, state: 1, mutable: true, target: owner,
-            loan_parent: 0, origin_call: tail, exclusive: false };
+            loan_parent: 0, origin_call: tail, writable: false };
     } else {
         let prior_pool = values[previous].target;
         values[previous] = CheckedValue { ty: copy(allocation), state: 1, mutable: false, target: prior_pool,
-            loan_parent: 0, origin_call: tail, exclusive: false };
+            loan_parent: 0, origin_call: tail, writable: false };
     }
     values[call] = CheckedValue { ty: copy(result), state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: 0, exclusive: false };
+        loan_parent: 0, origin_call: 0, writable: false };
     result
 }
 
@@ -271,8 +271,8 @@ pub fn remove_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if ty < 0 { return ty; }
     if ty < 1 || ty > 7 || ty == 3 { return 0 - violation(1, nodes[operation].start); }
     values[vector] = CheckedValue { ty: 296, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: 0, exclusive: false };
+        loan_parent: 0, origin_call: 0, writable: false };
     values[operation] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: shape, exclusive: false };
+        loan_parent: 0, origin_call: shape, writable: false };
     310
 }

@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Lift independently generic methods into ordinary function recipes before specialization.
+
+use bootstrap::model::{AstNode, StaticNode, Token};
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::loans::borrow_mutable;
+
+/// Promotes one method recipe, making its receiver explicit and preserving evaluation order.
+/// Existing structural-contract specialization then checks the concrete arguments normally.
+pub fn promote_method_templates(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    tokens: &[Token],
+    output: &mut [u8],
+    offsets: &mut [u64]
+) -> (i32, u64) {
+    let mut recipe: u64 = 1;
+    while recipe < nodes.len() as u64 {
+        let owner = nodes[recipe].parent;
+        if nodes[owner].kind == 49
+            && function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(recipe))
+        {
+            let nominal = layout(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(owner)
+            );
+            if nominal != 0
+                && !is_template(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                nominal
+            )
+            {
+                break;
+            }
+        }
+        recipe += 1;
+    }
+    if recipe == nodes.len() as u64 {
+        return (0, 0);
+    }
+    let owner = nodes[recipe].parent;
+    let mut receiver = graph[recipe].first_child;
+    while nodes[receiver].kind == 58 {
+        receiver = graph[receiver].next_sibling;
+    }
+    let self_name: [u8; 4] = [115, 101, 108, 102];
+    if nodes[receiver].kind != 3
+        || !same_bytes(
+        &source[nodes[receiver].name_start..nodes[receiver].name_end],
+        &self_name[..]
+    )
+    {
+        return (8, 0);
+    }
+    let receiver_name: [u8; 16] = [
+        95, 95, 99, 111, 114, 98, 111, 95, 114, 101, 99, 101, 105, 118, 101, 114
+    ];
+    let annotation = graph[receiver].first_child;
+    let explicit_reference = annotation != 0 && source[nodes[annotation].start] == 38;
+    let shared = source[nodes[receiver].start] == 38 || explicit_reference;
+    let target = if explicit_reference {
+        graph[annotation].first_child
+    } else {
+        copy(annotation)
+    };
+    if target != 0 {
+        let actual = layout(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            target
+        );
+        let expected = layout(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(owner)
+        );
+        if actual != expected {
+            return (8, 0);
+        }
+    }
+    let exclusive = shared
+        && (if explicit_reference {
+        borrow_mutable(
+            &source[nodes[annotation].start..nodes[graph[annotation].first_child].start]
+        )
+    } else {
+        borrow_mutable(&source[nodes[receiver].start..nodes[receiver].name_start])
+    });
+    let mut calls: [u64; 4194304] = [0; 4194304];
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        let callee = copy(point);
+        if nodes[point].kind == 16
+            && text_equal(&source[0..source.len()], &nodes[callee], &nodes[recipe])
+        {
+            let target = graph[callee].first_child;
+            let actual = decoded(type_code(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    &tokens[0..tokens.len()],
+                    copy(target),
+                    0
+            ));
+            let nominal = layout(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                actual.node
+            );
+            let expected = layout(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(owner)
+            );
+            if nominal != 0 && nominal == expected {
+                calls[nodes[callee].start] = copy(point);
+            }
+        }
+        point += 1;
+    }
+    point = 1;
+    while point < nodes.len() as u64 {
+        if nodes[point].kind == 7 && graph[point].binding == receiver {
+            calls[nodes[point].start] = 18446744073709551615;
+        }
+        point += 1;
+    }
+    let mut at: u64 = 0;
+    let mut written: usize = 0;
+    while at < source.len() as u64 {
+        if at == nodes[recipe].start {
+            while at < nodes[recipe].end {
+                offsets[at] = written as u64;
+                at += 1;
+            }
+        } else if calls[at] != 0 {
+            let call = calls[at];
+            let callee = copy(call);
+            let target = graph[callee].first_child;
+            written = instance_name(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                copy(recipe),
+                copy(recipe),
+                &mut output[0..output.len()],
+                written
+            );
+            let open: [u8; 1] = [40];
+            written = put(&mut output[0..output.len()], written, &open[..]);
+            if shared {
+                let borrow: [u8; 1] = [38];
+                let mutable: [u8; 5] = [38, 109, 117, 116, 32];
+                written = if exclusive {
+                    put(&mut output[0..output.len()], written, &mutable[..])
+                } else {
+                    put(&mut output[0..output.len()], written, &borrow[..])
+                };
+                let actual = decoded(type_code(
+                        &source[0..source.len()],
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        &tokens[0..tokens.len()],
+                        copy(target),
+                        0
+                ));
+                if actual.reference != 0 {
+                    let dereference: [u8; 1] = [42];
+                    written = put(&mut output[0..output.len()], written, &dereference[..]);
+                }
+            }
+            written = put(
+                &mut output[0..output.len()],
+                written,
+                &source[nodes[target].start..nodes[target].end]
+            );
+            if graph[target].next_sibling != 0 {
+                let comma: [u8; 1] = [44];
+                written = put(&mut output[0..output.len()], written, &comma[..]);
+            }
+            let mut after = nodes[callee].name_end;
+            while after < source.len() as u64 && source[after] <= 32 {
+                after += 1;
+            }
+            if after == source.len() as u64 || source[after] != 40 {
+                return (8, 0);
+            }
+            while at <= after {
+                offsets[at] = written as u64;
+                at += 1;
+            }
+        } else {
+            if written >= output.len() {
+                return (4, 0);
+            }
+            offsets[at] = written as u64;
+            output[written] = source[at];
+            written += 1;
+            at += 1;
+        }
+    }
+    let newline: [u8; 1] = [10];
+    written = put(&mut output[0..output.len()], written, &newline[..]);
+    at = nodes[recipe].start;
+    while at < nodes[recipe].end {
+        if at == nodes[recipe].name_start {
+            written = instance_name(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                copy(recipe),
+                copy(recipe),
+                &mut output[0..output.len()],
+                written
+            );
+            at = nodes[recipe].name_end;
+        } else if at == nodes[receiver].start {
+            written = put(&mut output[0..output.len()], written, &receiver_name[..]);
+            let colon: [u8; 2] = [58, 32];
+            written = put(&mut output[0..output.len()], written, &colon[..]);
+            if shared {
+                let borrow: [u8; 1] = [38];
+                let mutable: [u8; 5] = [38, 109, 117, 116, 32];
+                written = if exclusive {
+                    put(&mut output[0..output.len()], written, &mutable[..])
+                } else {
+                    put(&mut output[0..output.len()], written, &borrow[..])
+                };
+            }
+            written = put(
+                &mut output[0..output.len()],
+                written,
+                &source[nodes[owner].name_start..nodes[owner].name_end]
+            );
+            at = nodes[receiver].end;
+        } else if calls[at] == 18446744073709551615 {
+            written = put(&mut output[0..output.len()], written, &receiver_name[..]);
+            at += 4;
+        } else {
+            if written >= output.len() {
+                return (4, 0);
+            }
+            output[written] = source[at];
+            written += 1;
+            at += 1;
+        }
+    }
+    if written >= output.len() {
+        return (4, 0);
+    }
+    offsets[source.len()] = written as u64;
+    (0, written as u64)
+}

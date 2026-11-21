@@ -156,7 +156,7 @@ fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(literal), annotation);
         if element < 0 { return element; }
         values[literal] = CheckedValue { ty: element, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: length, exclusive: false };
+            loan_parent: 0, origin_call: length, writable: false };
         return 0;
     }
     let mut row_annotation: u64 = 0;
@@ -203,7 +203,7 @@ fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     }
     if annotation != 0 && length != expected_length { return 0 - violation(1, nodes[literal].start); }
     values[literal] = CheckedValue { ty: 450, state: 1, mutable: false, target: length,
-        loan_parent: 0, origin_call: first, exclusive: false };
+        loan_parent: 0, origin_call: first, writable: false };
     0
 }
 
@@ -284,20 +284,29 @@ pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 fn structural_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], literal: u64, annotation: u64) -> i64 {
     let first = graph[literal].first_child;
-    if nodes[first].kind != 37 { return 0; }
+    let named = nodes[first].kind == 7 && values[graph[first].binding].ty == 300;
+    if nodes[first].kind != 37 && !named { return 0; }
+    let shape = if named { values[graph[first].binding].origin_call } else { copy(first) };
     let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], copy(first));
+        &graph[0..graph.len()], copy(shape));
     if !replicable_record(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(nominal), 0) { return 0; }
     let repeat = nodes[literal].kind == 45;
     let mut length: u64 = 0;
     let mut item = copy(first);
     while item != 0 {
-        if nodes[item].kind != 37 { return -9; }
+        let named_item = nodes[item].kind == 7 && values[graph[item].binding].ty == 300;
+        if nodes[item].kind != 37 && !named_item { return -9; }
+        let actual_shape = if named_item { values[graph[item].binding].origin_call } else { copy(item) };
         if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(item)) != nominal { return 0 - violation(1, nodes[item].start); }
-        let status = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            &mut values[0..values.len()], copy(item), copy(item));
+            &graph[0..graph.len()], copy(actual_shape)) != nominal { return 0 - violation(1, nodes[item].start); }
+        let status = if named_item {
+            verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(item), 300, 1)
+        } else {
+            check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(item), copy(item))
+        };
         if status < 0 { return status; }
         length = length + 1;
         item = if repeat { 0 } else { graph[item].next_sibling };
@@ -316,7 +325,7 @@ fn structural_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if !valid || count != length { return 0 - violation(1, nodes[literal].start); }
     }
     values[literal] = CheckedValue { ty: 451, state: 1, mutable: false, target: length,
-        loan_parent: 0, origin_call: first, exclusive: false };
+        loan_parent: 0, origin_call: if named { nominal } else { first }, writable: false };
     451
 }
 
@@ -544,7 +553,7 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
     if borrowing && values[binding].ty == 300 && values[binding].target != 0 { return (-9, 0); }
     if write {
         let root = values[binding].ty;
-        let mutable = if (root >= 710 && root <= 729) || root == 734 || slice_view(copy(root)) { values[binding].exclusive } else { values[binding].mutable };
+        let mutable = if (root >= 710 && root <= 729) || root == 734 || slice_view(copy(root)) { values[binding].writable } else { values[binding].mutable };
         if !mutable { return (0 - violation(5, nodes[place].start), 0); }
     }
     let mut receiver = graph[place].first_child;
@@ -556,11 +565,11 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
             let selector = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], index);
             if selector.known && !selector.negative && selector.magnitude < 18446744073709551615 {
                 values[place] = CheckedValue { ty: 0, state: 6, mutable: false,
-                    target: copy(binding), loan_parent: 1, origin_call: selector.magnitude + 1, exclusive: false };
+                    target: copy(binding), loan_parent: 1, origin_call: selector.magnitude + 1, writable: false };
             }
         } else if nodes[place].kind == 17 && graph[place].field_name != 0 {
             values[place] = CheckedValue { ty: 0, state: 6, mutable: false,
-                target: copy(binding), loan_parent: 2, origin_call: graph[place].field_name, exclusive: false };
+                target: copy(binding), loan_parent: 2, origin_call: graph[place].field_name, writable: false };
         }
     }
     // Building an assignment's place reads the container. The actual
@@ -688,7 +697,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if text==2000138 {
         if annotation!=0 && !shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation){return 0-violation(1,nodes[expression].start);}
         let root=values[expression].target;let parent=values[expression].loan_parent;let origin=values[expression].origin_call;
-        values[destination]=CheckedValue{ty:text,state:1,mutable:graph[destination].mutable,target:root,loan_parent:parent,origin_call:origin,exclusive:false};return 1;
+        values[destination]=CheckedValue{ty:text,state:1,mutable:graph[destination].mutable,target:root,loan_parent:parent,origin_call:origin,writable:false};return 1;
     }
     let place = graph[expression].first_child;
     let base = graph[place].first_child;
@@ -717,7 +726,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mutable = borrow_mutable(&source[nodes[expression].start..nodes[place].start]);
     let owner_type = values[binding].ty;
     let reborrow = borrowed || (projected && (owner_type == 734 || (owner_type >= 710 && owner_type <= 729)));
-    let writable = if reborrow { values[binding].exclusive } else { values[binding].mutable };
+    let writable = if reborrow { values[binding].writable } else { values[binding].mutable };
     if mutable && !writable { return 0 - violation(5, nodes[expression].start); }
     let first = graph[range].first_child;
     let has_start = nodes[range].name_start != nodes[range].start;
@@ -763,7 +772,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         else if ty == 298 { 744 } else if ty == 299 { 742 } else if ty == 451 { 748 }
         else if ty == 450 { 749 } else { ty + 340 },
         state: 1, mutable: graph[destination].mutable, target: root,
-        loan_parent: if reborrow { binding } else { 0 }, origin_call: shape, exclusive: mutable };
+        loan_parent: if reborrow { binding } else { 0 }, origin_call: shape, writable: mutable };
     1
 }
 
@@ -775,7 +784,7 @@ pub fn replace_record_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     if ty < 0 { return ty; }
     if ty != 300 || root != binding { return -9; }
-    let mutable = if array == 451 { values[binding].mutable } else { values[binding].exclusive };
+    let mutable = if array == 451 { values[binding].mutable } else { values[binding].writable };
     if !mutable { return 0 - violation(5, nodes[place].start); }
     let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], shape);
@@ -840,7 +849,7 @@ pub fn writable_reference_projection(source: &[u8], nodes: &[AstNode], graph: &[
     if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
         return (0 - private_layout_violation(nodes[projection].start), 0);
     }
-    let writable = if values[holder].ty == 734 { values[holder].exclusive } else { values[holder].mutable };
+    let writable = if values[holder].ty == 734 { values[holder].writable } else { values[holder].mutable };
     if !writable || !borrow_mutable(&source[nodes[annotation].start..nodes[referent].start]) {
         return (0 - violation(5, nodes[expression].start), 0);
     }

@@ -1,0 +1,20 @@
+//! Separate fixed fields may be reserved by one call.
+/// Distinct inline storage places for argument reservation.
+struct Buffers {
+    left: [u8; 4],
+    right: [u8; 4]
+}
+/// Writes both supplied mutable places.
+fn fill(left: &mut [u8], right: &mut [u8]) {
+    left[0] = 1;
+    right[0] = 2;
+}
+/// Exercises this fixture and reports its expected observations.
+fn main() {
+    let mut buffers = Buffers {
+        left: [0; 4],
+        right: [0; 4]
+    };
+    fill(&mut buffers.left[..], &mut buffers.right[..]);
+    print(buffers.left[0] == 1 && buffers.right[0] == 2);
+}

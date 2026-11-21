@@ -91,10 +91,10 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
         let mutable = values[binding].mutable;
         snapshot[binding] = BranchState { before: copy(before), yes: after };
         let target = values[binding].target;
-        let exclusive = values[binding].exclusive;
+        let exclusive = values[binding].writable;
         let loan_parent = values[binding].loan_parent;
         let origin_call = values[binding].origin_call;
-        values[binding] = CheckedValue { ty: ty, state: before, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+        values[binding] = CheckedValue { ty: ty, state: before, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
         binding = binding + 1;
     }
     let mut no_exit: i64 = 0;
@@ -145,10 +145,10 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
             let ty = values[binding].ty;
             let mutable = values[binding].mutable;
             let target = values[binding].target;
-            let exclusive = values[binding].exclusive;
+            let exclusive = values[binding].writable;
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
-            values[binding] = CheckedValue { ty: ty, state: joined, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+            values[binding] = CheckedValue { ty: ty, state: joined, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
         }
         binding = binding + 1;
     }
@@ -232,9 +232,9 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
             let target = values[binding].target;
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
-            let exclusive = values[binding].exclusive;
+            let exclusive = values[binding].writable;
             values[binding] = CheckedValue { ty: ty, state: joined, mutable: mutable,
-                target: target, loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+                target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
             binding = graph[binding].visible;
         }
         if !changed {
@@ -248,9 +248,9 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
                 let target = values[binding].target;
                 let loan_parent = values[binding].loan_parent;
                 let origin_call = values[binding].origin_call;
-                let exclusive = values[binding].exclusive;
+                let exclusive = values[binding].writable;
                 values[binding] = CheckedValue { ty: ty, state: state, mutable: mutable,
-                    target: target, loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+                    target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
                 binding = graph[binding].visible;
             }
             let ty = loop_edges[0].breaks;
@@ -311,7 +311,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         &graph[0..graph.len()], copy(annotation));
                     if handle == 0 && !plain_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation), 0) { return (9, 0); }
-                    if handle != 0 && nodes[constructor].kind != 4 && !values[base].exclusive && (variant != graph[nominal].first_child || graph[variant].next_sibling != 0) {
+                    if handle != 0 && nodes[constructor].kind != 4 && !values[base].writable && (variant != graph[nominal].first_child || graph[variant].next_sibling != 0) {
                         return (9, 0);
                     }
                     field = graph[field].next_sibling;
@@ -323,7 +323,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             copy(base), copy(subject), !borrowed || graph[subject].mutable);
         if conflict > 0 { return (violation(5, nodes[subject].start), 0); }
         if conflict < 0 { return (9, 0); }
-        if borrowed && graph[subject].mutable && !(if owner==734{values[base].exclusive}else{values[base].mutable}) { return (violation(5, nodes[subject].start), 0); }
+        if borrowed && graph[subject].mutable && !(if owner==734{values[base].writable}else{values[base].mutable}) { return (violation(5, nodes[subject].start), 0); }
         if !borrowed {
             if owner == 301 { return (9, 0); }
             set_state(&mut values[0..values.len()], copy(base), 2);
@@ -381,7 +381,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 }
                 if declared != 0 || supplied != 0 { return (violation(1, nodes[pattern].start), 0); }
             }
-            let completed = !borrowed && values[base].exclusive && graph[variant].first_child == 0;
+            let completed = !borrowed && values[base].writable && graph[variant].first_child == 0;
             if completed {
                 let member = values[base].loan_parent;
                 let captures = values[member].origin_call;
@@ -415,10 +415,10 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                             let result = graph[annotation].first_child;
                             if handle == 3301 {
                                 values[result] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-                                    loan_parent: 0, origin_call: copy(result), exclusive: false };
+                                    loan_parent: 0, origin_call: copy(result), writable: false };
                             }
                             values[binder] = CheckedValue { ty: copy(handle), state: 1, mutable: false, target: 0,
-                                loan_parent: if handle == 3301 { result } else { 0 }, origin_call: 0, exclusive: false };
+                                loan_parent: if handle == 3301 { result } else { 0 }, origin_call: 0, writable: false };
                         }
                     } else if member == 0 || values[member].ty != handle { return (9, 0); }
                     else if graph[binder].declaration {
@@ -466,7 +466,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let edge = if bound == 734 && values[values[base].loan_parent].ty >= 201
                         && values[values[base].loan_parent].ty <= 207 { values[base].loan_parent } else { 0 };
                     values[binder] = CheckedValue { ty: bound, state: 1, mutable: false, target: root,
-                        loan_parent: edge, origin_call: shape, exclusive: mutable };
+                        loan_parent: edge, origin_call: shape, writable: mutable };
                 }
                 field = graph[field].next_sibling;
             }
@@ -503,7 +503,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 values[binder] = CheckedValue { ty: bound, state: 1, mutable: false,
                     target: if retained { values[holder].target } else { 0 },
                     loan_parent: if retained { values[holder].loan_parent } else { 0 },
-                    origin_call: if shape != 0 { shape } else if retained { constructor } else { 0 }, exclusive: false };
+                    origin_call: if shape != 0 { shape } else if retained { constructor } else { 0 }, writable: false };
                 }
             } else if graph[binder].first_child != 0
                 || (nodes[binder].kind != 41 && !(unit_result_payload(payload) && nodes[binder].kind == 43)) {
@@ -533,7 +533,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     absent = pool == 0;
                     if graph[binder].declaration && pool != 0 {
                         values[binder] = CheckedValue { ty: 200 + ty % 10, state: 1, mutable: false,
-                            target: pool, loan_parent: 0, origin_call: 0, exclusive: false };
+                            target: pool, loan_parent: 0, origin_call: 0, writable: false };
                     }
                 } else if dependent_option(copy(ty)) {
                     if values[option].origin_call == 0 { return (9, 0); }
@@ -587,7 +587,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         if bound==300 && constructor<nodes.len() as u64 && nodes[constructor].kind==37 { shape=constructor; }
                         values[binder] = CheckedValue { ty: bound,
                             state: 1, mutable: false, target: values[option].target,
-                            loan_parent: values[option].loan_parent, origin_call: shape, exclusive: false };
+                            loan_parent: values[option].loan_parent, origin_call: shape, writable: false };
                     }
                 } else if graph[binder].declaration {
                     let option = if nodes[subject].kind == 7 { copy(base) } else { copy(subject) };
@@ -604,7 +604,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         binder_ty = binder_ty + (if exclusive { 40 } else { 20 });
                     }
                     values[binder] = CheckedValue { ty: binder_ty, state: 1, mutable: false,
-                        target: target, loan_parent: 0, origin_call: 0, exclusive: exclusive };
+                        target: target, loan_parent: 0, origin_call: 0, writable: exclusive };
                 }
             } else if spelling.content_eq(&none[..]) && binder == 0 {
                 if err_seen { return (violation(1, nodes[pattern].start), 0); }
@@ -635,10 +635,10 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let field = values[record].loan_parent;
                     if nodes[constructor].kind != 37 && !(payload == 310 && nodes[constructor].kind == 4) { return (9, 0); }
                     values[binder] = CheckedValue { ty: copy(payload), state: 1, mutable: false, target: target,
-                        loan_parent: field, origin_call: constructor, exclusive: false };
+                        loan_parent: field, origin_call: constructor, writable: false };
                 } else {
                     values[binder] = CheckedValue { ty: payload, state: 1, mutable: false, target: pool,
-                        loan_parent: 0, origin_call: 0, exclusive: false };
+                        loan_parent: 0, origin_call: 0, writable: false };
                 }
             }
         }
@@ -706,9 +706,9 @@ fn set_state(values: &mut [CheckedValue], binding: u64, state: i64) {
     let target = values[binding].target;
     let loan_parent = values[binding].loan_parent;
     let origin_call = values[binding].origin_call;
-    let exclusive = values[binding].exclusive;
+    let exclusive = values[binding].writable;
     values[binding] = CheckedValue { ty: ty, state: state, mutable: mutable, target: target,
-        loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+        loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
 }
 
 

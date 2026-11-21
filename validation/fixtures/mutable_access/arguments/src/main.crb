@@ -1,0 +1,9 @@
+//! Aliased mutable arguments perform ordinary sequential content writes.
+/// Both parameters are permissions; neither promises uniqueness.
+fn edit(left: &mut i64, right: &mut i64) { *left += 1; *right += 2; }
+/// The same target can appear in both argument positions.
+fn main() {
+    let mut value: i64 = 10;
+    edit(&mut value, &mut value);
+    print(value == 13);
+}

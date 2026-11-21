@@ -364,7 +364,7 @@ pub fn equivalent_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &[CheckedValue], left: u64, right: u64, depth: u64) -> bool {
     let ty = values[left].ty;
     if depth >= 64 || ty != values[right].ty || values[left].target != values[right].target
-        || values[left].exclusive != values[right].exclusive { return false; }
+        || values[left].writable != values[right].writable { return false; }
     if ty >= 1 && ty <= 9 { return true; }
     if ty > 20 && ty < 60 {
         return values[left].loan_parent == 0 && values[right].loan_parent == 0

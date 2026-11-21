@@ -32,7 +32,7 @@ pub fn check_nested_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) { return 0 - violation(4, start); }
     if values[binding].target == 0 || values[binding].ty >= 60 { return -9; }
     let mutable = borrow_mutable(&source[start..nodes[place].start]);
-    if mutable != (expected >= 1920) || values[binding].exclusive != (expected / 10 % 2 == 1)
+    if mutable != (expected >= 1920) || values[binding].writable != (expected / 10 % 2 == 1)
         || loan_element(&values[0..values.len()], copy(binding)) != expected % 10 {
         return 0 - violation(1, start);
     }
@@ -74,7 +74,7 @@ pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let inferred = ty == 0 && nodes[graph[reference].initializer].kind == 13;
     if (!inferred && ty < 21) || ty >= 60 || values[reference].target == 0 { return 0; }
     let mutable = borrow_mutable(&source[nodes[expression].start..nodes[place].start]);
-    let shared = !values[reference].exclusive;
+    let shared = !values[reference].writable;
     let scalar = loan_element(&values[0..values.len()], copy(reference));
     if scalar < 1 || scalar > 7 { return -9; }
     let nested = 1900 + scalar + (if mutable { 20 } else { 0 }) + (if shared { 0 } else { 10 });
@@ -84,7 +84,7 @@ pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         &graph[0..graph.len()], &values[0..values.len()], expression, copy(nested));
     if checked < 0 { return checked; }
     values[statement] = CheckedValue { ty: nested, state: 1, mutable: graph[statement].mutable,
-        target: reference, loan_parent: 0, origin_call: 0, exclusive: mutable };
+        target: reference, loan_parent: 0, origin_call: 0, writable: mutable };
     1
 }
 

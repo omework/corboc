@@ -49,12 +49,12 @@ pub fn retain_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if slot == 0 { return -9; }
     let entry = slot + 1;
     values[slot] = CheckedValue { ty: 5019, state: 1, mutable: false,
-        target: values[actual].target, loan_parent: values[actual].loan_parent, origin_call: 0, exclusive: true };
+        target: values[actual].target, loan_parent: values[actual].loan_parent, origin_call: 0, writable: false };
     let previous = values[marker].origin_call;
     values[entry] = CheckedValue { ty: 5014, state: 1, mutable: false,
-        target: slot, loan_parent: previous, origin_call: 0, exclusive: true };
+        target: slot, loan_parent: previous, origin_call: 0, writable: false };
     values[marker] = CheckedValue { ty: 5012, state: 1, mutable: false,
-        target: 0, loan_parent: 0, origin_call: entry, exclusive: false };
+        target: 0, loan_parent: 0, origin_call: entry, writable: false };
     0
 }
 

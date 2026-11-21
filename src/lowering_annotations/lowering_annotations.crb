@@ -130,7 +130,16 @@ pub fn annotation_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a
         let length = integer_value(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], graph[inner].next_sibling);
         if !length.known || length.negative { return -1; }
-        return fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], element, length.magnitude);
+        let shape = fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], element, length.magnitude);
+        // Fixed arrays inside a value record are part of that value's storage.
+        // A pointer to a callee-local array cannot represent an owned returned field.
+        let mut owner = nodes[annotation].parent;
+        while nodes[owner].kind == 4 && source[nodes[owner].start] == 91 { owner = nodes[owner].parent; }
+        if nodes[owner].kind == 31 && (nodes[nodes[owner].parent].kind == 28 || nodes[nodes[owner].parent].kind == 30)
+            && bootstrap::lowering_types::placed_array(copy(shape)) {
+            return shape - 500000000000000000;
+        }
+        shape
     }
     if source[nodes[annotation].start] == 38 {
         if inner == 0 { return -1; }

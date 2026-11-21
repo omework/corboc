@@ -120,7 +120,7 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if count_type < 0 { return count_type; }
         if count_type != 2 { return 0 - violation(1, nodes[call].start); }
         values[call] = CheckedValue { ty: 476, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: first, exclusive: false };
+            loan_parent: 0, origin_call: first, writable: false };
         return 476;
     }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -135,9 +135,9 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     if count < 0 { return count; }
     if count != 2 { return 0 - violation(1, nodes[call].start); }
     let member = values[first].loan_parent;
-    let conditional = values[first].exclusive;
+    let conditional = values[first].writable;
     values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: member, origin_call: shape, exclusive: conditional };
+        loan_parent: member, origin_call: shape, writable: conditional };
     return 310;
 }
 
@@ -265,7 +265,7 @@ pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     let captures = values[handle].origin_call;
     if asynchronous {
         values[call] = CheckedValue { ty: 610, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: captures, exclusive: false };
+            loan_parent: 0, origin_call: captures, writable: false };
         return 610;
     }
     complete_task(&mut values[0..values.len()], captures, callee);
@@ -385,7 +385,7 @@ pub fn apply_conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     if wait < 0 { return wait; }
     if wait != 3 { return 0 - violation(1, nodes[third].start); }
     values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: first, origin_call: constructor, exclusive: true };
+        loan_parent: first, origin_call: constructor, writable: true };
     310
 }
 
@@ -478,7 +478,7 @@ pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let operation = graph[call].first_child;
     complete_task(&mut values[0..values.len()], captures, operation);
     values[call] = CheckedValue { ty: 3500, state: 1, mutable: false, target: 0,
-        loan_parent: record, origin_call: 0, exclusive: false };
+        loan_parent: record, origin_call: 0, writable: false };
     3500
 }
 
@@ -563,7 +563,7 @@ pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[Sta
     let captures = values[argument].origin_call;
     let ty = 610 + scalar;
     values[call] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: captures, exclusive: false };
+        loan_parent: 0, origin_call: captures, writable: false };
     ty
 }
 

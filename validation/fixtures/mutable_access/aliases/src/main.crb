@@ -1,0 +1,15 @@
+//! Sequential mutable aliases retain independent permissions and one live target.
+/// Returns a reborrow without creating a new owner.
+fn relay(value: &mut i64) -> &mut i64 { value }
+/// Both direct aliases and a returned reborrow can mutate the stable scalar.
+fn main() {
+    let mut value: i64 = 10;
+    let first = &mut value;
+    let second = &mut value;
+    *first += 2;
+    *second += 3;
+    let third = relay(first);
+    *third += 4;
+    print(*second == 19);
+    print(value == 19);
+}

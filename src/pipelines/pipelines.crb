@@ -344,7 +344,7 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
         else { item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) };
     if first_capture == 0 && (declared != 0 || nodes[next].kind == 4) { return (declared, annotation); }
     let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0,
-        loan_parent: 0, origin_call: 0, exclusive: false }; 524289];
+        loan_parent: 0, origin_call: 0, writable: false }; 524289];
     let borrowed_record = record_borrow(copy(input));
     let shape = if borrowed_record { unsigned((copy(input) - 20000000) / 2) }
         else if input >= 3000000 { unsigned(copy(input) - 3000000) } else { 0 };
@@ -353,7 +353,7 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
     let reference = borrowed_record || (parameter_type > 20 && parameter_type < 60);
     values[parameter] = CheckedValue { ty: copy(parameter_type), state: 1, mutable: graph[parameter].mutable,
         target: if reference { copy(parameter) } else { 0 }, loan_parent: 0, origin_call: shape,
-        exclusive: reference && borrow_exclusive(input) };
+        writable: reference && borrow_exclusive(input) };
     let mut capture = copy(first_capture);
     while capture != 0 {
         let binding = captures[capture].binding;
@@ -362,12 +362,12 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
         let reference = captured_ty > 20 && captured_ty < 60;
         if reference {
             values[capture] = CheckedValue { ty: copy(captured_ty) % 20, state: 1, mutable: false,
-                target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                target: 0, loan_parent: 0, origin_call: 0, writable: false };
         }
         let origin = if record { unsigned(copy(captured_ty) - 3000000) } else { 0 };
         values[binding] = CheckedValue { ty: if record { 300 } else { copy(captured_ty) },
             state: 1, mutable: graph[binding].mutable, target: if reference { copy(capture) } else { 0 },
-            loan_parent: 0, origin_call: origin, exclusive: reference && captured_ty > 40 };
+            loan_parent: 0, origin_call: origin, writable: reference && captured_ty > 40 };
         capture = captures[capture].next;
     }
     let mut edges = [LoopEdge { breaks: 0, continues: 0 }; 524289];

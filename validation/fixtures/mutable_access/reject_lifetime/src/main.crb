@@ -1,0 +1,10 @@
+//! A branch cannot retain a reference to a target destroyed on scope exit.
+/// Returning before the outstanding branch ends must remain rejected.
+fn main() {
+    let execution = {
+        let mut local: i64 = 0;
+        let view = &mut local;
+        runtime::thread({ move view; *view += 1; *view })
+    };
+    drop(execution.join());
+}

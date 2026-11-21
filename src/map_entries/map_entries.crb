@@ -79,7 +79,7 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                     &mut values[0..values.len()], copy(payload), 0, 3);
                 if moved < 0 { return moved; }
                 values[payload] = CheckedValue { ty: element + 200, state: 1,
-                    mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, exclusive: false };
+                    mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: false };
             } else { return -9; }
         } else {
             let place = graph[payload].first_child;
@@ -94,7 +94,7 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             if conflict > 0 { return 0 - violation(5, nodes[payload].start); }
             if conflict < 0 { return -9; }
             values[payload] = CheckedValue { ty: element + (if exclusive { 40 } else { 20 }), state: 1,
-                mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, exclusive: exclusive };
+                mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: exclusive };
         }
         if !scope_contains(&graph[0..graph.len()], graph[root].scope, graph[binding].scope) {
             return 0 - violation(4, nodes[payload].start);
@@ -121,20 +121,20 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         let old_payload = values[entry].target;
         let before = values[entry].origin_call;
         values[entry] = CheckedValue { ty: 0, state: 2, mutable: false, target: old_payload,
-            loan_parent: old_key, origin_call: before, exclusive: false };
+            loan_parent: old_key, origin_call: before, writable: false };
     }
     if inserts {
         let ty = values[binding].ty;
         values[receiver] = CheckedValue { ty: 0, state: 1, mutable: false, target: payload,
-            loan_parent: key_node, origin_call: previous, exclusive: false };
+            loan_parent: key_node, origin_call: previous, writable: false };
         values[binding] = CheckedValue { ty: ty, state: 1, mutable: true, target: 0,
-            loan_parent: 0, origin_call: receiver, exclusive: false };
+            loan_parent: 0, origin_call: receiver, writable: false };
     }
     let borrowed = !inserts && !removes;
     let result = 1300 + mode * 100 + element;
     values[destination] = CheckedValue { ty: copy(result), state: 1, mutable: false,
         target: if borrowed { binding } else { 0 }, loan_parent: if borrowed { entry } else { 0 }, origin_call: extracted,
-        exclusive: borrowed && !shared };
+        writable: borrowed && !shared };
     return result;
 }
 
@@ -157,7 +157,7 @@ pub fn bind_entry_option(values: &mut [CheckedValue], option: u64, binder: u64) 
     let map = values[option].target;
     let ty = values[option].ty;
     let item = values[option].origin_call;
-    let exclusive = values[option].exclusive;
+    let exclusive = values[option].writable;
     let storage = values[option].loan_parent;
     let target = values[item].target;
     let inner = values[item].ty;
@@ -165,10 +165,10 @@ pub fn bind_entry_option(values: &mut [CheckedValue], option: u64, binder: u64) 
         let alternate = values[item].origin_call;
         let union = if alternate != 0 { 80 + inner % 20 } else { copy(inner) };
         values[binder] = CheckedValue { ty: union, state: 1, mutable: false, target: target,
-            loan_parent: 0, origin_call: if alternate != 0 { item } else { 0 }, exclusive: inner >= 40 && inner < 60 };
+            loan_parent: 0, origin_call: if alternate != 0 { item } else { 0 }, writable: inner >= 40 && inner < 60 };
     } else {
         values[binder] = CheckedValue { ty: ty + 300, state: 1, mutable: false, target: target,
-            loan_parent: map, origin_call: storage, exclusive: exclusive };
+            loan_parent: map, origin_call: storage, writable: exclusive };
     }
 }
 
@@ -182,7 +182,7 @@ pub fn check_entry_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let binder = graph[name].binding;
     let reference = values[binder].ty;
     if nodes[name].kind != 7 || !entry_reference(copy(reference)) { return 0; }
-    if !values[binder].exclusive || map_item_code(copy(reference)) == 6 {
+    if !values[binder].writable || map_item_code(copy(reference)) == 6 {
         return 0 - violation(5, nodes[statement].start);
     }
     if values[binder].state != 1 || values[values[binder].target].state != 1
@@ -217,7 +217,7 @@ pub fn reborrow_entry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         return 0 - violation(4, nodes[expression].start);
     }
     let exclusive = borrow_mutable(&source[nodes[expression].start..nodes[outer].start]);
-    if exclusive && (!values[binding].exclusive || map_item_code(copy(ty)) == 6) {
+    if exclusive && (!values[binding].writable || map_item_code(copy(ty)) == 6) {
         return 0 - violation(5, nodes[expression].start);
     }
     let status = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
@@ -229,7 +229,7 @@ pub fn reborrow_entry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let target = values[binding].target;
     values[statement] = CheckedValue { ty: ty % 10 + (if exclusive { 40 } else { 20 }), state: 1,
         mutable: graph[statement].mutable, target: target, loan_parent: binding, origin_call: 0,
-        exclusive: exclusive };
+        writable: exclusive };
     return 1;
 }
 
@@ -244,7 +244,7 @@ pub fn validate_entry_replacement(source: &[u8], nodes: &[AstNode], graph: &[Sta
         let source_binding = graph[rhs].binding;
         let ty = values[binder].ty;
         if ty < 1930 || nodes[rhs].kind != 7 || nodes[source_binding].kind != 3
-            || !values[source_binding].exclusive || values[source_binding].ty % 20 != ty % 10 {
+            || !values[source_binding].writable || values[source_binding].ty % 20 != ty % 10 {
             return -9;
         }
         if values[binder].state != 1 || values[source_binding].state != 1 {
@@ -253,7 +253,7 @@ pub fn validate_entry_replacement(source: &[u8], nodes: &[AstNode], graph: &[Sta
         return 1;
     }
     if !entry_reference(values[binder].ty) || map_item_code(values[binder].ty) != 7 { return 0; }
-    if !values[binder].exclusive { return 0 - violation(5, nodes[place].start); }
+    if !values[binder].writable { return 0 - violation(5, nodes[place].start); }
     let target = graph[rhs].first_child;
     if nodes[rhs].kind != 13 || nodes[target].kind != 7 { return -9; }
     let root = graph[target].binding;
@@ -320,11 +320,11 @@ pub fn update_entry(values: &mut [CheckedValue], binder: u64, root: u64, operati
     let key = values[storage].loan_parent;
     let previous = values[storage].origin_call;
     values[operation] = CheckedValue { ty: 40 + ty % 10, state: 1, mutable: false, target: copy(root),
-        loan_parent: 0, origin_call: alternate, exclusive: true };
+        loan_parent: 0, origin_call: alternate, writable: true };
     values[storage] = CheckedValue { ty: 0, state: 1, mutable: false, target: operation,
-        loan_parent: key, origin_call: previous, exclusive: false };
+        loan_parent: key, origin_call: previous, writable: false };
     values[binder] = CheckedValue { ty: ty, state: binder_state, mutable: false, target: root,
-        loan_parent: map, origin_call: storage, exclusive: true };
+        loan_parent: map, origin_call: storage, writable: true };
 }
 
 
@@ -346,7 +346,7 @@ pub fn direct_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             return 0 - violation(8, nodes[argument].start);
         }
         let actual = graph[other].binding;
-        if nodes[actual].kind == 3 && values[actual].exclusive && values[actual].ty % 20 == scalar
+        if nodes[actual].kind == 3 && values[actual].writable && values[actual].ty % 20 == scalar
             && values[binder].ty == 1930 + scalar { return 1; }
         return -9;
     }
@@ -355,7 +355,7 @@ pub fn direct_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let referent = graph[incoming].first_child;
     if nodes[incoming].kind != 13 || nodes[referent].kind != 7 { return -9; }
     let root = graph[referent].binding;
-    if !values[binder].exclusive || !values[root].mutable || map_item_code(values[binder].ty) != 7
+    if !values[binder].writable || !values[root].mutable || map_item_code(values[binder].ty) != 7
         || !borrow_mutable(&source[nodes[incoming].start..nodes[referent].start]) {
         return 0 - violation(5, nodes[incoming].start);
     }

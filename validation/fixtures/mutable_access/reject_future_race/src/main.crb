@@ -1,0 +1,17 @@
+//! Creating two futures is permitted; starting conflicting unlocked branches is not.
+/// The future retains a dependency until its actual execution ends.
+async fn add(value: &mut i64) -> i64 {
+    yield;
+    *value += 1;
+    *value
+}
+/// Launch checks use the actual start point, not just capture creation.
+fn main() {
+    let mut value: i64 = 0;
+    let first = add(&mut value);
+    let second = add(&mut value);
+    let left = runtime::spawn(first);
+    let right = runtime::spawn(second);
+    drop(left.join());
+    drop(right.join());
+}

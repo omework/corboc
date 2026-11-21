@@ -1,0 +1,118 @@
+[
+  {
+    "case": "mutable_access/aliases",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true",
+      "true"
+    ]
+  },
+  {
+    "case": "mutable_access/arguments",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "mutable_access/record_aliases",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "mutable_access/inactive_futures",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "mutable_access/three_threads",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "aliased_buffers",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "coverage_gaps/lock_drop_release",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42"
+    ]
+  },
+  {
+    "case": "propagation_binding_cleanup",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "1",
+      "true"
+    ]
+  },
+  {
+    "case": "owned_fixed_fields",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true",
+      "true"
+    ]
+  },
+  {
+    "case": "mutable_access/reject_different_locks",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "mutable_access/reject_unprotected",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "mutable_access/reject_before_all_joins",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "mutable_access/reject_future_race",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "mutable_access/reject_lifetime",
+    "status": "rejected",
+    "rule": "4"
+  },
+  {
+    "case": "mutable_access/reject_owner_drop",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "mutable_access/reject_early_exit",
+    "status": "rejected",
+    "rule": "8"
+  },
+  {
+    "case": "coverage_gaps/reject_double_reserve",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "coverage_gaps/reject_lock_after_use",
+    "status": "rejected",
+    "rule": "5"
+  },
+  {
+    "case": "reject_array_move_reuse",
+    "status": "rejected",
+    "rule": "6"
+  }
+]

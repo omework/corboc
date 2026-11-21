@@ -8,7 +8,8 @@ use bootstrap::target_c::{character,byte_text};
 // Values already evaluated for a containing call/aggregate must be dropped if a later operand returns early.
 fn drop_partial_evaluation(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64,storage:bool) {
     let mut current=node;let mut parent=nodes[current].parent;
-    while parent!=0 && nodes[parent].kind!=5 && nodes[parent].kind!=6 && nodes[parent].kind!=8 && nodes[parent].kind!=10 {
+    // A lexical block owns its bindings; drop_visible handles them exactly once.
+    while parent!=0 && nodes[parent].kind!=2 && nodes[parent].kind!=5 && nodes[parent].kind!=6 && nodes[parent].kind!=8 && nodes[parent].kind!=10 {
         let first=graph[parent].first_child;let mut end=copy(current);
         while end!=first {
             let mut earlier=copy(first);while earlier!=0 && graph[earlier].next_sibling!=end{earlier=graph[earlier].next_sibling;}

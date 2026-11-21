@@ -1,0 +1,40 @@
+//! Native threads share one scalar under an explicitly contracted lock.
+/// Lock state; acquisition/release implementation is the developer's trusted boundary.
+struct Gate { held: i64 }
+impl Gate {
+    /// Runs the checked mutation while holding this concrete lock.
+    #(lock: on=self)
+    fn increment(&self, target: &mut i64) -> i64 {
+        @unchecked {
+            @c {
+                int64_t *word = (int64_t *)&${self}->f_held;
+                while (__atomic_exchange_n(word, 1, __ATOMIC_ACQUIRE)) {}
+            }
+        }
+        *target += 1;
+        let result = *target;
+        @unchecked {
+            @c { __atomic_store_n((int64_t *)&${self}->f_held, 0, __ATOMIC_RELEASE); }
+        }
+        result
+    }
+}
+/// Launches three readers/writers and waits for every branch before target cleanup.
+fn main() {
+    let mut count: i64 = 0;
+    let gate = Gate { held: 0 };
+    let other = Gate { held: 0 };
+    let one = &mut count;
+    let two = &mut count;
+    let three = &mut count;
+    let g1 = &gate;
+    let g2 = &other;
+    let g3 = &gate;
+    let first = runtime::thread({ move one; move g1; g1.increment(one) });
+    let second = runtime::thread({ move two; move g2; g2.increment(two) });
+    let third = runtime::thread({ move three; move g3; g3.increment(three) });
+    drop(first.join());
+    drop(second.join());
+    drop(third.join());
+    print(count == 3);
+}

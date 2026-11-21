@@ -1,0 +1,39 @@
+//! Returned nested fixed fields must own their bytes across successive calls.
+/// Owned wide byte field returned across a function boundary.
+struct Block {
+    data: [u8; 8192]
+}
+/// Nested owner of the fixed block.
+struct Envelope {
+    block: Block
+}
+/// Error envelope used to exercise successful propagation.
+enum Failure {
+    Unexpected
+}
+/// Builds independent inline storage for the returned record.
+fn make(value: u8) -> Result<Envelope, Failure> {
+    let mut block = Block {
+        data: [copy(value); 8192]
+    };
+    let last = &mut block.data[8191];
+    *last = value + 1;
+    Ok(Envelope { block: block })
+}
+/// Checks that successive returns retain their own field contents.
+fn run() -> Result<(), Failure> {
+    let first = make(7)?;
+    let second = make(9)?;
+    print(first.block.data[5000] == 7 && first.block.data[8191] == 8);
+    print(second.block.data[5000] == 9 && second.block.data[8191] == 10);
+    Ok(())
+}
+/// Exercises this fixture and reports its expected observations.
+fn main() {
+    match run() {
+        Ok(()) => {},
+        Err(_error) => {
+            print(false);
+        },
+    }
+}

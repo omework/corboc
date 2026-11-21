@@ -81,10 +81,10 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
         let handle=values[child].target;
         copy_task_summary(&mut values[0..values.len()],handle,copy(node),copy(actual),false);
     }else if inline_array(copy(payload)) {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),exclusive:false};
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false};
     }else if actual==300 || actual==310 {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),exclusive:false};
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),writable:false};
     }else {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};
+        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};
     }actual
 }

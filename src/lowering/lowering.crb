@@ -748,7 +748,11 @@ fn array_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &m
         }
         if element == 0 && first != 0 { element = 2; }
     }
-    let ty = fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(element), copy(count));
+    let inferred = fixed_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(element), copy(count));
+    // Record fields request an inline representation of the same array shape.
+    let ty = if array_value_type(copy(expected)) && array_length(copy(expected)) == count && array_item(copy(expected)) == element {
+        copy(expected)
+    } else { inferred };
     if ty < 0 || (expected != 0 && ty != expected) { return -1; }
     let placed = placed_array(copy(ty));
     if placed && !(*ctx).storage { return -1; }

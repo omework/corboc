@@ -94,7 +94,7 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     let mut shape: u64 = 0;
     if nodes[input].kind == 7 {
         from = graph[input].binding;
-        if values[from].ty != 734 || values[from].exclusive != exclusive { return 0 - violation(1, nodes[input].start); }
+        if values[from].ty != 734 || values[from].writable != exclusive { return 0 - violation(1, nodes[input].start); }
         if values[from].state != 1 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(from)) {
             return 0 - violation(4, nodes[input].start);
         }
@@ -116,7 +116,7 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         let reborrow = values[from].ty == 734;
         target = if reborrow { values[from].target } else { copy(from) };
         if reborrow { parent = copy(from); }
-        if exclusive && !(if reborrow { values[from].exclusive } else { values[from].mutable }) {
+        if exclusive && !(if reborrow { values[from].writable } else { values[from].mutable }) {
             return 0 - violation(5, nodes[input].start);
         }
     } else { return 0 - violation(1, nodes[input].start); }
@@ -131,10 +131,10 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         parent = values[from].loan_parent;
         let mutable = values[from].mutable;
         values[from] = CheckedValue { ty: 734, state: 2, mutable: mutable, target: copy(target),
-            loan_parent: copy(parent), origin_call: copy(shape), exclusive: copy(exclusive) };
+            loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive) };
     }
     values[input] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: shape, exclusive: exclusive };
+        loan_parent: parent, origin_call: shape, writable: exclusive };
     734
 }
 
@@ -163,7 +163,7 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
         return 0 - violation(6, nodes[receiver].start);
     }
     let exclusive = borrow_mutable(&source[nodes[parameter].start..nodes[parameter].name_start]);
-    let writable = if by_reference { values[binding].exclusive } else { values[binding].mutable };
+    let writable = if by_reference { values[binding].writable } else { values[binding].mutable };
     if exclusive && !writable { return 0 - violation(5, nodes[receiver].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(binding), copy(receiver), copy(exclusive));
@@ -173,7 +173,7 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
     let parent = if by_reference { copy(binding) } else { 0 };
     let shape = values[binding].origin_call;
     values[receiver] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: shape, exclusive: exclusive };
+        loan_parent: parent, origin_call: shape, writable: exclusive };
     1
 }
 
@@ -195,7 +195,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict < 0 { return -9; }
             if conflict > 0 { return 0 - violation(5, nodes[initializer].start); }
             values[destination] = CheckedValue { ty: 734, state: 1, mutable: graph[destination].mutable,
-                target: copy(from), loan_parent: 0, origin_call: values[from].origin_call, exclusive: exclusive };
+                target: copy(from), loan_parent: 0, origin_call: values[from].origin_call, writable: exclusive };
             return 1;
         }
         if values[from].ty == 734 {
@@ -206,7 +206,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if checked < 0 { return checked; }
             values[destination] = CheckedValue { ty: 734, state: 1, mutable: graph[destination].mutable,
                 target: values[initializer].target, loan_parent: values[initializer].loan_parent,
-                origin_call: values[initializer].origin_call, exclusive: values[initializer].exclusive };
+                origin_call: values[initializer].origin_call, writable: values[initializer].writable };
             return 1;
         }
     }
@@ -226,7 +226,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     }
     let exclusive = graph[initializer].mutable;
     let reference = values[root].ty == 734;
-    let writable = if reference { values[root].exclusive } else { values[root].mutable };
+    let writable = if reference { values[root].writable } else { values[root].mutable };
     if exclusive && !writable { return 0 - violation(5, nodes[place].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(root), copy(place), copy(exclusive));
@@ -234,7 +234,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if conflict > 0 { return 0 - violation(5, nodes[place].start); }
     let target = if reference { values[root].target } else { copy(root) };
     values[destination] = CheckedValue { ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: if reference { root } else { 0 }, origin_call: shape, exclusive: exclusive };
+        loan_parent: if reference { root } else { 0 }, origin_call: shape, writable: exclusive };
     1
 }
 
@@ -255,7 +255,7 @@ fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let reference = values[holder].ty == 734;
     let exclusive = graph[initializer].mutable;
     if exclusive && (!borrow_mutable(&source[nodes[annotation].start..nodes[target].start])
-        || !(if reference { values[holder].exclusive } else { values[holder].mutable })) {
+        || !(if reference { values[holder].writable } else { values[holder].mutable })) {
         return 0 - violation(5, nodes[projection].start);
     }
     let aggregate = if reference { values[holder].target } else { copy(holder) };
@@ -281,7 +281,7 @@ fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         copy(holder), copy(projection), copy(exclusive));
     if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[projection].start) }; }
     values[destination] = CheckedValue { ty: 734, state: 1, mutable: false, target: root,
-        loan_parent: holder, origin_call: target, exclusive: exclusive };
+        loan_parent: holder, origin_call: target, writable: exclusive };
     1
 }
 
@@ -372,7 +372,7 @@ pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if declaration == 0 || declaration != verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(nominal), copy(field)) { return 0; }
     if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(field)) { return -9; }
-    if !values[binding].exclusive { return 0 - violation(5, nodes[field].start); }
+    if !values[binding].writable { return 0 - violation(5, nodes[field].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(binding), copy(field), true);
     if conflict != 0 { return if conflict > 0 { 0 - violation(5, nodes[field].start) } else { -9 }; }
@@ -386,9 +386,9 @@ pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let shape = if borrowed == 99 { graph[graph[annotation].first_child].first_child } else { 0 };
     if nodes[original].kind == 3 {
         values[root] = CheckedValue { ty: copy(borrowed), state: 1, mutable: true, target: original,
-            loan_parent: 0, origin_call: copy(shape), exclusive: true };
+            loan_parent: 0, origin_call: copy(shape), writable: true };
     }
     values[destination] = CheckedValue { ty: borrowed, state: 1, mutable: true, target: root,
-        loan_parent: binding, origin_call: shape, exclusive: true };
+        loan_parent: binding, origin_call: shape, writable: true };
     return 1;
 }

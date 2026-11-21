@@ -1,0 +1,21 @@
+//! A generic method must reject a concrete object missing the required method.
+/// Concrete contract candidate.
+struct Source {
+    value: i64
+}
+/// Concrete receiver with an independently constrained method.
+struct Manager {
+    calls: i64
+}
+impl Manager {
+    #(type: T with { fn get(&self) -> i64; })
+    fn register(&mut self, source: T) -> i64 {
+        source.get()
+    }
+}
+/// Exercises this fixture and reports its expected observations.
+fn main() {
+    let mut manager = Manager { calls: 0 };
+    let source = Source { value: 42 };
+    print(manager.register(source));
+}

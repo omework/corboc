@@ -1,0 +1,21 @@
+//! Inactive captures coexist; sequential awaits establish nonoverlapping execution.
+/// The future retains a dependency until its actual execution ends.
+async fn add(value: &mut i64) -> i64 {
+    yield;
+    *value += 1;
+    *value
+}
+/// Sequential completion needs no concurrent-access lock.
+async fn run() -> i64 {
+    let mut value: i64 = 0;
+    let first = add(&mut value);
+    let second = add(&mut value);
+    let a = first.await;
+    let b = second.await;
+    value
+}
+/// Waits for the outer future before observing its independent result.
+fn main() {
+    let execution = runtime::spawn(run());
+    match execution.join() { Ok(value) => { print(value == 2); }, Err(_error) => { print(false); }, }
+}

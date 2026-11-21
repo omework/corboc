@@ -1,0 +1,10 @@
+struct Probe { id:i64 }
+impl Probe { fn drop(&mut self){print((*self).id);} }
+enum Failure { Expected }
+fn fail()->Result<(),Failure>{Err(Failure.Expected)}
+fn run()->Result<(),Failure>{
+ let _keep=Probe{id:1};
+ fail()?;
+ Ok(())
+}
+fn main(){match run(){Ok(())=>{print(false);},Err(_error)=>{print(true);},}}

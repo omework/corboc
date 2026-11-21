@@ -1,4 +1,5 @@
 use bootstrap::process_arguments::check_text;
+use bootstrap::places::value_record;
 use bootstrap::signatures::move_slice_argument;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::scalar::pointer_integer_type;
@@ -144,7 +145,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if mode == 1 || mode == 3 {
                 let mutable = values[binding].mutable;
                 values[binding] = CheckedValue { ty: copy(ty), state: 2, mutable: mutable,
-                    target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                    target: 0, loan_parent: 0, origin_call: 0, writable: false };
             }
             return ty;
         }
@@ -161,13 +162,13 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if expected != 0 && ty != expected { return 0 - violation(1, start); }
             if mode == 1 || mode == 3 {
                 let target = values[binding].target;
-                let exclusive = values[binding].exclusive;
+                let exclusive = values[binding].writable;
                 let origin = values[binding].origin_call;
                 let result_entries = values[binding].loan_parent;
                 values[node] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-                    target: copy(target), loan_parent: copy(result_entries), origin_call: copy(origin), exclusive: copy(exclusive) };
+                    target: copy(target), loan_parent: copy(result_entries), origin_call: copy(origin), writable: copy(exclusive) };
                 values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
-                    mutable: false, target: target, loan_parent: result_entries, origin_call: origin, exclusive: exclusive };
+                    mutable: false, target: target, loan_parent: result_entries, origin_call: origin, writable: exclusive };
             }
             return ty;
         }
@@ -185,7 +186,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict > 0 { return 0 - violation(5, start); }
             if conflict < 0 || ty == 94 || ty == 95 { return -9; }
             values[binding] = CheckedValue { ty: ty, state: 3, mutable: false, target: 0,
-                loan_parent: 0, origin_call: 0, exclusive: false };
+                loan_parent: 0, origin_call: 0, writable: false };
             return 0;
         }
         if ty == 90 || (ty >= 94 && ty < 200) { return -9; }
@@ -199,9 +200,9 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let mutable = values[binding].mutable;
                 let members=values[binding].loan_parent;
                 values[node] = CheckedValue { ty: 475, state: 1, mutable: false, target: 0,
-                    loan_parent: copy(members), origin_call: copy(shape), exclusive: false };
+                    loan_parent: copy(members), origin_call: copy(shape), writable: false };
                 values[binding] = CheckedValue { ty: 475, state: 2, mutable: mutable, target: 0,
-                    loan_parent: members, origin_call: shape, exclusive: false };
+                    loan_parent: members, origin_call: shape, writable: false };
                 return 475;
             }
             if mode == 2 && (stored_loan_array(copy(ty)) || map_value(copy(ty))) { return 0 - violation(3, start); }
@@ -228,12 +229,12 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let binding_mutable = values[binding].mutable;
             if mode == 1 {
                 let member = values[binding].loan_parent;
-                let alternatives = values[binding].exclusive;
+                let alternatives = values[binding].writable;
                 values[node] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: copy(pool),
-                    loan_parent: member, origin_call: copy(constructor), exclusive: alternatives };
+                    loan_parent: member, origin_call: copy(constructor), writable: alternatives };
             }
             values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
-                mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, exclusive: false };
+                mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, writable: false };
             return if array_move { expected } else if mode == 1 { ty } else { 0 };
         }
         if values[binding].target != 0 {
@@ -245,10 +246,10 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if mode != 3 { return -9; }
             let target = values[binding].target;
             let mutable = values[binding].mutable;
-            let exclusive = values[binding].exclusive;
+            let exclusive = values[binding].writable;
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
-            values[binding] = CheckedValue { ty: ty, state: 3, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, exclusive: exclusive };
+            values[binding] = CheckedValue { ty: ty, state: 3, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
             return 0;
         }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
@@ -258,7 +259,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if expected != 0 && ty != expected { return 0 - violation(1, start); }
         if mode == 1 || mode == 3 {
             let mutable = values[binding].mutable;
-            values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 }, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+            values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 }, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false };
         }
         return ty;
     }
@@ -388,7 +389,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &mut values[0..values.len()], child, 0, 3);
         if checked < 0 { return checked; }
         values[node] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: shape, exclusive: false };
+            loan_parent: 0, origin_call: shape, writable: false };
         return 310;
     }
     if kind == 14 && child != 0 && nodes[child].kind == 7 {
@@ -562,7 +563,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(vector),copy(node),true);
             if conflict>0{return 0-violation(5,start);}if conflict<0{return -9;}
             let ty=910+primitive;if expected!=0 && expected!=ty{return 0-violation(1,start);}
-            values[node]=CheckedValue{ty:copy(ty),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,exclusive:false};return ty;
+            values[node]=CheckedValue{ty:copy(ty),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};return ty;
         }
         if handle_vector(values[vector].ty) {
             if mode != 1 { return -9; }
@@ -613,7 +614,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             } else { bind_slice(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), copy(argument), 0) };
             if operand < 0 { return operand; }
-            if operand == 0 || values[argument].ty != 744 || values[argument].exclusive { return -9; }
+            if operand == 0 || values[argument].ty != 744 || values[argument].writable { return -9; }
             if expected != 0 && expected != 3 { return 0 - violation(1, start); }
             return 3;
         }
@@ -810,7 +811,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 if expected != 0 || mode != 0 || graph[argument].next_sibling != 0 { return -9; }
                 if values[handle].state != 1 { return 0 - violation(6, start); }
                 values[handle] = CheckedValue { ty: 91, state: 2, mutable: false,
-                    target: 0, loan_parent: 0, origin_call: 0, exclusive: false };
+                    target: 0, loan_parent: 0, origin_call: 0, writable: false };
                 return 0;
             }
         }
@@ -880,7 +881,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                         let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                             &graph[0..graph.len()], copy(output));
                         if nodes[output].kind == 4 && nodes[nominal].kind == 28 && graph[output].first_child == 0
-                            && !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0) {
+                            && !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0, true) {
                             return instantiate_constructor_result(&source[0..source.len()], &nodes[0..nodes.len()],
                                 &graph[0..graph.len()], &mut values[0..values.len()], copy(node), copy(item), output, false);
                         }

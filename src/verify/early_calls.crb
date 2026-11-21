@@ -1,7 +1,7 @@
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::process_arguments::{split_callee,split_receiver};
 use bootstrap::declarations::nominal_declaration;
-use bootstrap::ownership::plain_structure;
+use bootstrap::places::value_record;
 use bootstrap::tasks::instantiate_constructor_result;
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::calls::associated_callee;
@@ -38,7 +38,7 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if checked < 0 { return checked; }
         values[node] = CheckedValue { ty: copy(expected), state: 1, mutable: false,
             target: values[argument].target, loan_parent: values[argument].loan_parent,
-            origin_call: argument, exclusive: false };
+            origin_call: argument, writable: false };
         return expected;
     }
     if kind == 15 && nodes[child].kind == 36 {
@@ -51,8 +51,8 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], copy(output));
                 if nodes[output].kind == 4 && nodes[nominal].kind == 28 && graph[output].first_child == 0
-                    && !plain_structure(&source[0..source.len()], &nodes[0..nodes.len()],
-                        &graph[0..graph.len()], copy(nominal), 0) {
+                    && !value_record(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], copy(nominal), 0, true) {
                     return instantiate_constructor_result(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], &mut values[0..values.len()], node, copy(method), output, nodes[method].kind == 35);
                 }

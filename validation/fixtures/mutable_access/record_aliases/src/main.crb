@@ -1,0 +1,16 @@
+//! Primitive fields can be mutated through coexisting record borrows.
+/// A fixed object whose field storage survives content changes.
+struct Cell { value: i64 }
+impl Cell {
+    /// Changes field contents without invalidating its storage.
+    fn increment(&mut self) { (*self).value += 1; }
+}
+/// Two mutable references can call content-only methods sequentially.
+fn main() {
+    let mut cell = Cell { value: 0 };
+    let first = &mut cell;
+    let second = &mut cell;
+    first.increment();
+    second.increment();
+    print(cell.value == 2);
+}

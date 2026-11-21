@@ -75,7 +75,7 @@ pub fn check_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], name) != nominal { return 0 - violation(1, nodes[call].start); }
     }
     values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: constructor, exclusive: false };
+        loan_parent: 0, origin_call: constructor, writable: false };
     ty
 }
 
@@ -237,7 +237,7 @@ fn conditional_pool_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict < 0 { return -9; }
             if first == 0 { first = copy(root); }
             values[argument] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: roots, exclusive: false };
+                loan_parent: 0, origin_call: roots, writable: false };
             roots = copy(argument);
         } else {
             let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -249,7 +249,7 @@ fn conditional_pool_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     }
     if argument != 0 { return 0 - violation(8, nodes[call].start); }
     values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: first,
-        loan_parent: roots, origin_call: 0, exclusive: false };
+        loan_parent: roots, origin_call: 0, writable: false };
     ty
 }
 
@@ -305,9 +305,9 @@ fn pooled_reference_constructor(source: &[u8], nodes: &[AstNode], graph: &[Stati
         return 0 - violation(4, nodes[argument].start);
     }
     values[argument] = CheckedValue { ty: 20 + scalar, state: 1, mutable: false, target: binding,
-        loan_parent: 0, origin_call: 0, exclusive: false };
+        loan_parent: 0, origin_call: 0, writable: false };
     values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: pool,
-        loan_parent: argument, origin_call: shape, exclusive: false };
+        loan_parent: argument, origin_call: shape, writable: false };
     301
 }
 
@@ -351,7 +351,7 @@ pub fn apply_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         &mut values[0..values.len()], value, 0, 3);
     if status < 0 { return status; }
     values[destination] = CheckedValue { ty: 301, state: 1, mutable: graph[destination].mutable,
-        target: pool, loan_parent: member, origin_call: shape, exclusive: false };
+        target: pool, loan_parent: member, origin_call: shape, writable: false };
     301
 }
 
@@ -417,6 +417,6 @@ fn pooled_owned_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         return 0 - violation(4, nodes[argument].start);
     }
     values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: pool,
-        loan_parent: argument, origin_call: shape, exclusive: false };
+        loan_parent: argument, origin_call: shape, writable: false };
     301
 }

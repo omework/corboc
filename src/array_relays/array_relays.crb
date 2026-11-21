@@ -118,6 +118,6 @@ pub fn apply_array_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         shape = graph[graph[body].first_child].first_child;
     }
     values[destination] = CheckedValue { ty: scalar + 490, state: 1, mutable: graph[destination].mutable,
-        target: 0, loan_parent: shape, origin_call: input, exclusive: false };
+        target: 0, loan_parent: shape, origin_call: input, writable: false };
     scalar + 490
 }

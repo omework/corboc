@@ -1,0 +1,13 @@
+//! Moving a named record into an array does not leave its old binding available.
+/// Plain record moved into a fixed array.
+struct Item {
+    value: i64
+}
+/// Exercises this fixture and reports its expected observations.
+fn main() {
+    let first = Item { value: 1 };
+    let second = Item { value: 2 };
+    let items = [first, second];
+    print(first.value);
+    print(items[0].value);
+}

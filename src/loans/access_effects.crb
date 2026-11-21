@@ -1,0 +1,892 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Separate content-access proofs and lock identities from reference permissions.
+
+use bootstrap::model::{AstNode, StaticNode, CheckedValue};
+use bootstrap::calls::{bootstrap_callee, associated_callee, lookup_record_method};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::lock_contracts::lock_parameter;
+use bootstrap::scalar::verify_primitive;
+
+/// Resolves a source-level alias without conflating its binding with its referent.
+pub fn access_root(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+    if point == 0 || depth > 64 {
+        return 0;
+    }
+    let kind = nodes[point].kind;
+    let child = graph[point].first_child;
+    if kind == 7 || kind == 57 {
+        return access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            graph[point].binding,
+            depth + 1
+        );
+    }
+    if kind == 13 || kind == 14 || kind == 17 || kind == 18 || kind == 19 || kind == 38 {
+        return access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            depth + 1
+        );
+    }
+    if kind == 5 {
+        let value = if nodes[child].kind == 4 {
+            graph[child].next_sibling
+        } else {
+            copy(child)
+        };
+        if nodes[value].kind == 13 || nodes[value].kind == 7 {
+            if graph[point].mutable {
+                let mut assignment: u64 = 1;
+                while assignment < nodes.len() as u64 {
+                    let place = graph[assignment].first_child;
+                    if nodes[assignment].kind == 21
+                        && nodes[place].kind == 7
+                        && graph[place].binding == point
+                    {
+                        return 0;
+                    }
+                    assignment += 1;
+                }
+            }
+            return access_root(
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                value,
+                depth + 1
+            );
+        }
+        return point;
+    }
+    if kind == 3 {
+        return point;
+    }
+    0
+}
+
+/// Finds a nominal receiver from its annotation, constructor or concrete return.
+fn access_nominal(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    point: u64,
+    depth: u64
+) -> u64 {
+    if point == 0 || depth > 32 {
+        return 0;
+    }
+    let kind = nodes[point].kind;
+    let child = graph[point].first_child;
+    if kind == 7 || kind == 57 {
+        return access_nominal(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            graph[point].binding,
+            depth + 1
+        );
+    }
+    if kind == 13 || kind == 14 || kind == 19 || kind == 38 {
+        return access_nominal(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            depth + 1
+        );
+    }
+    if kind == 3 || kind == 5 {
+        if kind == 3 && child == 0 && nodes[nodes[nodes[point].parent].parent].kind == 49 {
+            return nominal_declaration(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                nodes[nodes[point].parent].parent
+            );
+        }
+        if nodes[child].kind == 4 {
+            let declaration = nominal_declaration(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(child)
+            );
+            if declaration != 0 {
+                return declaration;
+            }
+            if kind == 3 {
+                return 0;
+            }
+        }
+        let value = if nodes[child].kind == 4 {
+            graph[child].next_sibling
+        } else {
+            copy(child)
+        };
+        return access_nominal(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            value,
+            depth + 1
+        );
+    }
+    if kind == 37 {
+        return nominal_declaration(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point)
+        );
+    }
+    if kind == 15 || kind == 16 {
+        let function = access_callee(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point),
+            depth + 1
+        );
+        if function == 0 {
+            return 0;
+        }
+        let mut result = graph[function].first_child;
+        while nodes[result].kind == 3 || nodes[result].kind == 58 {
+            result = graph[result].next_sibling;
+        }
+        return nominal_declaration(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(result)
+        );
+    }
+    0
+}
+
+/// Resolves actual function identities; matching a method's spelling alone is insufficient.
+fn access_callee(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    call: u64,
+    depth: u64
+) -> u64 {
+    if depth > 32 {
+        return 0;
+    }
+    if nodes[call].kind == 15 {
+        let name = graph[call].first_child;
+        if nodes[name].kind == 7 && graph[name].binding == 0 {
+            let mut function = graph[0].first_child;
+            while function != 0 {
+                if nodes[function].kind == 1 || nodes[function].kind == 35 {
+                    let expected = &source[nodes[function].name_start..nodes[function].name_end];
+                    let actual = &source[nodes[name].name_start..nodes[name].name_end];
+                    if expected.content_eq(actual) {
+                        return function;
+                    }
+                }
+                function = graph[function].next_sibling;
+            }
+        }
+        return associated_callee(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            call
+        );
+    }
+    if nodes[call].kind != 16 {
+        return 0;
+    }
+    let owner = access_nominal(
+        &source[0..source.len()],
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        graph[call].first_child,
+        depth + 1
+    );
+    if owner == 0 {
+        return 0;
+    }
+    lookup_record_method(
+        &source[0..source.len()],
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        &source[nodes[owner].name_start..nodes[owner].name_end],
+        &source[nodes[call].name_start..nodes[call].name_end],
+        true
+    )
+}
+
+/// Returns the actual argument corresponding to a formal, including method receivers.
+fn access_actual(
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    call: u64,
+    function: u64,
+    formal: u64
+) -> u64 {
+    let mut parameter = graph[function].first_child;
+    while nodes[parameter].kind == 58 {
+        parameter = graph[parameter].next_sibling;
+    }
+    let callee = graph[call].first_child;
+    let mut actual = if nodes[call].kind == 16 {
+        copy(callee)
+    } else {
+        graph[callee].next_sibling
+    };
+    while nodes[parameter].kind == 3 && actual != 0 {
+        if parameter
+        == access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(formal),
+            0
+        )
+        {
+            return actual;
+        }
+        parameter = graph[parameter].next_sibling;
+        actual = graph[actual].next_sibling;
+    }
+    0
+}
+
+/// Establishes lexical domination, rather than relying on source order alone.
+fn access_inside(nodes: &[AstNode], ancestor: u64, point: u64) -> bool {
+    let mut current = copy(point);
+    while current != 0 {
+        if current == ancestor {
+            return true;
+        }
+        current = nodes[current].parent;
+    }
+    false
+}
+
+/// Determines the lock whose explicitly retained result is alive at this access.
+fn lexical_protection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> u64 {
+    let mut function = copy(point);
+    let mut execution: u64 = 0;
+    while function != 0 && nodes[function].kind != 1 && nodes[function].kind != 35 {
+        let parent = nodes[function].parent;
+        if nodes[function].kind == 2 && nodes[parent].kind == 15 {
+            let callee = graph[parent].first_child;
+            let thread_word: [u8; 15] = [
+                114, 117, 110, 116, 105, 109, 101, 58, 58, 116, 104, 114, 101, 97, 100
+            ];
+            let name = &source[nodes[callee].start..nodes[callee].end];
+            if name.content_eq(&thread_word[..]) {
+                execution = copy(function);
+                function = 0;
+                break;
+            }
+        }
+        function = parent;
+    }
+    if function != 0 {
+        execution = copy(function);
+        let (formal, through) = lock_parameter(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(function)
+        );
+        drop(through);
+        if formal != 0 {
+            return formal;
+        }
+    }
+    let mut binding = graph[point].visible;
+    while binding != 0 {
+        if nodes[binding].kind == 5
+            && nodes[binding].end <= nodes[point].start
+            && (execution == 0
+                || access_inside(&nodes[0..nodes.len()], copy(execution), copy(binding)))
+            && access_inside(&nodes[0..nodes.len()], nodes[binding].parent, copy(point))
+        {
+            let first = graph[binding].first_child;
+            let call = if nodes[first].kind == 4 {
+                graph[first].next_sibling
+            } else {
+                copy(first)
+            };
+            let callee = access_callee(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(call),
+                0
+            );
+            if callee != 0 {
+                let (formal, through) = lock_parameter(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(callee)
+                );
+                if formal != 0 && through {
+                    // Any intervening use that might consume/release the guard defeats proof.
+                    let mut prior = binding + 1;
+                    let mut retained = true;
+                    while prior < point {
+                        if graph[prior].binding == binding && nodes[prior].kind == 7 {
+                            let parent = nodes[prior].parent;
+                            if nodes[parent].kind != 17 && nodes[parent].kind != 14 {
+                                retained = false;
+                            }
+                        }
+                        prior += 1;
+                    }
+                    if retained {
+                        let actual = access_actual(
+                            &nodes[0..nodes.len()],
+                            &graph[0..graph.len()],
+                            copy(call),
+                            copy(callee),
+                            copy(formal)
+                        );
+                        return lock_identity(
+                            &nodes[0..nodes.len()],
+                            &graph[0..graph.len()],
+                            copy(actual),
+                            0
+                        );
+                    }
+                }
+            }
+        }
+        binding = graph[binding].visible;
+    }
+    0
+}
+
+/// Primitive writes preserve their storage; aggregate replacement stays conservative.
+fn scalar_storage(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    place: u64,
+    depth: u64
+) -> bool {
+    if depth > 32 || place == 0 {
+        return false;
+    }
+    let kind = nodes[place].kind;
+    let child = graph[place].first_child;
+    if kind == 7 {
+        return scalar_storage(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            graph[place].binding,
+            depth + 1
+        );
+    }
+    if kind == 13 || kind == 14 || kind == 19 {
+        return scalar_storage(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            depth + 1
+        );
+    }
+    if kind == 3 || kind == 5 {
+        if nodes[child].kind == 4 {
+            let inner = if source[nodes[child].start] == 38 {
+                graph[child].first_child
+            } else {
+                copy(child)
+            };
+            return verify_primitive(
+                &source[0..source.len()],
+                nodes[inner].name_start,
+                nodes[inner].name_end
+            ) != 0;
+        }
+        if nodes[child].kind == 9 && source[nodes[child].start] != 34 {
+            return true;
+        }
+        return scalar_storage(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            depth + 1
+        );
+    }
+    if kind == 18 {
+        let root = access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            0
+        );
+        let mut annotation = graph[root].first_child;
+        if nodes[annotation].kind == 4 {
+            if source[nodes[annotation].start] == 38 {
+                annotation = graph[annotation].first_child;
+            }
+            if source[nodes[annotation].start] == 91 {
+                let element = graph[annotation].first_child;
+                return verify_primitive(
+                    &source[0..source.len()],
+                    nodes[element].name_start,
+                    nodes[element].name_end
+                ) != 0;
+            }
+        }
+    }
+    if kind == 17 {
+        let owner = access_nominal(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            0
+        );
+        let mut field = graph[owner].first_child;
+        while field != 0 {
+            let name = &source[nodes[field].name_start..nodes[field].name_end];
+            let wanted = &source[nodes[place].name_start..nodes[place].name_end];
+            if name.content_eq(wanted) {
+                let annotation = graph[field].first_child;
+                return verify_primitive(
+                    &source[0..source.len()],
+                    nodes[annotation].name_start,
+                    nodes[annotation].name_end
+                ) != 0;
+            }
+            field = graph[field].next_sibling;
+        }
+    }
+    0 == 1
+}
+
+/// Pure library primitives do not invalidate the prepared places of another argument.
+fn simple_access_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+    let callee = graph[call].first_child;
+    let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
+    if nodes[callee].kind != 7 || graph[callee].binding != 0 {
+        return false;
+    }
+    let print_word: [u8; 5] = [112, 114, 105, 110, 116];
+    let copy_word: [u8; 4] = [99, 111, 112, 121];
+    spelling.content_eq(&print_word[..]) || spelling.content_eq(&copy_word[..])
+}
+
+/// Summarizes a formal's effects and the lock consistently protecting its uses.
+fn summarize_access(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    function: u64,
+    formal: u64
+) -> (i64, u64) {
+    let mut mode: i64 = 1;
+    let mut lock: u64 = 0;
+    let mut seen = false;
+    let mut point = function + 1;
+    while point < nodes.len() as u64 && nodes[point].start < nodes[function].end {
+        if nodes[point].kind == 7
+            && access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point),
+            0
+        ) == access_root(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(formal),
+            0
+        )
+        {
+            let mut operation = copy(point);
+            while nodes[nodes[operation].parent].kind == 13
+                || nodes[nodes[operation].parent].kind == 14
+                || nodes[nodes[operation].parent].kind == 17
+                || nodes[nodes[operation].parent].kind == 18
+                || nodes[nodes[operation].parent].kind == 19
+            {
+                operation = nodes[operation].parent;
+            }
+            let parent = nodes[operation].parent;
+            let mut protection = graph[point].protection;
+            if nodes[parent].kind == 15 || nodes[parent].kind == 16 {
+                let callee = access_callee(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(parent),
+                    0
+                );
+                if callee != 0 {
+                    let mut parameter = graph[callee].first_child;
+                    while nodes[parameter].kind == 58 {
+                        parameter = graph[parameter].next_sibling;
+                    }
+                    let mut found = false;
+                    while nodes[parameter].kind == 3 {
+                        let actual = access_actual(
+                            &nodes[0..nodes.len()],
+                            &graph[0..graph.len()],
+                            copy(parent),
+                            copy(callee),
+                            copy(parameter)
+                        );
+                        if actual == operation {
+                            found = true;
+                            if graph[parameter].access_mode != 1 {
+                                mode = 0;
+                            }
+                            let protected = graph[parameter].protection;
+                            if protected != 0 && protected != 18446744073709551615 {
+                                protection = lock_identity(
+                                    &nodes[0..nodes.len()],
+                                    &graph[0..graph.len()],
+                                    access_actual(
+                                        &nodes[0..nodes.len()],
+                                        &graph[0..graph.len()],
+                                        copy(parent),
+                                        copy(callee),
+                                        copy(protected)
+                                    ),
+                                    0
+                                );
+                            }
+                        }
+                        parameter = graph[parameter].next_sibling;
+                    }
+                    if !found {
+                        mode = 0;
+                    }
+                } else if !simple_access_call(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(parent)
+                ) {
+                    mode = 0;
+                }
+            } else if nodes[parent].kind == 21 && graph[parent].first_child == operation {
+                if !scalar_storage(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(operation),
+                    0
+                ) {
+                    mode = 0;
+                }
+            }
+            // A reference-construction or named move is not itself a referent access.
+            if (nodes[operation].kind != 13 || nodes[parent].kind == 15 || nodes[parent].kind == 16)
+                && nodes[point].kind != 57
+            {
+                if !seen {
+                    lock = protection;
+                    seen = true;
+                } else if lock != protection {
+                    lock = 18446744073709551615;
+                }
+            }
+        }
+        point += 1;
+    }
+    (mode, if seen { lock } else { 0 })
+}
+
+/// Adds reusable permission/effect and lock facts after lexical resolution.
+pub fn prepare_accesses(source: &[u8], nodes: &[AstNode], graph: &mut [StaticNode]) {
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        let protection = lexical_protection(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point)
+        );
+        let slot = &mut graph[point].protection;
+        *slot = protection;
+        point += 1;
+    }
+    // Facts only become established after callee facts are established. Recursive
+    // unresolved effects remain conservative instead of being assumed content-only.
+    let mut pass: u64 = 0;
+    let mut changed = true;
+    while changed && pass < 32 {
+        changed = false;
+        point = 1;
+        while point < nodes.len() as u64 {
+            if nodes[point].kind == 3 {
+                let function = nodes[point].parent;
+                if nodes[function].kind == 1 || nodes[function].kind == 35 {
+                    let (mode, lock) = summarize_access(
+                        &source[0..source.len()],
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(function),
+                        copy(point)
+                    );
+                    if graph[point].access_mode != mode || graph[point].protection != lock {
+                        let slot = &mut graph[point].access_mode;
+                        *slot = mode;
+                        let slot = &mut graph[point].protection;
+                        *slot = lock;
+                        changed = true;
+                    }
+                }
+            }
+            point += 1;
+        }
+        pass += 1;
+    }
+    point = 1;
+    while point < nodes.len() as u64 {
+        let child = graph[point].first_child;
+        if nodes[point].kind == 13
+            || (nodes[point].kind == 5 && nodes[child].kind == 13)
+            || (nodes[point].kind == 5
+                && nodes[child].kind == 4
+                && nodes[graph[child].next_sibling].kind == 13)
+            || ((nodes[point].kind == 14 || nodes[point].kind == 17 || nodes[point].kind == 18)
+                && scalar_storage(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(point),
+                0
+        ))
+            || (nodes[point].kind == 21
+                && scalar_storage(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(child),
+                0
+        ))
+        {
+            let mode = &mut graph[point].access_mode;
+            *mode = 1;
+        }
+        if nodes[point].kind == 15 || nodes[point].kind == 16 {
+            let function = access_callee(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(point),
+                0
+            );
+            if function != 0 {
+                let mut parameter = graph[function].first_child;
+                while nodes[parameter].kind == 58 {
+                    parameter = graph[parameter].next_sibling;
+                }
+                while nodes[parameter].kind == 3 {
+                    let actual = access_actual(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(point),
+                        copy(function),
+                        copy(parameter)
+                    );
+                    if actual != 0 {
+                        let mode = graph[parameter].access_mode;
+                        let protected = graph[parameter].protection;
+                        let mut lock = graph[actual].protection;
+                        if protected != 0 && protected != 18446744073709551615 {
+                            let protecting_argument = access_actual(
+                                &nodes[0..nodes.len()],
+                                &graph[0..graph.len()],
+                                copy(point),
+                                copy(function),
+                                protected
+                            );
+                            lock = lock_identity(
+                                &nodes[0..nodes.len()],
+                                &graph[0..graph.len()],
+                                protecting_argument,
+                                0
+                            );
+                        }
+                        let slot = &mut graph[actual].access_mode;
+                        *slot = mode;
+                        let slot = &mut graph[actual].protection;
+                        *slot = lock;
+                    }
+                    parameter = graph[parameter].next_sibling;
+                }
+            }
+        }
+        point += 1;
+    }
+    point = 1;
+    while point < nodes.len() as u64 {
+        if nodes[point].kind == 57 {
+            let block = nodes[point].parent;
+            let (mode, lock) = summarize_access(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                block,
+                copy(point)
+            );
+            let slot = &mut graph[point].access_mode;
+            *slot = mode;
+            let slot = &mut graph[point].protection;
+            *slot = lock;
+        }
+        point += 1;
+    }
+}
+
+/// Resolves a checked reference's storage identity without following allocation pool edges.
+pub fn checked_access_root(values: &[CheckedValue], reference: u64, depth: u64) -> u64 {
+    if reference == 0 || depth > 64 {
+        return 0;
+    }
+    let ty = values[reference].ty;
+    let target = values[reference].target;
+    if target != 0
+        && target != reference
+        && ((ty >= 0 && ty < 10)
+            || (ty > 20 && ty < 60)
+            || ty == 734
+            || (ty >= 741 && ty <= 749)
+            || (ty > 1900 && ty < 1940))
+    {
+        return checked_access_root(&values[0..values.len()], target, depth + 1);
+    }
+    reference
+}
+
+/// Establishes one protecting lock for every matching capture of this live branch.
+pub fn protected_overlap(
+    values: &[CheckedValue],
+    graph: &[StaticNode],
+    branch: u64,
+    target: u64,
+    point: u64
+) -> bool {
+    let lock = graph[point].protection;
+    if lock == 0 || lock == 18446744073709551615 {
+        return false;
+    }
+    let mut capture = values[branch].origin_call;
+    let mut found = false;
+    let mut fuel: u64 = 0;
+    while capture != 0 && fuel < 128 {
+        if capture >= graph.len() as u64 {
+            return false;
+        }
+        let actual = checked_access_root(&values[0..values.len()], values[capture].target, 0);
+        if actual == checked_access_root(&values[0..values.len()], copy(target), 0) {
+            if graph[capture].access_mode != 1 || graph[capture].protection != lock {
+                return false;
+            }
+            found = true;
+        }
+        capture = values[capture].origin_call;
+        fuel += 1;
+    }
+    found && capture == 0
+}
+
+/// Borrow preparation contains no hidden call that could invalidate an earlier argument.
+pub fn reference_preparation(
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    point: u64,
+    depth: u64
+) -> bool {
+    if point == 0 || depth > 64 {
+        return false;
+    }
+    let kind = nodes[point].kind;
+    if kind != 7
+        && kind != 9
+        && kind != 11
+        && kind != 12
+        && kind != 13
+        && kind != 14
+        && kind != 17
+        && kind != 18
+        && kind != 19
+        && kind != 46
+    {
+        return false;
+    }
+    let mut child = graph[point].first_child;
+    while child != 0 {
+        if !reference_preparation(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            copy(depth) + 1
+        ) {
+            return false;
+        }
+        child = graph[child].next_sibling;
+    }
+    true
+}
+
+/// Lock equality requires an exact object identity, not merely overlapping storage.
+/// Projected/unknown identities remain unproven until their path can be instantiated.
+fn lock_identity(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+    if point == 0 || depth > 64 {
+        return 0;
+    }
+    let kind = nodes[point].kind;
+    let child = graph[point].first_child;
+    if kind == 7 || kind == 57 {
+        return lock_identity(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            graph[point].binding,
+            depth + 1
+        );
+    }
+    if kind == 13 || kind == 14 || kind == 19 {
+        return lock_identity(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            child,
+            depth + 1
+        );
+    }
+    if kind == 5 {
+        let value = if nodes[child].kind == 4 {
+            graph[child].next_sibling
+        } else {
+            copy(child)
+        };
+        if nodes[value].kind == 13 || nodes[value].kind == 7 {
+            if access_root(
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(point),
+                0
+            ) == 0
+            {
+                return 0;
+            }
+            return lock_identity(
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                value,
+                depth + 1
+            );
+        }
+        return point;
+    }
+    if kind == 3 {
+        return point;
+    }
+    0
+}

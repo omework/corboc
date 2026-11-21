@@ -1,0 +1,48 @@
+[
+  {
+    "case": "contract_method",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42",
+      "1"
+    ]
+  },
+  {
+    "case": "owned_fixed_fields",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true",
+      "true"
+    ]
+  },
+  {
+    "case": "disjoint_buffers",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "propagation_binding_cleanup",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "1",
+      "true"
+    ]
+  },
+  {
+    "case": "reject_contract_method",
+    "status": "rejected",
+    "exit": 8
+  },
+  {
+    "case": "reject_aliased_buffers",
+    "status": "rejected",
+    "exit": 9
+  },
+  {
+    "case": "reject_array_move_reuse",
+    "status": "rejected",
+    "exit": 8
+  }
+]
