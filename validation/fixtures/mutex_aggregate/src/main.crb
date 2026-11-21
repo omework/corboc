@@ -1,5 +1,5 @@
-use std::Mutex;
-use std::asyn::Mutex as AsyncMutex;
+use std::sync::Mutex;
+use std::sync::asyn::Mutex as AsyncMutex;
 
 struct Counter { value: i64 }
 

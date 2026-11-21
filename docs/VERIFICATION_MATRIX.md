@@ -1,3 +1,11 @@
+## Mutex API namespaces
+
+- [x] Move Mutex/MutexGuard to `std::sync` and `std::sync::asyn`.
+- [x] Update private compiler bindings, docs and examples.
+- [x] Run three fatal-UBSan programs and ten existing refusal checks.
+
+[Evidence](MUTEX_NAMESPACE_CYCLE.md). Runtime unchanged; platform results retained.
+
 ## Synchronous defaults / shared-reference mutexes
 
 | Rules / mechanism | Executed evidence | Limits |

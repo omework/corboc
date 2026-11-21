@@ -1,4 +1,4 @@
-use std::Mutex;
+use std::sync::Mutex;
 
 async fn operation() -> i64 {
     let mutex = Mutex::new(0);

@@ -1,4 +1,4 @@
-use std::Mutex;
+use std::sync::Mutex;
 
 // Implementing a public type does not grant the STD file's private access.
 impl Mutex<T> {

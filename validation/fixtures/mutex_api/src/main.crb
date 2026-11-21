@@ -1,5 +1,5 @@
-use std::Mutex;
-use std::asyn::Mutex as AsyncMutex;
+use std::sync::Mutex;
+use std::sync::asyn::Mutex as AsyncMutex;
 
 async fn async_value() -> i64 {
     let mutex = AsyncMutex::new(10);

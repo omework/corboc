@@ -422,10 +422,11 @@ fn private_layout(module: &[u8], name: &[u8]) -> bool {
     let root: [u8;3] = [115,116,100];
     let bounded: [u8;13] = [66,111,117,110,100,101,100,83,116,114,105,110,103];
     if module.content_eq(&root[..]) && name.content_eq(&bounded[..]) { return true; }
-    let asyn_module: [u8;9] = [115,116,100,58,58,97,115,121,110];
+    let sync_module: [u8;9] = [115,116,100,58,58,115,121,110,99];
+    let asyn_module: [u8;15] = [115,116,100,58,58,115,121,110,99,58,58,97,115,121,110];
     let mutex_name: [u8;5] = [77,117,116,101,120];
     let guard_name: [u8;10] = [77,117,116,101,120,71,117,97,114,100];
-    if (module.content_eq(&root[..]) || module.content_eq(&asyn_module[..]))
+    if (module.content_eq(&sync_module[..]) || module.content_eq(&asyn_module[..]))
         && (name.content_eq(&mutex_name[..]) || name.content_eq(&guard_name[..])) { return true; }
     let time: [u8;9] = [115,116,100,58,58,116,105,109,101];
     let async_time: [u8; 15] = [115,116,100,58,58,116,105,109,101,58,58,97,115,121,110];
@@ -713,7 +714,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 if nodes[target].name_start == cursor as u64 && files[file].package == 64 {
                     let module = &names[files[file].module_start..files[file].module_end];
                     let name = &source[nodes[target].name_start..nodes[target].name_end];
-                    let mutex_module: [u8;9] = [115,116,100,58,58,97,115,121,110];
+                    let mutex_module: [u8;15] = [115,116,100,58,58,115,121,110,99,58,58,97,115,121,110];
                     let wait_name: [u8;18] = [109,117,116,101,120,95,119,97,105,116,95,98,105,110,100,105,110,103];
                     if module.content_eq(&mutex_module[..]) && name.content_eq(&wait_name[..]) {
                         if layout_count == visibility.len() { return (4,0,0); }
