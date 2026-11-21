@@ -882,7 +882,7 @@ fn emit_destructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 &context, body, false, copy(emit)) { return false; }
             if emit {
                 character(100); number(if constructor == 0 { copy(nominal) } else { copy(constructor) }); character(58); character(59); character(10);
-                let reset: [u8; 18] = [99,117,114,115,111,114,61,100,114,111,112,95,109,97,114,107,59,10];
+                let reset: [u8; 26] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,100,114,111,112,95,109,97,114,107,41,59,10];
                 byte_text(&reset[..]);
                 character(125); character(10);
             }
@@ -2003,9 +2003,9 @@ fn emit_block_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let leave: [u8; 19] = [114, 101, 103, 105, 111, 110, 95, 114, 101, 115, 116, 111, 114, 101, 40, 98, 97, 110, 100];
         byte_text(&leave[..]);
         number(copy(block)); character(41); character(59); character(10);
-        let rewind: [u8; 10] = [99, 117, 114, 115, 111, 114, 61, 109, 97, 114];
+        let rewind: [u8; 17] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114];
         if rewind_cursor {
-            byte_text(&rewind[..]); number(copy(block)); character(59); character(10);
+            byte_text(&rewind[..]); number(copy(block)); character(41); character(59); character(10);
         }
         let used: [u8; 9] = [40,118,111,105,100,41,109,97,114];
         byte_text(&used[..]); number(block); character(59); character(10);

@@ -2045,7 +2045,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                     drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
                         copy(statement), copy(target), false, copy(storage));
                 }
-                if storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(copy(target)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                if storage { { let code: [u8;18] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114,107]; byte_text(&code[..]); } number(copy(target)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); } }
                 let force = forced_reclaim(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     copy(statement), copy(target));
                 if storage || force { reclaim_scope(force); }
@@ -2092,7 +2092,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                         drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
                             copy(statement), if function != 0 { function } else { copy(root) }, true, copy(storage));
                         unwind_regions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(statement), copy(root));
-                        if storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(root); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                        if storage { { let code: [u8;18] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114,107]; byte_text(&code[..]); } number(root); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); } }
                     }
                     if (*ctx).poll_body != 0 && (kind == 6 || (body == (*ctx).poll_body && slot == 0)) {
                         if want != ty || ty <= 0 { return -1; }
@@ -2122,7 +2122,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
         }
         statement = graph[statement].next_sibling;
     }
-    if emit && storage { { let code: [u8;11] = [99,117,114,115,111,114,61,109,97,114,107]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+    if emit && storage { { let code: [u8;18] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114,107]; byte_text(&code[..]); } number(copy(body)); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); } }
     if emit && (storage || regional || release_pages) { reclaim_scope(release_pages); }
     if emit && regional { exit_region(body); }
     result

@@ -15,7 +15,7 @@ OUTPUT = ROOT / 'src/runtime_sources/runtime_sources.crb'
 SOURCES = (
     ('c_runtime_header', '', ('corbo_runtime.h',)),
     ('c_runtime_api', '', ('runtime_api.c.inc',)),
-    ('base_runtime', '', ('memory/datastack.c.inc', 'collections/vector.c.inc',
+    ('base_runtime', '', ('memory/metrics_storage.h', 'memory/datastack.c.inc', 'collections/vector.c.inc',
                           'memory/region_release.c.inc')),
     ('task_runtime', '', ('async/scheduler.c.inc',)),
     ('pool_runtime', '', ('memory/pools.c.inc', 'collections/vector_owned.c.inc')),

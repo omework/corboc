@@ -53,7 +53,7 @@ fn lower_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mu
         drop_visible(&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(node),function,true,(*ctx).storage);
         if (*ctx).poll_body==0 {
             unwind_regions(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node),copy(root));
-            if (*ctx).storage{{let code:[u8;11]=[99,117,114,115,111,114,61,109,97,114,107];byte_text(&code[..]);}number(root);{let code:[u8;2]=[59,10];byte_text(&code[..]);}}
+            if (*ctx).storage{{let code:[u8;18]=[109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114,107];byte_text(&code[..]);}number(root);{let code:[u8;3]=[41,59,10];byte_text(&code[..]);}}
             {let code:[u8;24]=[114,101,116,117,114,110,32,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;2]=[59,10];byte_text(&code[..]);}
         }else{
             {let code:[u8;67]=[102,114,97,109,101,45,62,115,116,97,116,101,46,112,97,121,108,111,97,100,61,38,102,114,97,109,101,45,62,114,101,115,117,108,116,59,102,114,97,109,101,45,62,114,101,115,117,108,116,61,112,114,111,112,97,103,97,116,105,111,110,95,101,114,114,111,114];byte_text(&code[..]);}number(copy(node));{let code:[u8;14]=[59,114,101,116,117,114,110,32,116,114,117,101,59,10];byte_text(&code[..]);}

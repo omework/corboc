@@ -81,7 +81,13 @@ fn walk(path: &[u8], module_start: usize, module_end: usize, source: &mut [u8],
             if prefix == 0 || names.len() - prefix < 2 + length { error = 4; break; }
             names[prefix] = 58;
             names[prefix + 1] = 58;
-            let used = append(&mut names[0..names.len()], prefix + 2, &entry[..length]);
+            let mut used = append(&mut names[0..names.len()], prefix + 2, &entry[..length]);
+            let runtime_name: [u8;7] = [114,117,110,116,105,109,101];
+            let entry_name = &entry[..length];
+            if package == 64 && width == 3 && names[module_start] == 115
+                && entry_name.content_eq(&runtime_name[..]) {
+                used = append(&mut names[0..names.len()], copy(start), &runtime_name[..]);
+            }
             let nested = walk(&next[..full + 1], start, copy(used), &mut source[0..source.len()],
                 &mut names[0..names.len()], &mut files[0..files.len()], copy(source_end), copy(used), copy(files_end), copy(package));
             source_end = nested.source_end as usize;

@@ -239,3 +239,16 @@ naming a type Mutex.
 
 See [the cycle report](THREAD_TRANSFER_CYCLE.md). The Rust frontend and installed
 release remain unchanged; the development compiler is `build/thread-transfer/corboc`.
+
+## Runtime memory metrics API
+
+- [x] Load the STD-supplied `runtime::metrics` namespace with ordinary module resolution.
+- [x] Preserve bookkeeping when emitted code rewinds fixed datastack cursors.
+- [x] Regenerate the Corbo runtime bridge from readable source, including ABI version 2.
+- [x] Execute eight API observations and C/Corbo concurrent ABI witnesses with fatal UBSan.
+- [x] Execute the API on macOS ARM64/x86-64, Linux x86-64 and Windows x86-64; Windows ARM64 compile-only.
+- [x] Regenerate source documentation and record the sampling/managed-storage boundaries.
+
+Development compiler: `build/memory-metrics/corboc`. The installed release
+remains unchanged. The STD/runtime source lock now pins the
+committed metrics implementation. [Integration report](MEMORY_METRICS_CYCLE.md).

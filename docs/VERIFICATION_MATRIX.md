@@ -195,3 +195,12 @@ invalid packages reject before code generation. Existing object-lock checks pass
 (six executions, ten refusals). This analysis change introduces no platform ABI or
 runtime modification; platform suites were not replayed. Windows ARM64 execution
 remains deferred. [Report and limits](THREAD_TRANSFER_CYCLE.md).
+
+## Runtime metrics — API and emission integration
+
+Ordinary namespace loading plus runtime cursor hooks; no new language rule or
+privileged MemoryStats type. Eight native API observations pass, alongside C and
+Corbo ABI witnesses with three concurrent allocators/read sampling. Fatal UBSan
+is enabled on host tests. Target API execution: macOS ARM64/x86-64, Linux x86-64,
+Windows x86-64 under Wine; Windows ARM64 compile-only. Independent fields are
+samples of adjacent instants, not a transactional snapshot. [Report](MEMORY_METRICS_CYCLE.md).
