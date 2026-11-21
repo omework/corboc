@@ -211,3 +211,8 @@ for explicit asynchronous operations. The former `::sync` paths are removed.
 release through scope-owned guards. These use ordinary lock/transfer contracts;
 Mutex names are not compiler synchronization markers.
 See the [STD API convention](https://github.com/omework/corbo-lang/blob/main/docs/ASYNC_API.md).
+
+`std::io::File` and `std::io::asyn::File` also provide shared-receiver
+`read_at(buffer, offset)` and `write_at(buffer, offset)` without changing the
+sequential cursor. See the pinned STD's File guide for mode/range restrictions
+and Windows companion-handle/event resource costs.

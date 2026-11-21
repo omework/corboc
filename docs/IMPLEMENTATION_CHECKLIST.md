@@ -1,3 +1,12 @@
+## Positioned File API integration
+
+- [x] Advance STD pin to the committed read_at/write_at implementation.
+- [x] Existing corboc accepts sync/async API and refuses owner destruction with a pending read.
+- [x] Record platform witnesses and Windows resource cleanup; ARM64 execution deferred.
+- [x] Extend test-only target-emitter tooling with the ARM64 selector.
+
+[Evidence](FILE_POSITIONED_CYCLE.md). No compiler/core implementation changes.
+
 ## Package check/watch CLI
 
 - [x] Share package resolution and verifier-only mode; no code generation.

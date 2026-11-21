@@ -7,6 +7,7 @@ from corbo_sources import source_root
 import argparse,subprocess
 parser=argparse.ArgumentParser(description="Build a host-running, test-only target emitter; this is not a native target compiler binary.")
 parser.add_argument('--target',choices=['linux','macos','windows'],required=True)
+parser.add_argument('--arch',choices=['x86_64','aarch64'],default='x86_64')
 parser.add_argument('--keep',type=Path,required=True)
 parser.add_argument('--seed',type=Path,required=True)
 args=parser.parse_args();repo=Path(__file__).resolve().parents[1]
@@ -22,11 +23,12 @@ def body(path,name,new):
   s=s[:a]+' '+new+' '+s[b-1:];pos=a+len(new)+2
  path.write_text(s)
 os={'linux':4,'windows':2,'macos':3}[target];main=out/'src/main.crb'
-for name,val in [('target_os',os),('target_family',2 if target=='windows' else 1),('target_arch',6),('target_pointer_width',8)]:body(main,name,str(val))
+for name,val in [('target_os',os),('target_family',2 if target=='windows' else 1),('target_arch',5 if args.arch=='aarch64' else 6),('target_pointer_width',8)]:body(main,name,str(val))
 asm=out/'src/lowering_asm/lowering_asm.crb'
-for name,val in [('arm_target',False),('darwin_target',target=='macos'),('windows_target',target=='windows')]:body(asm,name,str(val).lower())
+for name,val in [('arm_target',args.arch=='aarch64'),('darwin_target',target=='macos'),('windows_target',target=='windows')]:body(asm,name,str(val).lower())
 checks=out/'src/native_checks/native_checks.crb'
-for name in ['valid_register','has_register_class']:body(checks,name,'true')
+if args.arch=='x86_64':
+ for name in ['valid_register','has_register_class']:body(checks,name,'true')
 generated=args.keep/('emitter-'+target+'.c');binary=args.keep/('emitter-'+target)
 with generated.open('wb')as output:
  subprocess.run([args.seed.resolve(),'--emit-package-c',out,'--stdlib-dir',corbo/'stdlib/src'],stdout=output,check=True,timeout=120)
