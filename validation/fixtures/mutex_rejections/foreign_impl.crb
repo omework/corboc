@@ -1,0 +1,11 @@
+use std::Mutex;
+
+// Implementing a public type does not grant the STD file's private access.
+impl Mutex<T> {
+    fn peek(&self) -> usize { (*self).raw }
+}
+
+fn main() {
+    let mutex = Mutex::new(0);
+    print(mutex.peek());
+}

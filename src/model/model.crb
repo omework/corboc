@@ -35,6 +35,8 @@ pub struct StaticNode {
     field_name: u64,
     private_start: u64,
     private_end: u64,
+    /// Original package-file identity retained across generic specialization.
+    private_origin: u64,
     /// Proven content-only access/parameter effect; zero is conservative.
     access_mode: i64,
     /// Canonical lock identity protecting this access or retained capture.
@@ -47,6 +49,8 @@ pub struct LayoutVisibility {
     name: u64,
     start: u64,
     end: u64,
+    /// Original package-file identity; zero means no private source origin.
+    origin: u64,
 }
 
 

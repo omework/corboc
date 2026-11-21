@@ -228,7 +228,7 @@ fn relocate(visibility: &[LayoutVisibility], output: &mut [LayoutVisibility], of
             if state[3] == output.len() as u64 { state[2] = 4; return; }
             output[state[3]] = LayoutVisibility { kind: visibility[i].kind, name: offsets[visibility[i].name],
                 start: if visibility[i].start == 0 { 0 } else { offsets[visibility[i].start] },
-                end: if visibility[i].end == 0 { 0 } else { offsets[visibility[i].end] } };
+                end: if visibility[i].end == 0 { 0 } else { offsets[visibility[i].end] }, origin: visibility[i].origin };
             state[3] += 1;
         }
         i += 1;

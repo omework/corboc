@@ -1,3 +1,4 @@
+use bootstrap::native_checks::unchecked_ancestor;
 use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::regional_calls::region_signature;
 use bootstrap::declarations::{layout_visible, verification_field};
@@ -116,7 +117,8 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         let reborrow = values[from].ty == 734;
         target = if reborrow { values[from].target } else { copy(from) };
         if reborrow { parent = copy(from); }
-        if exclusive && !(if reborrow { values[from].writable } else { values[from].mutable }) {
+        if exclusive && !(if reborrow { values[from].writable } else { values[from].mutable })
+            && unchecked_ancestor(&nodes[0..nodes.len()], copy(input)) == 0 {
             return 0 - violation(5, nodes[input].start);
         }
     } else { return 0 - violation(1, nodes[input].start); }
@@ -227,7 +229,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let exclusive = graph[initializer].mutable;
     let reference = values[root].ty == 734;
     let writable = if reference { values[root].writable } else { values[root].mutable };
-    if exclusive && !writable { return 0 - violation(5, nodes[place].start); }
+    if exclusive && !writable && unchecked_ancestor(&nodes[0..nodes.len()], copy(place)) == 0 { return 0 - violation(5, nodes[place].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(root), copy(place), copy(exclusive));
     if conflict < 0 { return -9; }
@@ -251,7 +253,7 @@ fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let target = record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         copy(annotation), false);
     if target == 0 { return 0; }
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], declaration, copy(projection)) { return -9; }
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], declaration, copy(projection)) { return -9; }
     let reference = values[holder].ty == 734;
     let exclusive = graph[initializer].mutable;
     if exclusive && (!borrow_mutable(&source[nodes[annotation].start..nodes[target].start])
@@ -371,7 +373,7 @@ pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let declaration = record_pool_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal));
     if declaration == 0 || declaration != verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(nominal), copy(field)) { return 0; }
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(field)) { return -9; }
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(field)) { return -9; }
     if !values[binding].writable { return 0 - violation(5, nodes[field].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(binding), copy(field), true);

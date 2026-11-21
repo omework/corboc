@@ -1,0 +1,9 @@
+use std::Mutex;
+
+fn main() {
+    let mutex = Mutex::new(0);
+    let first = mutex.lock();
+    let second = mutex.lock(); // Re-entry while first still retains the lock.
+    drop(second);
+    drop(first);
+}

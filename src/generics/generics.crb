@@ -500,7 +500,7 @@ fn iterator_collect_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 
 fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], instance: &Instance,
     id: u64, part: u64, types: &[ConcreteType], dependencies: &[Dependency],
-    output: &mut [u8], start: usize) -> usize {
+    output: &mut [u8], origins: &mut [u64], start: usize) -> usize {
     let collector = iterator_collect_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(part));
     let mut token = token_at(&tokens[0..tokens.len()], nodes[part].start);
     let mut cursor = nodes[part].start;
@@ -565,6 +565,13 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
                 written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], dependencies[dependency].template,
                     dependencies[dependency].instance, &mut output[0..output.len()], written);
             } else if owner {
+                if nodes[part].kind == 49 && tokens[token].start == nodes[part].name_start {
+                    let count = origins[0];
+                    if count * 2 + 2 >= origins.len() as u64 { return output.len(); }
+                    origins[count * 2 + 1] = written as u64;
+                    origins[count * 2 + 2] = nodes[part].name_start;
+                    origins[0] = count + 1;
+                }
                 written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], (*instance).template, copy(id), &mut output[0..output.len()], written);
             } else {
                 written = write_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &types[id * 32 + parameter], &mut output[0..output.len()], written);
@@ -682,7 +689,7 @@ fn matched_instance(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 }
 
 pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    output: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) -> (i32, u64) {
     let mut instances: [Instance; 4096] = [Instance { template: 0, count: 0 }; 4096];
     let mut stored_types: [ConcreteType; 131072] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 131072];
     let mut count: u64 = 0;
@@ -1010,12 +1017,12 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     while instance < count {
         let template = instances[instance].template;
         written = put(&mut output[0..output.len()], written, &newline[..]);
-        written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(template), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], written);
+        written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(template), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
         let mut part = graph[0].first_child;
         while part != 0 {
             if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(part)) {
                 written = put(&mut output[0..output.len()], written, &newline[..]);
-                written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(part), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], written);
+                written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(part), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
             }
             part = graph[part].next_sibling;
         }
@@ -1177,8 +1184,9 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if at == nodes[template].start {
             let mut instance: u64 = 0;
             while instance < count {
+                let mut origins: [u64; 1] = [0];
                 written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
-                    &instances[instance], copy(instance), copy(template), &stored[..], &empty[0..0], &mut output[0..output.len()], written);
+                    &instances[instance], copy(instance), copy(template), &stored[..], &empty[0..0], &mut output[0..output.len()], &mut origins[..], written);
                 instance += 1;
             }
             while at < nodes[template].end { offsets[at] = written as u64; at += 1; }

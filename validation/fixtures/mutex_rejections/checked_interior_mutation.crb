@@ -1,0 +1,13 @@
+struct Cell { value: i64 }
+
+impl Cell {
+    fn view(&self) -> &mut i64 {
+        &mut (*self).value // No trusted interior-mutation block.
+    }
+}
+
+fn main() {
+    let cell = Cell { value: 0 };
+    let view = cell.view();
+    *view = 42;
+}

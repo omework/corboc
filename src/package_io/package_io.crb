@@ -1,4 +1,4 @@
-use std::io::sync::{File};
+use std::io::{File};
 use std::io::{FileMode};
 
 // Paths supplied to this layer include their terminating zero.

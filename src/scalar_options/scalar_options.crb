@@ -212,7 +212,7 @@ pub fn shared_field_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     if nodes[base].kind != 14 || graph[graph[base].first_child].binding != binding { return 0; }
     if !record_with_shared_fields(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(layout)) { return 0; }
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), copy(projection)) { return 0; }
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), copy(projection)) { return 0; }
     let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], layout, projection);
     if field == 0 || scalar_reference_annotation(&source[0..source.len()],

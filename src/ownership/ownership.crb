@@ -17,7 +17,7 @@ fn has_nominal_default(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if depth >= 64 || graph[annotation].first_child != 0 { return false; }
     if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 0 { return true; }
     let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
-    if nodes[nominal].kind != 28 || !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(access)) { return false; }
+    if nodes[nominal].kind != 28 || !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(access)) { return false; }
     let mut field = graph[nominal].first_child;
     while field != 0 {
         if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) { return false; }
@@ -158,7 +158,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
                 &graph[0..graph.len()], copy(argument));
             if actual != declaration { return 0 - violation(1, start); }
         }
-        if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
+        if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
             return 0 - private_layout_violation(start);
         }
         let mut constructor = if fields { copy(initializer) } else { copy(argument) };
@@ -316,7 +316,7 @@ fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], initializer: u64, first_field: u64, destination: u64, declaration: u64, defaults: bool) -> i64 {
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
         return 0 - private_layout_violation(nodes[initializer].start);
     }
     let mut field: u64 = 0;

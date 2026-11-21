@@ -1,3 +1,4 @@
+use bootstrap::loans::disjoint_fields;
 use bootstrap::process_arguments::{shared_text_annotation, check_text};
 use bootstrap::regional_calls::region_signature;
 use bootstrap::value_dependencies::{scope_contains};
@@ -420,7 +421,8 @@ pub fn record_loan_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     while previous != 0 && previous != field {
         let earlier = values[previous].ty;
         if earlier > 20 && earlier < 60 && values[previous].target == root
-            && (exclusive || values[previous].writable) {
+            && (exclusive || values[previous].writable)
+            && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(expression), graph[previous].first_child) {
             return 0 - violation(5, nodes[expression].start);
         }
         previous = graph[previous].next_sibling;
@@ -482,7 +484,7 @@ fn bind_field_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         if slice != 0 {
             if !reborrow { return 0 - violation(5, nodes[projection].start); }
             if annotation != 0 { return -9; }
-            if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) { return -9; }
+            if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) { return -9; }
             if values[holder].state != 1 { return 0 - violation(6, nodes[base].start); }
             if exclusive && (!writable || (view == 0 && !values[holder].mutable)) {
                 return 0 - violation(5, nodes[projection].start);
@@ -524,7 +526,7 @@ fn bind_field_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         if field == 0 || source[nodes[declared].start] != 38 || referent == 0 { return 0; }
         let scalar = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
         if scalar < 1 || scalar > 7 { return 0; }
-        if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) { return -9; }
+        if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) { return -9; }
         if exclusive && !borrow_mutable(&source[nodes[declared].start..nodes[referent].start]) {
             return 0 - violation(5, nodes[projection].start);
         }
@@ -783,38 +785,48 @@ pub fn returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
     return (field, scalar);
 }
 
+/// Recognizes a scalar field borrow or a reborrow of a stored scalar reference.
+/// Implicit self receivers use the enclosing implementation's concrete layout.
 pub fn field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, i64) {
     if nodes[function].kind != 1 { return (0, 0); }
     let parameter = graph[function].first_child;
     let result = graph[parameter].next_sibling;
     if nodes[parameter].kind != 3 || nodes[result].kind != 4 || source[nodes[result].start] != 38 { return (0, 0); }
     let input = graph[parameter].first_child;
-    let named = graph[input].first_child;
-    if source[nodes[input].start] != 38 || named == 0 || graph[named].first_child != 0 { return (0, 0); }
-    let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(named));
+    let mut nominal: u64 = 0;
+    let mut input_exclusive = false;
+    if input == 0 && nodes[nodes[function].parent].kind == 49 && source[nodes[parameter].start] == 38 {
+        nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nodes[function].parent);
+        input_exclusive = borrow_mutable(&source[nodes[parameter].start..nodes[parameter].name_start]);
+    } else {
+        let named = graph[input].first_child;
+        if source[nodes[input].start] != 38 || named == 0 || graph[named].first_child != 0 { return (0, 0); }
+        nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(named));
+        input_exclusive = borrow_mutable(&source[nodes[input].start..nodes[named].start]);
+    }
     if nodes[nominal].kind != 28 { return (0, 0); }
     let tail = graph[graph[result].next_sibling].first_child;
     let borrow = graph[tail].first_child;
-    let field = graph[borrow].first_child;
-    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 || nodes[borrow].kind != 13
-        || nodes[field].kind != 17 { return (0, 0); }
+    let mut field = graph[borrow].first_child;
+    let forwarded = nodes[field].kind == 14;
+    if forwarded { field = graph[field].first_child; }
+    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 || nodes[borrow].kind != 13 || nodes[field].kind != 17 { return (0, 0); }
     let mut base = graph[field].first_child;
     while nodes[base].kind == 19 { base = graph[base].first_child; }
     let name = graph[base].first_child;
     if nodes[base].kind != 14 || nodes[name].kind != 7 || graph[name].binding != parameter { return (0, 0); }
-    let member = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-        copy(nominal), copy(field));
+    let member = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(field));
     if member == 0 { return (0, 0); }
-    let field_type = graph[member].first_child;
+    let annotation = graph[member].first_child;
+    let field_type = if forwarded { graph[annotation].first_child } else { copy(annotation) };
+    if forwarded && (field_type == 0 || source[nodes[annotation].start] != 38) { return (0, 0); }
     let output = graph[result].first_child;
     let scalar = verify_primitive(&source[0..source.len()], nodes[field_type].name_start, nodes[field_type].name_end);
     if scalar == 0 || graph[field_type].first_child != 0 || graph[output].first_child != 0
-        || verify_primitive(&source[0..source.len()], nodes[output].name_start, nodes[output].name_end) != scalar {
-        return (0, 0);
-    }
-    let exclusive = borrow_mutable(&source[nodes[borrow].start..nodes[field].start]);
-    if exclusive != borrow_mutable(&source[nodes[result].start..nodes[output].start])
-        || exclusive != borrow_mutable(&source[nodes[input].start..nodes[named].start]) { return (0, 0); }
+        || verify_primitive(&source[0..source.len()], nodes[output].name_start, nodes[output].name_end) != scalar { return (0, 0); }
+    let exclusive = graph[borrow].mutable;
+    if exclusive != borrow_mutable(&source[nodes[result].start..nodes[output].start]) || (exclusive && !input_exclusive) { return (0, 0); }
+    if forwarded && exclusive && !borrow_mutable(&source[nodes[annotation].start..nodes[field_type].start]) { return (0, 0); }
     return (nominal, scalar + if exclusive { 40 } else { 20 });
 }
 
@@ -969,4 +981,46 @@ pub fn apply_returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[Stat
     values[point] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[point].mutable, target: root,
         loan_parent: 0, origin_call: if dynamic { first } else { 0 }, writable: false };
     ty
+}
+
+/// Compares resolved referent annotations without depending on a concrete STD type.
+fn same_referent(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], left: u64, right: u64, depth: u64) -> bool {
+    if left == 0 || right == 0 || depth >= 128 { return false; }
+    let a = &source[nodes[left].name_start..nodes[left].name_end];
+    if !a.content_eq(&source[nodes[right].name_start..nodes[right].name_end]) { return false; }
+    let mut l = graph[left].first_child; let mut r = graph[right].first_child;
+    while l != 0 && r != 0 {
+        if !same_referent(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(l), copy(r), depth+1) { return false; }
+        l = graph[l].next_sibling; r = graph[r].next_sibling;
+    }
+    l == 0 && r == 0
+}
+
+/// Validates an effect-free reborrow through a reference field of implicit self.
+/// Works for every resolved referent shape supported by ordinary signatures.
+pub fn forwarded_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> bool {
+    if nodes[function].kind != 1 || nodes[nodes[function].parent].kind != 49 { return false; }
+    let receiver = graph[function].first_child;
+    let output = graph[receiver].next_sibling;
+    if nodes[receiver].kind != 3 || graph[receiver].first_child != 0 || source[nodes[receiver].start] != 38
+        || nodes[output].kind != 4 || source[nodes[output].start] != 38 { return false; }
+    let body = graph[output].next_sibling; let tail = graph[body].first_child;
+    let borrow = graph[tail].first_child; let dereference = graph[borrow].first_child;
+    let projection = graph[dereference].first_child;
+    if nodes[tail].kind != 10 || graph[tail].next_sibling != 0 || nodes[borrow].kind != 13
+        || nodes[dereference].kind != 14 || nodes[projection].kind != 17 { return false; }
+    let mut base = graph[projection].first_child;
+    while nodes[base].kind == 19 { base = graph[base].first_child; }
+    let name = graph[base].first_child;
+    if nodes[base].kind != 14 || nodes[name].kind != 7 || graph[name].binding != receiver { return false; }
+    let owner = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nodes[function].parent);
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, projection);
+    let annotation = graph[field].first_child; let inner = graph[annotation].first_child;
+    let returned = graph[output].first_child;
+    if field == 0 || inner == 0 || source[nodes[annotation].start] != 38 || returned == 0 { return false; }
+    let exclusive = graph[borrow].mutable;
+    if exclusive != borrow_mutable(&source[nodes[output].start..nodes[returned].start]) { return false; }
+    if exclusive && (!borrow_mutable(&source[nodes[receiver].start..nodes[receiver].name_start])
+        || !borrow_mutable(&source[nodes[annotation].start..nodes[inner].start])) { return false; }
+    same_referent(source, nodes, graph, inner, returned, 0)
 }

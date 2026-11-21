@@ -422,19 +422,24 @@ fn private_layout(module: &[u8], name: &[u8]) -> bool {
     let root: [u8;3] = [115,116,100];
     let bounded: [u8;13] = [66,111,117,110,100,101,100,83,116,114,105,110,103];
     if module.content_eq(&root[..]) && name.content_eq(&bounded[..]) { return true; }
+    let asyn_module: [u8;9] = [115,116,100,58,58,97,115,121,110];
+    let mutex_name: [u8;5] = [77,117,116,101,120];
+    let guard_name: [u8;10] = [77,117,116,101,120,71,117,97,114,100];
+    if (module.content_eq(&root[..]) || module.content_eq(&asyn_module[..]))
+        && (name.content_eq(&mutex_name[..]) || name.content_eq(&guard_name[..])) { return true; }
     let time: [u8;9] = [115,116,100,58,58,116,105,109,101];
-    let async_time: [u8; 15] = [115, 116, 100, 58, 58, 116, 105, 109, 101, 58, 58, 115, 121, 110, 99];
+    let async_time: [u8; 15] = [115,116,100,58,58,116,105,109,101,58,58,97,115,121,110];
     if module.content_eq(&time[..]) || module.content_eq(&async_time[..]) { return true; }
-    let io: [u8; 7] = [115, 116, 100, 58, 58, 105, 111]; // std::io
+    let io: [u8; 13] = [115,116,100,58,58,105,111,58,58,97,115,121,110]; // std::io
     let file: [u8; 4] = [70, 105, 108, 101]; // File
     if module.content_eq(&io[..]) { return name.content_eq(&file[..]); }
-    let module_0: [u8; 13] = [115, 116, 100, 58, 58, 105, 111, 58, 58, 115, 121, 110, 99]; // std::io::sync
-    let module_1: [u8; 13] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 116, 99, 112]; // std::net::tcp
-    let module_2: [u8; 13] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 117, 100, 112]; // std::net::udp
-    let module_3: [u8; 19] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 115, 121, 110, 99, 58, 58, 116, 99, 112]; // std::net::sync::tcp
-    let module_4: [u8; 19] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 115, 121, 110, 99, 58, 58, 117, 100, 112]; // std::net::sync::udp
+    let module_0: [u8; 7] = [115,116,100,58,58,105,111]; // std::io
+    let module_1: [u8; 19] = [115,116,100,58,58,110,101,116,58,58,97,115,121,110,58,58,116,99,112]; // std::net::asyn::tcp
+    let module_2: [u8; 19] = [115,116,100,58,58,110,101,116,58,58,97,115,121,110,58,58,117,100,112]; // std::net::asyn::udp
+    let module_3: [u8; 13] = [115,116,100,58,58,110,101,116,58,58,116,99,112]; // std::net::tcp
+    let module_4: [u8; 13] = [115,116,100,58,58,110,101,116,58,58,117,100,112]; // std::net::udp
     let module_5: [u8; 13] = [115, 116, 100, 58, 58, 115, 121, 115, 58, 58, 110, 101, 116]; // std::sys::net
-    let module_6: [u8; 28] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 115, 121, 110, 99, 58, 58, 116, 108, 115, 58, 58, 111, 112, 101, 110, 115, 115, 108]; // std::net::sync::tls::openssl
+    let module_6: [u8; 22] = [115,116,100,58,58,110,101,116,58,58,116,108,115,58,58,111,112,101,110,115,115,108]; // std::net::tls::openssl
     let module_7: [u8; 19] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 115, 104, 97, 50, 53, 54]; // std::crypto::sha256
     let module_8: [u8; 16] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 97, 101, 115]; // std::crypto::aes
     let module_9: [u8; 19] = [115, 116, 100, 58, 58, 99, 114, 121, 112, 116, 111, 58, 58, 115, 104, 97, 53, 49, 50]; // std::crypto::sha512
@@ -450,12 +455,12 @@ fn private_layout(module: &[u8], name: &[u8]) -> bool {
         let key: [u8; 9] = [80, 117, 98, 108, 105, 99, 75, 101, 121]; // PublicKey
         return name.content_eq(&key[..]) || name.content_eq(&certificate[..]);
     }
-    let tls_handshake: [u8; 19] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 115, 121, 110, 99, 58, 58, 116, 108, 115]; // std::net::sync::tls
+    let tls_handshake: [u8; 13] = [115,116,100,58,58,110,101,116,58,58,116,108,115]; // std::net::tls
     if module.content_eq(&tls_handshake[..]) {
         let session: [u8; 7] = [83, 101, 115, 115, 105, 111, 110]; // Session
         return name.content_eq(&session[..]) || name.content_eq(&certificate[..]);
     }
-    let tls_record: [u8; 27] = [115, 116, 100, 58, 58, 110, 101, 116, 58, 58, 115, 121, 110, 99, 58, 58, 116, 108, 115, 58, 58, 114, 101, 99, 111, 114, 100]; // std::net::sync::tls::record
+    let tls_record: [u8; 21] = [115,116,100,58,58,110,101,116,58,58,116,108,115,58,58,114,101,99,111,114,100]; // std::net::tls::record
     if module.content_eq(&tls_record[..]) {
         let state: [u8; 12] = [82, 101, 99, 111, 114, 100, 67, 105, 112, 104, 101, 114]; // RecordCipher
         return name.content_eq(&state[..]);
@@ -526,7 +531,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
     }
     let mut entries = [Import { file: 0, start: 0, end: 0, target: 0, module: 0 }; 4096];
     // Entries are indexed by byte offset in the package source buffer.
-    let mut edits = [Edit { end: 0, target: 0 }; 3145728];
+    let mut edits = [Edit { end: 0, target: 0 }; 4194304];
     let main_bytes: [u8; 4] = [109, 97, 105, 110]; // main
     let main = &main_bytes[..];
     let generated_bytes: [u8; 14] = [95, 95, 100, 105, 110, 95, 112, 97, 99, 107, 97, 103, 101, 95]; // __din_package_
@@ -684,7 +689,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             while first_layout < layout_count {
                 let name = visibility[first_layout].name;
                 let kind = visibility[first_layout].kind;
-                visibility[first_layout] = LayoutVisibility { kind: kind, name: name, start: copy(file_start), end: written as u64 };
+                visibility[first_layout] = LayoutVisibility { kind: kind, name: name, start: copy(file_start), end: written as u64, origin: file + 1 };
                 first_layout = first_layout + 1;
             }
             file_start = written as u64;
@@ -701,12 +706,20 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                     let name = &source[nodes[target].name_start..nodes[target].name_end];
                     if private_layout(&module[0..module.len()], &name[0..name.len()]) {
                         if layout_count == visibility.len() { return (4, 0, 0); }
-                        visibility[layout_count] = LayoutVisibility { kind: 0, name: written as u64, start: 0, end: 0 };
+                        visibility[layout_count] = LayoutVisibility { kind: 0, name: written as u64, start: 0, end: 0, origin: 0 };
                         layout_count = layout_count + 1;
                     }
                 }
                 if nodes[target].name_start == cursor as u64 && files[file].package == 64 {
                     let module = &names[files[file].module_start..files[file].module_end];
+                    let name = &source[nodes[target].name_start..nodes[target].name_end];
+                    let mutex_module: [u8;9] = [115,116,100,58,58,97,115,121,110];
+                    let wait_name: [u8;18] = [109,117,116,101,120,95,119,97,105,116,95,98,105,110,100,105,110,103];
+                    if module.content_eq(&mutex_module[..]) && name.content_eq(&wait_name[..]) {
+                        if layout_count == visibility.len() { return (4,0,0); }
+                        visibility[layout_count] = LayoutVisibility { kind: 11, name: written as u64, start: 0, end: 0, origin: 0 };
+                        layout_count += 1;
+                    }
                     let reactor: [u8; 22] = [115,116,100,58,58,115,121,115,58,58,110,101,116,58,58,114,101,97,99,116,111,114];
                     if module.content_eq(&reactor[..]) {
                         let name = &source[nodes[target].name_start..nodes[target].name_end];
@@ -724,7 +737,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                             else if name.content_eq(&watch[..]) { 3 } else if name.content_eq(&wait[..]) { 4 } else if name.content_eq(&attach[..]) { 5 } else if name.content_eq(&complete[..]) { 6 } else if name.content_eq(&completion_create[..]) { 7 } else if name.content_eq(&completion_attach[..]) { 8 } else if name.content_eq(&completion_submit[..]) { 9 } else if name.content_eq(&completion_next[..]) { 10 } else { 0 };
                         if kind != 0 {
                             if layout_count == visibility.len() { return (4, 0, 0); }
-                            visibility[layout_count] = LayoutVisibility { kind: kind, name: written as u64, start: 0, end: 0 };
+                            visibility[layout_count] = LayoutVisibility { kind: kind, name: written as u64, start: 0, end: 0, origin: 0 };
                             layout_count = layout_count + 1;
                         }
                     }

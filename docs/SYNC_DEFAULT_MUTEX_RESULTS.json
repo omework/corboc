@@ -1,0 +1,336 @@
+{
+  "namespace_examples": [
+    {
+      "example": "file",
+      "stdout": "2",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "example": "async_file",
+      "stdout": "2",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "example": "buffered",
+      "stdout": "2\n2",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "example": "network",
+      "stdout": "0",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "example": "time",
+      "stdout": "true\n1",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "example": "async_time",
+      "stdout": "42",
+      "status": "executed, fatal UBSan"
+    }
+  ],
+  "public_host": [
+    {
+      "case": "mutex_api",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "42",
+        "42"
+      ]
+    },
+    {
+      "case": "mutex_threads",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "3",
+        "4"
+      ]
+    },
+    {
+      "case": "mutex_aggregate",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "41",
+        "99",
+        "99",
+        "41"
+      ]
+    },
+    {
+      "case": "checked_interior_mutation",
+      "status": "rejected",
+      "exit": 9,
+      "diagnostic": "9\n66"
+    },
+    {
+      "case": "destroy_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n156"
+    },
+    {
+      "case": "destroy_owner",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n120"
+    },
+    {
+      "case": "foreign_impl",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "1\n3053\n1\n3053"
+    },
+    {
+      "case": "forge_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "1\n173"
+    },
+    {
+      "case": "raw_helper",
+      "status": "rejected",
+      "exit": 13,
+      "diagnostic": ""
+    },
+    {
+      "case": "reentry",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n128"
+    },
+    {
+      "case": "shared_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n240"
+    },
+    {
+      "case": "sync_guard_suspension",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n236"
+    },
+    {
+      "case": "transfer_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n147"
+    }
+  ],
+  "public_platforms": [
+    {
+      "target": "macos-x86_64",
+      "results": [
+        {
+          "case": "mutex_api",
+          "status": "executed",
+          "stdout": [
+            "42",
+            "42"
+          ]
+        },
+        {
+          "case": "mutex_threads",
+          "status": "executed",
+          "stdout": [
+            "3",
+            "4"
+          ]
+        },
+        {
+          "case": "mutex_aggregate",
+          "status": "executed",
+          "stdout": [
+            "41",
+            "99",
+            "99",
+            "41"
+          ]
+        }
+      ]
+    },
+    {
+      "target": "linux",
+      "results": [
+        {
+          "case": "mutex_api",
+          "status": "executed",
+          "stdout": [
+            "42",
+            "42"
+          ]
+        },
+        {
+          "case": "mutex_threads",
+          "status": "executed",
+          "stdout": [
+            "3",
+            "4"
+          ]
+        },
+        {
+          "case": "mutex_aggregate",
+          "status": "executed",
+          "stdout": [
+            "41",
+            "99",
+            "99",
+            "41"
+          ]
+        }
+      ]
+    },
+    {
+      "target": "windows-arm64",
+      "results": [
+        {
+          "case": "mutex_api",
+          "status": "compile only; execution deferred"
+        },
+        {
+          "case": "mutex_threads",
+          "status": "compile only; execution deferred"
+        },
+        {
+          "case": "mutex_aggregate",
+          "status": "compile only; execution deferred"
+        }
+      ]
+    },
+    {
+      "target": "windows",
+      "results": [
+        {
+          "case": "mutex_api",
+          "status": "executed",
+          "stdout": [
+            "42",
+            "42"
+          ]
+        },
+        {
+          "case": "mutex_threads",
+          "status": "executed",
+          "stdout": [
+            "3",
+            "4"
+          ]
+        },
+        {
+          "case": "mutex_aggregate",
+          "status": "executed",
+          "stdout": [
+            "41",
+            "99",
+            "99",
+            "41"
+          ]
+        }
+      ]
+    }
+  ],
+  "runtime_host": [
+    {
+      "runtime": "corbo",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "runtime": "c-reference",
+      "status": "executed, fatal UBSan"
+    }
+  ],
+  "runtime_platforms": [
+    {
+      "target": "linux",
+      "results": [
+        {
+          "runtime": "corbo",
+          "status": "executed"
+        },
+        {
+          "runtime": "c-reference",
+          "status": "executed"
+        }
+      ]
+    },
+    {
+      "target": "macos-x86_64",
+      "results": [
+        {
+          "runtime": "corbo",
+          "status": "executed"
+        },
+        {
+          "runtime": "c-reference",
+          "status": "executed"
+        }
+      ]
+    },
+    {
+      "target": "windows-arm64",
+      "results": [
+        {
+          "runtime": "corbo",
+          "status": "compile only; execution deferred"
+        },
+        {
+          "runtime": "c-reference",
+          "status": "compile only; execution deferred"
+        }
+      ]
+    },
+    {
+      "target": "windows",
+      "results": [
+        {
+          "runtime": "corbo",
+          "status": "executed"
+        },
+        {
+          "runtime": "c-reference",
+          "status": "executed"
+        }
+      ]
+    }
+  ],
+  "memory_abi_regression": [
+    {
+      "case": "api",
+      "status": "executed, fatal UBSan",
+      "output": [
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true"
+      ]
+    },
+    {
+      "case": "c-reference",
+      "status": "executed, fatal UBSan",
+      "output": []
+    },
+    {
+      "case": "corbo-abi",
+      "status": "executed, fatal UBSan",
+      "output": []
+    }
+  ],
+  "installed_build": {
+    "corbo_revision": "57313769e0f0cdc76804f903d75de64f314ceed7",
+    "reconstruction": "passed",
+    "multi_generation_equivalence_checked": false,
+    "normal_build_mutex_example": {
+      "status": "executed",
+      "stdout": [
+        "42",
+        "42"
+      ]
+    }
+  }
+}

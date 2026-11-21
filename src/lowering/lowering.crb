@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::{mutex_wait_call, emit_mutex_wait};
 use bootstrap::process_arguments::is_utf8_call;
 use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::{completion_call,emit_completion};
@@ -572,6 +573,11 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if (completion==2 && (*ctx).poll_body==0) || (expected!=0 && expected!=2){return -1;}
         if emit{emit_completion(&nodes[0..nodes.len()],&graph[0..graph.len()],node,completion);}return 2;
     }
+    if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if (*ctx).poll_body == 0 || (expected != 0 && expected != 2) { return -1; }
+        if emit { emit_mutex_wait(&nodes[0..nodes.len()], &graph[0..graph.len()], node); }
+        return 2;
+    }
     if socket_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
         if (*ctx).poll_body == 0 || (expected != 0 && expected != 2) { return -1; }
         if emit { emit_socket_wait(&nodes[0..nodes.len()], &graph[0..graph.len()], node); }
@@ -843,7 +849,7 @@ fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 fn record_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
     ctx: &Lowering, node: u64, expected: i64) -> i64 {
     let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
-    if record == 0 || !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) { return -1; }
+    if record == 0 || !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) { return -1; }
     let ty = 3000000 + signed(copy(record));
     if expected != 0 && ty != expected { return -1; }
     let emit = (*ctx).emit;
@@ -1201,7 +1207,7 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
     }
     let mut arm: u64 = 0;
     let record = nominal_type(copy(element));
-    if (fields || arg == 0) && !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) {
+    if (fields || arg == 0) && !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) {
         return -1;
     }
     if nodes[record].kind == 29 {
@@ -1975,6 +1981,10 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             if nodes[statement].name_end - nodes[statement].name_start != 1 {
                 if !compound_assignment(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(statement)) { return -1; }
+                if emit && graph[statement].next_sibling == 0 {
+                    drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                        copy(statement), copy(body), false, copy(storage));
+                }
                 statement = graph[statement].next_sibling;
                 continue;
             }
@@ -1987,6 +1997,10 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                     &mut types[0..types.len()], ctx, copy(value), copy(element));
                 if ty != element { return -1; }
                 if emit { { let code: [u8;2] = [42,112]; byte_text(&code[..]); } number(child); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
+                if emit && graph[statement].next_sibling == 0 {
+                    drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
+                        copy(statement), copy(body), false, copy(storage));
+                }
                 statement = graph[statement].next_sibling;
                 continue;
             }

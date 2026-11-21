@@ -67,7 +67,7 @@ pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     let vector = owned_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], graph[field].first_child);
     if vector == 0 { return 0; }
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], record, copy(receiver)) { return -9; }
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, copy(receiver)) { return -9; }
     let writable = if values[owner].ty == 734 { values[owner].writable } else { values[owner].mutable };
     if !writable { return 0 - violation(5, nodes[receiver].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],

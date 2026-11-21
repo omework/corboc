@@ -820,7 +820,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut input_type=copy(param);let mut has_slice=false;
     while nodes[input_type].kind==3 {
         let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[input_type].first_child);drop(shape);drop(exclusive);
-        if slice!=0{has_slice=true;}input_type=graph[input_type].next_sibling;
+        if slice!=0 || record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[input_type].first_child, false) != 0 {has_slice=true;}input_type=graph[input_type].next_sibling;
     }
     if result_type(copy(result)) || (result<=9 && has_slice) {
         return check_signature(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],

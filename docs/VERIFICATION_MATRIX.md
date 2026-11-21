@@ -1,3 +1,15 @@
+## Synchronous defaults / shared-reference mutexes
+
+| Rules / mechanism | Executed evidence | Limits |
+| --- | --- | --- |
+| API paths / N1 | Six README programs and async buffered File/TCP | Existing signatures retained; no async TLS |
+| N4/N5/N8 | Per-field async results; three shared writers, scalar/aggregate guards, lifetime/re-entry refusals | Conservative cases remain; no safety proof |
+| N2/N6/N7 | Guard move, payload destruction, terminal compound/indexed cleanup; FIFO waiter detach/handoff | Focused observations only |
+| TR1 | Native guard transfer and suspension refused; async guard survives yield | Windows ARM64 compile-only |
+| Runtime / ABI | Both queue implementations and existing metrics ABI checks | macOS, Linux Docker, Windows Wine |
+
+[Evidence](SYNC_DEFAULT_MUTEX_CYCLE.md).
+
 ## Configurable constants and HTTP parsing
 
 | Mechanism / rules | Executed evidence | Scope and limits |

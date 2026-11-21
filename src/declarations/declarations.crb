@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::socket_runtime::socket_wait_call;
@@ -279,6 +280,7 @@ pub fn nonzero_integer(source: &[u8], start: u64, end: u64) -> bool {
 // Standalone checking has no package resolver. Identify invalid type positions
 // even if a later dataflow operation is outside the verifier's coverage.
 fn qualified_call_error(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> i64 {
+    if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call)) { return 0; }
     if socket_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call))
         || completion_call(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call))!=0 { return 0; }
     let callee = graph[call].first_child;
@@ -890,15 +892,23 @@ pub fn same_field(source: &[u8], nodes: &[AstNode], left: u64, right: u64) -> bo
     name.content_eq(&source[other_start..other_end])
 }
 
-pub fn layout_visible(nodes: &[AstNode], graph: &[StaticNode], layout: u64, access: u64) -> bool {
+pub fn layout_visible(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], layout: u64, access: u64) -> bool {
     let end = graph[layout].private_end;
     let position = nodes[access].start;
-    end == 0 || (position >= graph[layout].private_start && position < end)
+    if end == 0 || (position >= graph[layout].private_start && position < end) { return true; }
+    // Specializations are appended after the original file. An implementation
+    // keeps its source origin, so sibling private layouts remain accessible.
+    let origin = graph[layout].private_origin;
+    if origin == 0 { return false; }
+    let mut parent = copy(access);
+    while parent != 0 && nodes[parent].kind != 49 { parent = nodes[parent].parent; }
+    if parent == 0 { return false; }
+    graph[parent].private_origin == origin
 }
 
 pub fn verification_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     nominal: u64, projection: u64) -> u64 {
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(projection)) { return 0; }
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(projection)) { return 0; }
     let mut field = graph[nominal].first_child;
     while field != 0 {
         if same_field(&source[0..source.len()], &nodes[0..nodes.len()], copy(projection), copy(field)) {

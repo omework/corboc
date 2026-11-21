@@ -644,7 +644,20 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if summary<0{return summary;}
     }
     if deferred {
-        if (!result_type(copy(result)) && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
+        // A borrowed aggregate result keeps its instantiated per-field graph
+        // separately from captures, then await adopts that same graph.
+        let mut returned_record: u64 = 0;
+        if result == 300 {
+            let retained = retain_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(function), copy(call));
+            if retained < 0 { return retained; }
+            returned_record = reserve_summary(&mut values[0..values.len()], nodes.len() as u64, 1);
+            if returned_record == 0 { return -9; }
+            let target = values[call].target; let members = values[call].loan_parent; let shape = values[call].origin_call;
+            values[returned_record] = CheckedValue { ty: 300, state: 1, mutable: false,
+                target: target, loan_parent: members, origin_call: shape, writable: false };
+        }
+        if (!result_type(copy(result)) && result != 300 && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
         let mut captures: u64 = 0;
         let mut index: u64 = 0;
         while index < reservations {
@@ -677,6 +690,12 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 target: root, loan_parent: parent, origin_call: captures, writable: exclusive };
             captures = capture;
             index = index + 1;
+        }
+        if result == 300 {
+            if expected != 0 && expected != 3100 { return 0 - violation(1,start); }
+            values[call] = CheckedValue { ty: 3100, state: 1, mutable: false,
+                target: 0, loan_parent: returned_record, origin_call: captures, writable: false };
+            return 3100;
         }
         let future = if result<=9{610+result}else{result_task_code(1, result)};
         if expected != 0 && expected != future { return 0 - violation(1, start); }

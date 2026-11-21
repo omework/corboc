@@ -1,3 +1,4 @@
+use bootstrap::stored::forwarded_reference_method;
 use bootstrap::thread_transfer::validate_thread_transfer;
 use bootstrap::lock_contracts::{validate_effect_annotations, validate_lock_reentry};
 use bootstrap::value_summaries::{borrowed_record_type,symbolic_record};
@@ -234,6 +235,9 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
             continue;
         }
         if whole_program {
+            if forwarded_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(item)) {
+                item = next_declaration(&nodes[0..nodes.len()], &graph[0..graph.len()], item); continue;
+            }
             let (nominal, reference) = field_reborrow(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(item));
             drop(reference);

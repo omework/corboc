@@ -266,6 +266,13 @@ pub fn instantiate_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     let body = graph[annotation].next_sibling;
     let mut tail = graph[body].first_child;
     while tail != 0 && graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+    // A trusted implementation can construct its result inside unchecked;
+    // its references still use the ordinary caller-side provenance graph.
+    while nodes[tail].kind == 50 {
+        let nested = graph[tail].first_child;
+        tail = graph[nested].first_child;
+        while tail != 0 && graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+    }
     if nodes[tail].kind != 6 && nodes[tail].kind != 10 { return -9; }
     let instance = instantiate_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], function, copy(call), graph[tail].first_child, annotation, 0);

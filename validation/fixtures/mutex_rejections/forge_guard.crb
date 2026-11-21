@@ -1,0 +1,8 @@
+use std::{Mutex, MutexGuard};
+
+fn main() {
+    let mut value: i64 = 0;
+    // Only the STD implementation can initialize private guard fields.
+    let guard: MutexGuard<i64> = MutexGuard { raw: 0, data: &mut value };
+    drop(guard);
+}

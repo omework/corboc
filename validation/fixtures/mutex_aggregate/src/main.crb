@@ -1,0 +1,42 @@
+use std::Mutex;
+use std::asyn::Mutex as AsyncMutex;
+
+struct Counter { value: i64 }
+
+impl Counter {
+    fn increment(&mut self) { (*self).value += 1; }
+    fn read(&self) -> i64 { (*self).value }
+    fn drop(&mut self) { print(99); }
+}
+
+async fn asynchronous() -> i64 {
+    let mutex = AsyncMutex::new(Counter { value: 40 });
+    {
+        let mut guard = mutex.lock().await;
+        let value = guard.get_mut();
+        value.increment();
+        yield;
+    }
+    let guard = mutex.lock().await;
+    let value = guard.get();
+    value.read()
+}
+
+fn main() {
+    {
+        let mutex = Mutex::new(Counter { value: 40 });
+        {
+            let mut guard = mutex.lock();
+            let value = guard.get_mut();
+            value.increment();
+        }
+        let guard = mutex.lock();
+        let value = guard.get();
+        print(value.read());
+    }
+    let execution = runtime::spawn(asynchronous());
+    match execution.join() {
+        Ok(value) => { print(value); },
+        Err(_) => { print(-1); },
+    }
+}

@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::check_text;
 use bootstrap::places::value_record;
 use bootstrap::signatures::move_slice_argument;
@@ -84,6 +85,13 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if values[address].state!=1 || values[address].ty!=pointer_integer_type(){return 0-violation(1,start);}
             if !live_roots(&values[0..values.len()],&graph[0..graph.len()],address){return 0-violation(4,start);}
         }return 2;
+    }
+    if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
+        if mode == 2 || (expected != 0 && expected != 2) { return 0 - violation(1,start); }
+        let argument = graph[child].next_sibling;
+        let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], argument, 7, 0);
+        if checked < 0 { return checked; }
+        return 2;
     }
     if socket_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
         if mode == 2 || (expected != 0 && expected != 2) { return 0 - violation(1, start); }
@@ -268,6 +276,15 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if worker != 0 {
             return inline_void_worker(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], node, worker);
+        }
+    }
+    // A record literal is an ordinary owned expression, including as an
+    // argument to a generic constructor. Its fields use the same ownership graph.
+    if kind == 37 && mode == 1 && (expected == 0 || expected == 300) {
+        let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
+        if nodes[nominal].kind == 28 {
+            return check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(node), node);
         }
     }
     if (kind == 17 || kind == 37) && expected == 310 && mode == 1 {

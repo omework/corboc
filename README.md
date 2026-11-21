@@ -173,3 +173,13 @@ establish native compiler execution on every target. Windows ARM64 remains defer
 Licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
 [Corbo runtime integration evidence](docs/CORBO_RUNTIME_CYCLE.md).
+
+### STD synchronization and I/O namespaces
+
+The pinned STD uses synchronous defaults (`std::io::File`, `std::net::tcp`,
+`std::time`). Import `std::io::asyn`, `std::net::asyn` or `std::time::asyn`
+for explicit asynchronous operations. The former `::sync` paths are removed.
+`std::Mutex<T>` and `std::asyn::Mutex<T>` acquire through `lock(&self)` and
+release through scope-owned guards. These use ordinary lock/transfer contracts;
+Mutex names are not compiler synchronization markers.
+See the [STD API convention](https://github.com/omework/corbo-lang/blob/main/docs/ASYNC_API.md).

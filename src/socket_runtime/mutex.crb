@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Bridge the ordinary STD async waiter to its current poll-frame context.
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::target_c::{byte_text, character};
+use bootstrap::lowering_types::{number, local};
+use bootstrap::lowering_annotations::same_bytes;
+
+/// Recognizes the runtime hook only inside the linker-designated STD wait binding.
+pub fn mutex_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    if nodes[node].kind != 15 { return false; }
+    let name = graph[node].first_child;
+    let expected: [u8;19] = [114,117,110,116,105,109,101,58,58,119,97,105,116,95,109,117,116,101,120];
+    if nodes[name].kind != 36 || !same_bytes(&source[nodes[name].start..nodes[name].end], &expected[..]) { return false; }
+    let mut owner = nodes[node].parent;
+    while owner != 0 && nodes[owner].kind != 35 && nodes[owner].kind != 1 { owner = nodes[owner].parent; }
+    let argument = graph[name].next_sibling;
+    nodes[owner].kind == 35 && graph[owner].fact == 51 && nodes[argument].kind == 7
+        && graph[argument].next_sibling == 0 && nodes[graph[argument].binding].parent == owner
+}
+
+/// Emits a resumable poll point; Pending parks the existing root until mutex release.
+pub fn emit_mutex_wait(nodes: &[AstNode], graph: &[StaticNode], node: u64) {
+    { let bytes: [u8; 9] = [105,110,116,54,52,95,116,32,116]; byte_text(&bytes[..]); } number(copy(node));
+    { let bytes: [u8; 7] = [59,10,99,97,115,101,32]; byte_text(&bytes[..]); } number(copy(node));
+    { let bytes: [u8; 23] = [58,59,10,105,102,40,33,109,117,116,101,120,95,112,111,108,108,40,116,97,115,107,44]; byte_text(&bytes[..]); }
+    local(graph[graph[graph[node].first_child].next_sibling].binding);
+    { let bytes: [u8; 12] = [41,41,123,116,97,115,107,45,62,112,99,61]; byte_text(&bytes[..]); } number(copy(node));
+    { let bytes: [u8; 17] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10,116]; byte_text(&bytes[..]); } number(node);
+    { let bytes: [u8; 4] = [61,48,59,10]; byte_text(&bytes[..]); }
+}

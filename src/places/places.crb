@@ -1,3 +1,4 @@
+use bootstrap::native_checks::unchecked_ancestor;
 use bootstrap::process_arguments::{shared_text_annotation, check_text};
 use bootstrap::lowering_types::array_code;
 use bootstrap::value_dependencies::live_owned_fields;
@@ -499,7 +500,7 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], pool_type);
         }
         if nodes[nominal].kind != 28 { return (0, 0, 0); }
-        if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(place)) {
+        if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), copy(place)) {
             return (0 - private_layout_violation(nodes[place].start), 0, 0);
         }
         let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -554,7 +555,7 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
     if write {
         let root = values[binding].ty;
         let mutable = if (root >= 710 && root <= 729) || root == 734 || slice_view(copy(root)) { values[binding].writable } else { values[binding].mutable };
-        if !mutable { return (0 - violation(5, nodes[place].start), 0); }
+        if !mutable && (!borrowing || unchecked_ancestor(&nodes[0..nodes.len()], copy(place)) == 0) { return (0 - violation(5, nodes[place].start), 0); }
     }
     let mut receiver = graph[place].first_child;
     while nodes[receiver].kind == 19 { receiver = graph[receiver].first_child; }
@@ -610,7 +611,7 @@ pub fn dereference_owned_projection(source: &[u8], nodes: &[AstNode], graph: &[S
         if field != 0 && source[nodes[annotation].start] == 38 && scalar > 0 && scalar <= 9
             && graph[inner].first_child == 0 {
             if mode == 2 || mode == 3 || (expected != 0 && expected != scalar) { return 0 - violation(1, nodes[expression].start); }
-            if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
+            if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
                 return 0 - private_layout_violation(nodes[projection].start);
             }
             let alive = if values[holder].ty == 734 { live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(holder)) }
@@ -846,7 +847,7 @@ pub fn writable_reference_projection(source: &[u8], nodes: &[AstNode], graph: &[
     let referent = graph[annotation].first_child;
     let scalar = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
     if field == 0 || source[nodes[annotation].start] != 38 || referent == 0 || graph[referent].first_child != 0 || scalar == 0 { return (-9, 0); }
-    if !layout_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
+    if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal, copy(projection)) {
         return (0 - private_layout_violation(nodes[projection].start), 0);
     }
     let writable = if values[holder].ty == 734 { values[holder].writable } else { values[holder].mutable };

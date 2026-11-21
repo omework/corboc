@@ -282,7 +282,7 @@ pub fn destructor_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 
 // Stop at a callable boundary. A closure declared lexically inside unchecked
 // cannot execute an address operation on behalf of that block after it exits.
-fn unchecked_ancestor(nodes: &[AstNode], expression: u64) -> u64 {
+pub fn unchecked_ancestor(nodes: &[AstNode], expression: u64) -> u64 {
     let mut node = nodes[expression].parent;
     while node != 0 {
         let kind = nodes[node].kind;

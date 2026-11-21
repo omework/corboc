@@ -1,0 +1,52 @@
+use std::Mutex;
+use std::asyn::Mutex as AsyncMutex;
+
+fn increment(mutex: &Mutex<i64>) {
+    let mut guard = mutex.lock();
+    let value = guard.get_mut();
+    *value += 1;
+}
+
+// A terminal indexed assignment must also run the guard's scope cleanup.
+fn touch(mutex: &Mutex<i64>) {
+    let guard = mutex.lock();
+    let mut scratch: [i64; 1] = [0];
+    scratch[0] = 42;
+}
+
+async fn async_increment(mutex: &AsyncMutex<i64>) -> i64 {
+    let mut guard = mutex.lock().await;
+    let value = guard.get_mut();
+    *value += 1;
+    yield;
+    *value
+}
+
+fn main() {
+    let mutex = Mutex::new(0);
+    touch(&mutex);
+    let a = &mutex;
+    let first = runtime::thread({ move a; increment(a); });
+    let b = &mutex;
+    let second = runtime::thread({ move b; increment(b); });
+    let c = &mutex;
+    let third = runtime::thread({ move c; increment(c); });
+    drop(first.join()); drop(second.join()); drop(third.join());
+    {
+        let guard = mutex.lock();
+        let value = guard.get();
+        print(*value);
+    }
+
+    let asynchronous = AsyncMutex::new(0);
+    let first = runtime::spawn(async_increment(&asynchronous));
+    let second = runtime::spawn(async_increment(&asynchronous));
+    let third = runtime::spawn(async_increment(&asynchronous));
+    drop(first.join()); drop(second.join()); drop(third.join());
+    // Read on a final scheduled acquisition after all three writers finish.
+    let final_task = runtime::spawn(async_increment(&asynchronous));
+    match final_task.join() {
+        Ok(value) => { print(value); },
+        Err(_) => { print(-1); },
+    }
+}

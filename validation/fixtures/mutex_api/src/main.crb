@@ -1,0 +1,35 @@
+use std::Mutex;
+use std::asyn::Mutex as AsyncMutex;
+
+async fn async_value() -> i64 {
+    let mutex = AsyncMutex::new(10);
+    {
+        let mut guard = mutex.lock().await;
+        let target = guard.get_mut();
+        *target = 42;
+        yield;
+    }
+    let guard = mutex.lock().await;
+    let view = guard.get();
+    *view
+}
+
+fn main() {
+    let mutex = Mutex::new(10);
+    {
+        let guard = mutex.lock();
+        let mut moved = guard;
+        let target = moved.get_mut();
+        *target = 42;
+    }
+    {
+        let guard = mutex.lock();
+        let view = guard.get();
+        print(*view);
+    }
+    let execution = runtime::spawn(async_value());
+    match execution.join() {
+        Ok(value) => { print(value); },
+        Err(_) => { print(-1); },
+    }
+}

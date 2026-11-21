@@ -1,3 +1,17 @@
+## Synchronous defaults and mutexes (current API convention)
+
+- [x] Restore synchronous default packages and explicit asyn counterparts.
+- [x] Add shared-reference sync/async mutex acquisition and scope-owned guards.
+- [x] Preserve private generic layouts, result dependencies and transfer contracts.
+- [x] Fix terminal assignment cleanup and validate native/async contention.
+- [x] Run focused positive/refusal, buffered I/O and memory-ABI regressions.
+- [x] Execute macOS ARM64/x86-64, Linux x86-64 and Windows x86-64 witnesses.
+- [x] Compile Windows ARM64; execution remains explicitly deferred.
+- [x] Update EN/FR guides, examples and generated references.
+
+This supersedes the historical async-default API convention below.
+[Evidence](SYNC_DEFAULT_MUTEX_CYCLE.md).
+
 ## Package scaffolding (CLI/build tooling)
 
 - [x] Add corboc new with a minimal runnable package and no implicit Git initialization.

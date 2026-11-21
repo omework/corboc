@@ -1,0 +1,4 @@
+// Raw resource identities are confined to private STD bridge functions.
+use std::asyn::mutex_wait_binding;
+
+fn main() {}

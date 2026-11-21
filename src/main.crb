@@ -834,7 +834,7 @@ fn lex(source: &[u8], check: i32) -> i32 {
     let selected = select_target(&source[0..source.len()], &mut tokens[..count + 3]);
     if selected == 0 { return 7; }
     mark_nominal_names(&source[0..source.len()], &mut tokens[..selected]);
-    let visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 1];
+    let visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 1];
     parse(&source[0..source.len()], &tokens[..selected], check, 0, false, &visibility[..0])
 }
 
@@ -2138,14 +2138,14 @@ fn set_child(graph: &mut [StaticNode], node: u64, child: u64) {
     let sibling = graph[node].next_sibling;
     graph[node] = StaticNode { first_child: child, next_sibling: sibling,
         scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
-        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, access_mode: 0, protection: 0 };
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 };
 }
 
 fn set_sibling(graph: &mut [StaticNode], node: u64, sibling: u64) {
     let child = graph[node].first_child;
     graph[node] = StaticNode { first_child: child, next_sibling: sibling,
         scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
-        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, access_mode: 0, protection: 0 };
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 };
 }
 
 fn find_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
@@ -2251,7 +2251,7 @@ fn resolve_node(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut 
         scope: copy(scope), scope_parent: scope_parent, scope_entry: scope_entry, declaration: copy(declaration),
         mutable: mutable, type_node: if declaration { type_node } else { 0 },
         initializer: if declaration && kind == 5 { last_child } else { 0 },
-        fact: fact, visible: copy(candidate), binding: binding, destination: destination, field_name: field_name, private_start: 0, private_end: 0, access_mode: 0, protection: 0 };
+        fact: fact, visible: copy(candidate), binding: binding, destination: destination, field_name: field_name, private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 };
     if scope != parent_scope || kind == 2 || kind == 1 || kind == 35 || kind == 55
         || kind == 40 || kind == 27 || kind == 22 || kind == 64 || kind == 58 { return visible; }
     if declaration { return node; }
@@ -2384,7 +2384,7 @@ fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [
 
 fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
-        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, access_mode: 0, protection: 0 }; 524289];
+        mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 }; 524289];
     build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()], &mut graph[..], true);
     let mut node: u64 = 0;
     if check != 0 {
@@ -2393,7 +2393,7 @@ fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i
         while declaration != 0 && layout < visibility.len() && visibility[layout].name != 0 {
             if nodes[declaration].name_start == visibility[layout].name
                 && (nodes[declaration].kind == 28 || visibility[layout].kind != 0) {
-                if visibility[layout].kind != 0 {
+                if visibility[layout].kind != 0 && visibility[layout].kind != 12 {
                     let fact = &mut graph[declaration].fact;
                     *fact = 40 + visibility[layout].kind;
                 }
@@ -2403,6 +2403,8 @@ fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i
                 *private_start = start;
                 let private_end = &mut graph[declaration].private_end;
                 *private_end = end;
+                let origin = &mut graph[declaration].private_origin;
+                *origin = visibility[layout].origin;
                 layout = layout + 1;
             }
             declaration = graph[declaration].next_sibling;
@@ -2796,11 +2798,11 @@ fn parse_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token], check
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
         scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
         fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
-        private_start: 0, private_end: 0, access_mode: 0, protection: 0 }; 524289];
+        private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 }; 524289];
     build_graph(&source[0..source.len()],&nodes[0..nodes.len()],&tokens[0..tokens.len()], &mut graph[..], true);
     let mut output: [u8; 4194304] = [0; 4194304];
     let mut offsets: [u64; 4194304] = [0; 4194304];
-    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
     let (error, written, view_count) = expand_configuration(&source[0..source.len()],&nodes[0..nodes.len()], &graph[..nodes.len()],&tokens[0..tokens.len()],
         &mut output[..], &mut offsets[..],&visibility[0..visibility.len()], &mut views[..]);
     if error != 0 { return error; }
@@ -2822,21 +2824,23 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
     let mut current: [u8; 4194304] = [0; 4194304];
     let mut expanded: [u8; 4194304] = [0; 4194304];
     let mut offsets: [u64; 4194304] = [0; 4194304];
+    // Sparse output-name -> original implementation-name map for this rewrite.
+    let mut impl_origins: [u64; 32769] = [0; 32769];
     let mut syntax = [AstNode { kind: 0, parent: 0, start: 0, end: 0,
         name_start: 0, name_end: 0, public: false }; 524289];
     let mut tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
         scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
         fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
-        private_start: 0, private_end: 0, access_mode: 0, protection: 0 }; 524289];
-    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+        private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 }; 524289];
+    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
     let mut length = source.len() as u64;
     let mut byte: u64 = 0;
     while byte < length { current[byte] = source[byte]; byte = byte + 1; }
     let mut view: usize = 0;
     while view < visibility.len() && visibility[view].name != 0 {
         views[view] = LayoutVisibility { kind: visibility[view].kind, name: visibility[view].name,
-            start: visibility[view].start, end: visibility[view].end };
+            start: visibility[view].start, end: visibility[view].end, origin: visibility[view].origin };
         view = view + 1;
     }
     let mut env = env_call;
@@ -2853,17 +2857,18 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             graph[reset] = StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
                 scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
                 fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
-                private_start: 0, private_end: 0, access_mode: 0, protection: 0 };
+                private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 };
             reset = reset + 1;
         }
         build_graph(&current[..length], &syntax[..used], &tokens[..selected], &mut graph[..], true);
         let generic = generic_recipes(&current[..length], &syntax[..used]);
         let factory = iterator_factory(&current[..length], &syntax[..used]);
+        impl_origins[0] = 0;
         let mut rewrite_status: i32 = 0;
         let mut rewrite_length: u64 = 0;
         if generic || factory != 0 || has_pipeline(&current[..length], &tokens[..selected]) {
             let (status, written) = rewrite_pipeline(&current[..length], &syntax[..used], &graph[..used],
-                &tokens[..selected], generic, factory, &mut expanded[..], &mut offsets[..]);
+                &tokens[..selected], generic, factory, &mut expanded[..], &mut offsets[..], &mut impl_origins[..]);
             rewrite_status = status;
             rewrite_length = written;
         }
@@ -2905,7 +2910,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             mark_nominal_names(&expanded[..written], &mut tokens[..selected]);
             let count = parse_nodes(&tokens[..selected], &mut syntax[..]);
             if count == 0 { return 7; }
-            let mut mapped = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+            let mut mapped = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
             let prefix: [u8;20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
             let mut stored: usize = 0;
             item = 0;
@@ -2934,20 +2939,11 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
                         if direct || instance {
                             if stored == 4096 { return 4; }
                             let mut upper = syntax[candidate].end;
-                            if instance {
-                                let mut implementation: u64 = 1;
-                                while implementation < count {
-                                    if syntax[implementation].kind == 49 {
-                                        let owner_start = syntax[implementation].name_start;
-                                        let owner_end = syntax[implementation].name_end;
-                                        if same_bytes(&expanded[owner_start..owner_end], &expanded[actual_start..actual_end]) && syntax[implementation].end > upper { upper = syntax[implementation].end; }
-                                    }
-                                    implementation += 1;
-                                }
-                            }
+                            // Implementations carry their own authenticated origin;
+                            // the declaration range must not include foreign impls.
                             mapped[stored] = LayoutVisibility { kind: views[item].kind, name: actual_start,
                                 start: if instance { syntax[candidate].start } else { offsets[views[item].start] },
-                                end: if instance { upper } else { offsets[views[item].end] } };
+                                end: if instance { upper } else { offsets[views[item].end] }, origin: views[item].origin };
                             stored += 1; found = true;
                         }
                     }
@@ -2957,25 +2953,43 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
                 if !found && (views[item].kind != 0 || end == length || current[end] != 60) { return 9; }
                 item += 1;
             }
+            // Authenticate each generated implementation by the file which
+            // authored it, rather than by the type it happens to implement.
+            let mut implementation: u64 = 0;
+            while implementation < impl_origins[0] {
+                let original = impl_origins[implementation * 2 + 2];
+                let mut owner: usize = 0;
+                while owner < view {
+                    if views[owner].kind == 0 && original >= views[owner].start && original < views[owner].end {
+                        if stored == 4096 { return 4; }
+                        mapped[stored] = LayoutVisibility { kind: 12,
+                            name: impl_origins[implementation * 2 + 1], start: 0, end: 0, origin: views[owner].origin };
+                        stored += 1;
+                        break;
+                    }
+                    owner += 1;
+                }
+                implementation += 1;
+            }
             // emit_static_tree consumes records in declaration order.
             item = 1;
             while item < stored {
                 let mut at = copy(item);
                 while at > 0 && mapped[at-1].name > mapped[at].name {
-                    let saved = LayoutVisibility { kind: mapped[at-1].kind, name: mapped[at-1].name, start: mapped[at-1].start, end: mapped[at-1].end };
-                    mapped[at-1] = LayoutVisibility { kind: mapped[at].kind, name: mapped[at].name, start: mapped[at].start, end: mapped[at].end };
+                    let saved = LayoutVisibility { kind: mapped[at-1].kind, name: mapped[at-1].name, start: mapped[at-1].start, end: mapped[at-1].end, origin: mapped[at-1].origin };
+                    mapped[at-1] = LayoutVisibility { kind: mapped[at].kind, name: mapped[at].name, start: mapped[at].start, end: mapped[at].end, origin: mapped[at].origin };
                     mapped[at] = saved; at -= 1;
                 }
                 item += 1;
             }
             item = 0;
-            while item < stored { views[item] = LayoutVisibility { kind: mapped[item].kind, name: mapped[item].name, start: mapped[item].start, end: mapped[item].end }; item += 1; }
+            while item < stored { views[item] = LayoutVisibility { kind: mapped[item].kind, name: mapped[item].name, start: mapped[item].start, end: mapped[item].end, origin: mapped[item].origin }; item += 1; }
             view = stored;
         } else {
             item = 0;
             while item < view {
                 views[item] = LayoutVisibility { kind: views[item].kind, name: offsets[views[item].name],
-                    start: offsets[views[item].start], end: offsets[views[item].end] };
+                    start: offsets[views[item].start], end: offsets[views[item].end], origin: views[item].origin };
                 item += 1;
             }
         }
@@ -2988,7 +3002,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
 }
 
 fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    generic: bool, factory: u64, expanded: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    generic: bool, factory: u64, expanded: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) -> (i32, u64) {
     if factory != 0 {
         return specialize_factory(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], factory, expanded, offsets);
     }
@@ -3001,7 +3015,7 @@ fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
         let (status, written) = specialize_functions(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
             &mut expanded[0..expanded.len()], &mut offsets[0..offsets.len()]);
         if status != 0 || written != 0 { return (status, written); }
-        return specialize_structs(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets);
+        return specialize_structs(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets, origins);
     }
     specialize_pipelines(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], expanded, offsets)
 }
@@ -3138,12 +3152,12 @@ fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
     let mut graph = [StaticNode {
         first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false,
         declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,
-        visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0,
+        visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0,
         access_mode: 0, protection: 0,
     }; 524289];
     build_graph(&source[..package.source_end], &nodes[..used], &tokens[..selected], &mut graph[..], false);
     let mut linked: [u8; 4194304] = [0; 4194304];
-    let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0 }; 4096];
+    let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
     let (error, length, env_call) = link_package(&source[..package.source_end], &names[..package.names_end],
         &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..]);
     if error != 0 { return error; }
