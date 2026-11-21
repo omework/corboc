@@ -1,0 +1,490 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Keep thread transfer eligibility independent of permission, locks and lifetimes.
+
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::loans::{access_callee, access_nominal, access_actual};
+use bootstrap::verify::violation;
+
+/// Recognize a declaration's thread metadata without assigning meaning to its name.
+fn thread_annotation(source: &[u8], nodes: &[AstNode], item: u64) -> bool {
+    let word: [u8; 6] = [116, 104, 114, 101, 97, 100];
+    let text = &source[nodes[item].name_start..nodes[item].name_end];
+    nodes[item].kind == 58 && text.content_eq(&word[..])
+}
+
+/// Return the declared output type after parameters and before the function body.
+fn output_type(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    let mut child = graph[function].first_child;
+    while nodes[child].kind == 3 || nodes[child].kind == 58 {
+        child = graph[child].next_sibling;
+    }
+    if nodes[child].kind == 4 {
+        child
+    } else {
+        0
+    }
+}
+
+/// Union owned child facts; zero means that no restricted component was found.
+fn child_fact(graph: &[StaticNode], facts: &[u64], parent: u64) -> u64 {
+    let mut child = graph[parent].first_child;
+    while child != 0 {
+        if facts[child] != 0 {
+            return facts[child];
+        }
+        child = graph[child].next_sibling;
+    }
+    0
+}
+
+/// Resolve nested nominal field paths using the same declaration/type edges.
+fn projection_owner(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    point: u64,
+    depth: u64
+) -> u64 {
+    if point == 0 || depth > 64 {
+        return 0;
+    }
+    let direct = access_nominal(
+        &source[0..source.len()],
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(point),
+        0
+    );
+    if direct != 0 {
+        return direct;
+    }
+    if nodes[point].kind == 17 {
+        let owner = projection_owner(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            graph[point].first_child,
+            depth + 1
+        );
+        if owner == 0 {
+            return 0;
+        }
+        let wanted = &source[nodes[point].name_start..nodes[point].name_end];
+        let mut field = graph[owner].first_child;
+        while field != 0 {
+            let name = &source[nodes[field].name_start..nodes[field].name_end];
+            if name.content_eq(&wanted[0..wanted.len()]) {
+                return nominal_declaration(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    graph[field].first_child
+                );
+            }
+            field = graph[field].next_sibling;
+        }
+    }
+    0
+}
+
+/// Resolve a selected field instead of contaminating primitive projections with their owner.
+fn field_fact(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    facts: &[u64],
+    point: u64
+) -> u64 {
+    let owner = projection_owner(
+        &source[0..source.len()],
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        graph[point].first_child,
+        0
+    );
+    if owner == 0 {
+        return facts[graph[point].first_child];
+    }
+    let wanted = &source[nodes[point].name_start..nodes[point].name_end];
+    let mut field = graph[owner].first_child;
+    while field != 0 {
+        let name = &source[nodes[field].name_start..nodes[field].name_end];
+        if name.content_eq(&wanted[0..wanted.len()]) {
+            return facts[field];
+        }
+        field = graph[field].next_sibling;
+    }
+    facts[graph[point].first_child]
+}
+
+/// A native block owns outer bindings captured by move, not its freshly created locals.
+fn capture_fact(nodes: &[AstNode], graph: &[StaticNode], facts: &[u64], block: u64) -> u64 {
+    let mut point = block + 1;
+    while point < nodes.len() as u64 && nodes[point].start < nodes[block].end {
+        let binding = graph[point].binding;
+        if (nodes[point].kind == 7 || nodes[point].kind == 57)
+            && binding != 0
+            && nodes[binding].start < nodes[block].start
+            && facts[binding] != 0
+        {
+            return facts[binding];
+        }
+        point += 1;
+    }
+    0
+}
+
+/// Track restricted locals retained at a suspension, including implicit scope cleanup.
+fn suspended_fact(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    facts: &[u64],
+    function: u64
+) -> u64 {
+    let mut suspension = function + 1;
+    while suspension < nodes.len() as u64 && nodes[suspension].start < nodes[function].end {
+        if nodes[suspension].kind == 38 || nodes[suspension].kind == 25 {
+            let mut local = function + 1;
+            while local < suspension {
+                if nodes[local].kind == 5
+                    && facts[local] != 0
+                    && nodes[nodes[local].parent].end > nodes[suspension].start
+                {
+                    let mut released = false;
+                    let mut use_at = local + 1;
+                    while use_at < suspension {
+                        if nodes[use_at].kind == 15 {
+                            let name = graph[use_at].first_child;
+                            let drop_word: [u8; 4] = [100, 114, 111, 112];
+                            let spelling = &source[nodes[name].name_start..nodes[name].name_end];
+                            let argument = graph[name].next_sibling;
+                            if spelling.content_eq(&drop_word[..])
+                                && graph[argument].binding == local
+                            {
+                                released = true;
+                            }
+                        }
+                        use_at += 1;
+                    }
+                    if !released {
+                        return facts[local];
+                    }
+                }
+                local += 1;
+            }
+            if facts[graph[suspension].first_child] != 0 {
+                return facts[graph[suspension].first_child];
+            }
+        }
+        suspension += 1;
+    }
+    0
+}
+
+/// Compute one monotone restriction fact from representation edges, not concrete type cases.
+fn node_fact(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    facts: &[u64],
+    point: u64
+) -> u64 {
+    let kind = nodes[point].kind;
+    let child = graph[point].first_child;
+    if kind == 4 {
+        // A reference is not ownership of its referent. Its existing validity and
+        // synchronization obligations remain independent of this transfer property.
+        if source[nodes[point].start] == 38 {
+            return 0;
+        }
+        let owner = nominal_declaration(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point)
+        );
+        if facts[owner] != 0 {
+            return facts[owner];
+        }
+        return child_fact(&graph[0..graph.len()], &facts[0..facts.len()], point);
+    }
+    if kind == 48 {
+        return facts[nodes[point].parent];
+    }
+    if kind == 41 && graph[point].declaration {
+        let mut arm = nodes[point].parent;
+        while arm != 0 && nodes[arm].kind != 40 {
+            arm = nodes[arm].parent;
+        }
+        if arm != 0 {
+            return facts[graph[nodes[arm].parent].first_child];
+        }
+    }
+    if kind == 7 || kind == 57 {
+        return facts[graph[point].binding];
+    }
+    if kind == 13 || kind == 12 || kind == 9 || kind == 11 || kind == 58 {
+        return 0;
+    }
+    if kind == 17 {
+        return field_fact(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            &facts[0..facts.len()],
+            point
+        );
+    }
+    if kind == 1 {
+        return facts[output_type(&nodes[0..nodes.len()], &graph[0..graph.len()], point)];
+    }
+    if kind == 35 {
+        let output =
+        facts[output_type(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))];
+        if output != 0 {
+            return output;
+        }
+        let mut parameter = copy(child);
+        while nodes[parameter].kind == 3 {
+            if facts[parameter] != 0 {
+                return facts[parameter];
+            }
+            parameter = graph[parameter].next_sibling;
+        }
+        return suspended_fact(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            &facts[0..facts.len()],
+            point
+        );
+    }
+    if kind == 15 || kind == 16 {
+        let function = access_callee(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point),
+            0
+        );
+        if function != 0 {
+            if facts[function] != 0 {
+                return facts[function];
+            }
+            if nodes[function].kind != 35 {
+                return 0;
+            }
+            // The call syntax may name an owned receiver while its signature
+            // captures only &self. Propagate actual state only for owned formals.
+            let mut parameter = graph[function].first_child;
+            while nodes[parameter].kind == 3 {
+                let annotation = graph[parameter].first_child;
+                if source[nodes[parameter].start] != 38
+                    && (annotation == 0 || source[nodes[annotation].start] != 38)
+                {
+                    let actual = access_actual(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(point),
+                        copy(function),
+                        copy(parameter)
+                    );
+                    if facts[actual] != 0 {
+                        return facts[actual];
+                    }
+                }
+                parameter = graph[parameter].next_sibling;
+            }
+            return 0;
+        }
+        return child_fact(&graph[0..graph.len()], &facts[0..facts.len()], point);
+    }
+    if kind == 37 {
+        let owner = nominal_declaration(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(point)
+        );
+        if facts[owner] != 0 {
+            return facts[owner];
+        }
+        return child_fact(&graph[0..graph.len()], &facts[0..facts.len()], point);
+    }
+    if kind == 2 {
+        let mut last = copy(child);
+        while graph[last].next_sibling != 0 {
+            last = graph[last].next_sibling;
+        }
+        if nodes[last].kind == 10 || nodes[last].kind == 6 {
+            return facts[last];
+        }
+        return 0;
+    }
+    // These nodes represent ownership composition, bindings, payloads or value results.
+    if kind == 3
+        || kind == 5
+        || kind == 6
+        || kind == 10
+        || kind == 14
+        || kind == 18
+        || kind == 19
+        || kind == 20
+        || kind == 22
+        || kind == 23
+        || kind == 26
+        || kind == 28
+        || kind == 29
+        || kind == 30
+        || kind == 31
+        || kind == 38
+        || kind == 39
+        || kind == 40
+        || kind == 41
+        || kind == 42
+        || kind == 44
+        || kind == 45
+        || kind == 47
+    {
+        return child_fact(&graph[0..graph.len()], &facts[0..facts.len()], point);
+    }
+    0
+}
+
+/// Identify execution boundaries, including user functions with a branch contract.
+fn launch_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> bool {
+    if nodes[point].kind != 15 && nodes[point].kind != 16 {
+        return false;
+    }
+    let name = graph[point].first_child;
+    let text = &source[nodes[name].start..nodes[name].end];
+    let thread: [u8; 15] = [
+        114, 117, 110, 116, 105, 109, 101, 58, 58, 116, 104, 114, 101, 97, 100
+    ];
+    let spawn: [u8; 14] = [
+        114, 117, 110, 116, 105, 109, 101, 58, 58, 115, 112, 97, 119, 110
+    ];
+    let blocking: [u8; 23] = [
+        114, 117, 110, 116, 105, 109, 101, 58, 58, 115, 112, 97, 119, 110, 95, 98, 108, 111, 99,
+        107, 105, 110, 103
+    ];
+    if text.content_eq(&thread[..]) || text.content_eq(&spawn[..]) || text.content_eq(&blocking[..])
+    {
+        return true;
+    }
+    let function = access_callee(
+        &source[0..source.len()],
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(point),
+        0
+    );
+    if function == 0 {
+        return false;
+    }
+    let branch: [u8; 6] = [98, 114, 97, 110, 99, 104];
+    let mut item = function + 1;
+    while item < nodes.len() as u64 && nodes[item].start < nodes[function].end {
+        let spelling = &source[nodes[item].name_start..nodes[item].name_end];
+        if nodes[item].kind == 58
+            && nodes[item].parent == function
+            && spelling.content_eq(&branch[..])
+        {
+            return true;
+        }
+        item += 1;
+    }
+    false
+}
+
+/// Derive restrictions to a fixed point, then reject only crossings carrying one.
+pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+    let mut present = false;
+    let mut item: u64 = 1;
+    while item < nodes.len() as u64 {
+        if thread_annotation(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) {
+            present = true;
+        }
+        item += 1;
+    }
+    if !present {
+        return 0;
+    }
+    let mut facts: [u64; 524289] = [0; 524289];
+    item = 1;
+    while item < nodes.len() as u64 {
+        if thread_annotation(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) {
+            let owner = nodes[item].parent;
+            if (nodes[owner].kind != 28 && nodes[owner].kind != 29) || facts[owner] != 0 {
+                return violation(1, nodes[item].start);
+            }
+            facts[owner] = copy(item);
+        }
+        item += 1;
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        item = nodes.len() as u64;
+        while item > 1 {
+            item -= 1;
+            if facts[item] == 0 {
+                let reason = node_fact(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    &facts[..nodes.len()],
+                    copy(item)
+                );
+                if reason != 0 {
+                    facts[item] = reason;
+                    changed = true;
+                }
+            }
+            if nodes[item].kind == 21 {
+                let target = graph[item].first_child;
+                let rhs = graph[target].next_sibling;
+                let binding = graph[target].binding;
+                if binding != 0 && facts[binding] == 0 && facts[rhs] != 0 {
+                    facts[binding] = facts[rhs];
+                    changed = true;
+                }
+            }
+        }
+    }
+    item = 1;
+    while item < nodes.len() as u64 {
+        if launch_call(
+            &source[0..source.len()],
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(item)
+        ) {
+            let mut argument = if nodes[item].kind == 16 {
+                graph[item].first_child
+            } else {
+                graph[graph[item].first_child].next_sibling
+            };
+            while argument != 0 {
+                let capture = if nodes[argument].kind == 2 {
+                    capture_fact(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        &facts[..nodes.len()],
+                        copy(argument)
+                    )
+                } else {
+                    0
+                };
+                if facts[argument] != 0 || capture != 0 {
+                    return violation(8, nodes[argument].start);
+                }
+                argument = graph[argument].next_sibling;
+            }
+        }
+        item += 1;
+    }
+    0
+}

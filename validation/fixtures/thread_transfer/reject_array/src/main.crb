@@ -1,0 +1,8 @@
+//! A fixed array owns every element and inherits their transfer restriction.
+#(thread: transfer=false)
+struct Local { value: i64 }
+fn main() {
+    let values = [Local { value: 42 }];
+    let execution = runtime::thread({ move values; drop(values); 42 });
+    drop(execution.join());
+}

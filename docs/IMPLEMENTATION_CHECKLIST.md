@@ -225,3 +225,17 @@ naming a type Mutex.
 - [x] Execute six accepted fixtures under fatal UBSan and reject ten invalid forms.
 - [x] Execute the real-lock three-thread fixture on supported targets; Windows ARM64 compile-only.
 - [x] Check identical self-emission and record the [cycle report](OBJECT_LOCK_CYCLE.md).
+
+## Thread transfer eligibility (TR1)
+
+- [x] Parse `#(thread: transfer=false)` on structs and enums; reject invalid placement/duplicates.
+- [x] Preserve metadata through generic specialization and ordinary layout/signature views.
+- [x] Derive owned-field, binding, capture-record and suspended-state restriction summaries.
+- [x] Check native/async/declared-branch boundaries, including worker results.
+- [x] Preserve ordinary moves, fresh worker-local values and cleanup before suspension.
+- [x] Execute five focused packages with fatal UBSan and reject fourteen invalid forms.
+- [x] Retain passing object-lock regressions: six executions and ten refusals.
+- [x] Document target-independent analysis and conservative summary limits.
+
+See [the cycle report](THREAD_TRANSFER_CYCLE.md). The Rust frontend and installed
+release remain unchanged; the development compiler is `build/thread-transfer/corboc`.

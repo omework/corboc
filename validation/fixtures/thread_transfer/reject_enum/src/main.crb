@@ -1,0 +1,8 @@
+//! The declaration marker is also accepted on nominal enums.
+#(thread: transfer=false)
+enum Local { Value { value: i64 } }
+fn main() {
+    let value = Local.Value { value: 42 };
+    let execution = runtime::thread({ move value; drop(value); 42 });
+    drop(execution.join());
+}

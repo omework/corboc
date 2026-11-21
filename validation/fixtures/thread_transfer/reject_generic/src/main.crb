@@ -1,0 +1,13 @@
+//! Thread transfer metadata is independent of ordinary ownership and locking.
+#(thread: transfer=false)
+struct Local { value: i64 }
+#(type: T)
+struct Wrapped<T> { item: T }
+impl Wrapped<T> {
+    fn new(item: T) -> Wrapped<T> { Wrapped { item: item } }
+}
+fn main() {
+    let value = Wrapped::new(Local { value: 42 });
+    let execution = runtime::thread({ move value; value.item.value });
+    drop(execution.join());
+}

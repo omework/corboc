@@ -1,0 +1,9 @@
+//! Thread transfer metadata is independent of ordinary ownership and locking.
+#(thread: transfer=false)
+struct Local { value: i64 }
+fn consume(value: Local) -> i64 { value.value }
+fn main() {
+    let first = Local { value: 42 };
+    let second = first;
+    print(consume(second));
+}

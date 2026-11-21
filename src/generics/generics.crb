@@ -512,7 +512,8 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
         if nodes[annotation].parent == part && nodes[annotation].kind == 58 {
             let lock_word: [u8; 4] = [108,111,99,107];
             let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
-            if name.content_eq(&lock_word[..]) {
+            let thread_word: [u8; 6] = [116,104,114,101,97,100];
+            if name.content_eq(&lock_word[..]) || name.content_eq(&thread_word[..]) {
                 written = put(&mut output[0..output.len()], written, &source[nodes[annotation].start..nodes[annotation].end]);
                 let newline: [u8; 1] = [10];
                 written = put(&mut output[0..output.len()], written, &newline[..]);

@@ -1,0 +1,3 @@
+//! Thread transfer markers describe object types, not functions.
+#(thread: transfer=false)
+fn main() {}

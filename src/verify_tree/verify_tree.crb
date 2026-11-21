@@ -1,3 +1,4 @@
+use bootstrap::thread_transfer::validate_thread_transfer;
 use bootstrap::lock_contracts::{validate_effect_annotations, validate_lock_reentry};
 use bootstrap::value_summaries::{borrowed_record_type,symbolic_record};
 use bootstrap::native_checks::check_raw_addresses;
@@ -37,6 +38,8 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
         let status = validate_standalone_declarations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(env_call), package);
         if status != 0 { return status; }
     }
+    let transfer = validate_thread_transfer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
+    if transfer != 0 { return 8; }
     let effect_annotations = validate_effect_annotations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);
     if effect_annotations != 0 { return 8; }
     let reentry = validate_lock_reentry(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()]);

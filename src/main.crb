@@ -285,6 +285,12 @@ fn annotation_word(word: &[u8]) -> i64 {
     if word.content_eq(&configurable_key[..]) { return 31; }
     let override_key: [u8; 8] = [111,118,101,114,114,105,100,101];
     if word.content_eq(&override_key[..]) { return 32; }
+    let thread_key: [u8; 6] = [116,104,114,101,97,100];
+    if word.content_eq(&thread_key[..]) { return 34; }
+    let transfer_key: [u8; 8] = [116,114,97,110,115,102,101,114];
+    if word.content_eq(&transfer_key[..]) { return 35; }
+    let false_key: [u8; 5] = [102,97,108,115,101];
+    if word.content_eq(&false_key[..]) { return 36; }
     let historical_region: [u8; 21] = [115,116,97,99,107,95,114,101,103,105,111,110,95,109,97,120,95,115,105,122,101];
     if word.content_eq(&historical_region[..]) { return 30; }
     0
@@ -1647,6 +1653,15 @@ fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
             index += 1;
             if tokens[index].kind == 3 { break; }
         }
+    } else if tag == 34 {
+        if tokens[index].kind != 10 || tokens[index + 1].annotation != 35
+            || tokens[index + 2].kind != 13 || tokens[index + 3].annotation != 36 { return (0, 0); }
+        let property = index + 1;
+        nodes[count] = AstNode { kind: 84, parent: copy(free), start: tokens[property].start,
+            end: tokens[index + 3].end, name_start: tokens[property].start,
+            name_end: tokens[property].end, public: false };
+        count += 1;
+        index += 4;
     } else if tag == 4 && tokens[index].kind == 3 {
         // Bare #(lock) is an object marker; placement is checked semantically.
     } else if tag == 4 {
@@ -2346,14 +2361,16 @@ fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [
     // AST ownership and child links while presenting an ordinary call signature.
     node = 1;
     while node < nodes.len() as u64 {
-        if nodes[node].kind == 1 || nodes[node].kind == 35 || nodes[node].kind == 28 {
+        if nodes[node].kind == 1 || nodes[node].kind == 35 || nodes[node].kind == 28 || nodes[node].kind == 29 {
             let mut first = graph[node].first_child;
             let branch: [u8; 6] = [98,114,97,110,99,104];
             let lock: [u8; 4] = [108,111,99,107];
             while nodes[first].kind == 58 {
                 let word = &source[nodes[first].name_start..nodes[first].name_end];
-                if !word.content_eq(&branch[..]) && !word.content_eq(&lock[..]) { break; }
-                if nodes[node].kind == 28 && !word.content_eq(&lock[..]) { break; }
+                let thread_word: [u8; 6] = [116,104,114,101,97,100];
+                if !word.content_eq(&branch[..]) && !word.content_eq(&lock[..]) && !word.content_eq(&thread_word[..]) { break; }
+                if (nodes[node].kind == 28 || nodes[node].kind == 29)
+                    && !word.content_eq(&lock[..]) && !word.content_eq(&thread_word[..]) { break; }
                 first = graph[first].next_sibling;
             }
             set_child(&mut graph[0..graph.len()], copy(node), first);
@@ -2538,7 +2555,7 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
         let item = copy(count);
         while tokens[index].kind == 71 {
             if tokens[index + 2].annotation != 4 && tokens[index + 2].annotation != 5
-                && tokens[index + 2].annotation != 22 { return 0; }
+                && tokens[index + 2].annotation != 22 && tokens[index + 2].annotation != 34 { return 0; }
             if count == item { count = count + 1; }
             let (next, used) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                 copy(index), copy(count), copy(item));
@@ -2657,7 +2674,7 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
                 count = count + 1;
                 while tokens[index].kind == 71 {
                     if tokens[index + 2].annotation != 4 && tokens[index + 2].annotation != 5
-                        && tokens[index + 2].annotation != 22 { return 0; }
+                        && tokens[index + 2].annotation != 22 && tokens[index + 2].annotation != 34 { return 0; }
                     let (after, total) = parse_annotation(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                         copy(index), copy(count), copy(method));
                     if after == 0 { return 0; }

@@ -1,0 +1,13 @@
+//! Awaiting a child carries its restricted suspension state into the parent future.
+#(thread: transfer=false)
+struct Local { value: i64 }
+async fn child() -> i64 {
+    let value = Local { value: 42 };
+    yield;
+    value.value
+}
+async fn parent() -> i64 { child().await }
+fn main() {
+    let execution = runtime::spawn(parent());
+    drop(execution.join());
+}

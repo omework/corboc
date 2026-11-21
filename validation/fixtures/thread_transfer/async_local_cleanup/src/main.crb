@@ -1,0 +1,13 @@
+//! A restricted local destroyed before suspension does not enter retained state.
+#(thread: transfer=false)
+struct Local { value: i64 }
+async fn work() -> i64 {
+    { let value = Local { value: 42 }; print(value.value); }
+    yield;
+    42
+}
+fn main() {
+    let execution = runtime::spawn(work());
+    drop(execution.join());
+    print(true);
+}

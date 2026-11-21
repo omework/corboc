@@ -1,0 +1,10 @@
+//! Thread transfer metadata is independent of ordinary ownership and locking.
+#(thread: transfer=false)
+struct Local { value: i64 }
+struct Inner { item: Local }
+struct Outer { inner: Inner }
+fn main() {
+    let value = Outer { inner: Inner { item: Local { value: 42 } } };
+    let execution = runtime::thread({ move value; value.inner.item.value });
+    drop(execution.join());
+}

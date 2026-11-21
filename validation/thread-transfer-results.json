@@ -1,0 +1,108 @@
+[
+  {
+    "case": "async_local_cleanup",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42",
+      "true"
+    ]
+  },
+  {
+    "case": "default_worker",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "fresh_worker",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "local_closure",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42"
+    ]
+  },
+  {
+    "case": "local_moves",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42"
+    ]
+  },
+  {
+    "case": "reject_array",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_async_capture",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_async_nested",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_async_result",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_async_state",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_closure",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_direct",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_duplicate",
+    "status": "rejected",
+    "rule": 1
+  },
+  {
+    "case": "reject_enum",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_generic",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_owned_fields",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_placement",
+    "status": "rejected",
+    "rule": 1
+  },
+  {
+    "case": "reject_projected_field",
+    "status": "rejected",
+    "rule": 8
+  },
+  {
+    "case": "reject_worker_result",
+    "status": "rejected",
+    "rule": 8
+  }
+]

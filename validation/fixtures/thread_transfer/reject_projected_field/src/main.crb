@@ -1,0 +1,11 @@
+//! Selecting an owned restricted field preserves its transfer metadata.
+#(thread: transfer=false)
+struct Local { value: i64 }
+struct Inner { item: Local }
+struct Outer { inner: Inner }
+fn main() {
+    let wrapper = Outer { inner: Inner { item: Local { value: 42 } } };
+    let value = wrapper.inner.item;
+    let execution = runtime::thread({ move value; value.value });
+    drop(execution.join());
+}

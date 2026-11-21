@@ -1,0 +1,6 @@
+//! Thread transfer metadata is independent of ordinary ownership and locking.
+#(thread: transfer=false)
+
+#(thread: transfer=false)
+struct Local { value: i64 }
+fn main() {}

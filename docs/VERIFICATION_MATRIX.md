@@ -186,3 +186,12 @@ pass. The native thread witness executes on macOS ARM64/x86-64, Linux x86-64 and
 Windows x86-64 under Wine; Windows ARM64 compiles only. Self-emission is identical.
 No native locking implementation or frozen Rust frontend was changed.
 [Report and conservative-analysis limits](OBJECT_LOCK_CYCLE.md).
+
+## Thread transfer restrictions (TR1)
+
+Separate representation summaries propagate an opt-out marker through ownership,
+closure fields and async state. Five packages execute with fatal UBSan; fourteen
+invalid packages reject before code generation. Existing object-lock checks pass
+(six executions, ten refusals). This analysis change introduces no platform ABI or
+runtime modification; platform suites were not replayed. Windows ARM64 execution
+remains deferred. [Report and limits](THREAD_TRANSFER_CYCLE.md).

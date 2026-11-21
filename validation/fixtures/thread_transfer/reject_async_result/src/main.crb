@@ -1,0 +1,8 @@
+//! Thread transfer metadata is independent of ordinary ownership and locking.
+#(thread: transfer=false)
+struct Local { value: i64 }
+async fn work() -> Local { Local { value: 42 } }
+fn main() {
+    let execution = runtime::spawn(work());
+    drop(execution.join());
+}
