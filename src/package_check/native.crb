@@ -54,4 +54,3 @@ fn executable_path(output: &mut [u8]) -> usize {
     length
 }
 #(endif)
-
