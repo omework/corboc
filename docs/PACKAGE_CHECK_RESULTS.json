@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-22",
+  "host": "macOS ARM64",
+  "cli": [
+    {
+      "case": "current two-module package without C toolchain",
+      "exit": 0
+    },
+    {
+      "case": "explicit package",
+      "exit": 0
+    },
+    {
+      "case": "installed executable symlink",
+      "exit": 0
+    },
+    {
+      "case": "semantic error in imported module",
+      "exit": 8
+    },
+    {
+      "case": "syntax error in imported module",
+      "exit": 7
+    },
+    {
+      "case": "owner destruction with live guard",
+      "exit": 8
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "missing package",
+      "exit": 11
+    },
+    {
+      "case": "path dependency resolution",
+      "exit": 0
+    },
+    {
+      "case": "shared compilation path still builds executable",
+      "exit": 0
+    },
+    {
+      "case": "watch saves, errors, recovery, atomic replacement, add/delete, manifest and ignored outputs",
+      "status": "passed"
+    }
+  ],
+  "native_executable_path_probes": [
+    {
+      "target": "host",
+      "status": "native executable path probe passed"
+    },
+    {
+      "target": "macos-x86_64",
+      "status": "native executable path probe passed"
+    },
+    {
+      "target": "linux-x86_64",
+      "status": "native executable path probe passed"
+    },
+    {
+      "target": "windows-x86_64",
+      "status": "native executable path probe passed"
+    }
+  ],
+  "installed_build": {
+    "corbo_revision": "c897502f8eabdbdbb65b48da49cf037ef80e0e5c",
+    "c_sha256": "1b41abd8423ebb6da5ef945036155181c35c9557695e27db24924d0b287b8708",
+    "self_verified": false
+  },
+  "limits": [
+    "Full CLI integration executed on macOS ARM64 only.",
+    "Cross-platform observations cover only the new native executable-location boundary.",
+    "Windows ARM64 execution remains deferred.",
+    "No full corpus, new rule audit or multi-generation bootstrap equivalence run."
+  ]
+}

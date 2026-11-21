@@ -63,6 +63,34 @@ build/install/
   share/corbo/stdlib/src/
 ```
 
+## Check a package without building
+
+```sh
+corboc check
+corboc check path/to/package
+corboc check --watch
+corboc check path/to/package --watch
+```
+
+`check` resolves the package manifest, imports, dependencies and installed STD,
+then parses and runs the static verifier. It does not emit C, invoke a C compiler
+or create a binary/build directory. Dependency resolution may populate its usual
+Git cache. It returns zero on success and the existing nonzero compiler status on
+failure. Existing rule/offset diagnostics are retained; this is not yet an IDE
+or file/line diagnostic service. `--verify FILE` remains the single-file mode.
+
+`--watch` runs an initial check and stays alive after errors. It polls contents
+at 250 ms intervals and rechecks after one stable interval, debouncing rapid saves.
+It detects edits (including equal-size edits), additions, deletions and atomic
+save-by-rename for `.crb`, `package.toml` and `corbo.lock` files recursively under
+the selected project. Hidden entries, root `build`/`target` directories and
+`node_modules` are ignored; symlinks are not followed. The scanner uses
+bounded 4096-byte paths and a maximum depth of 64. Unreadable trees report a scan
+error; recoverable errors during watching are retried as files become readable.
+Changes in external path dependencies or installed STD are not watched: rerun
+`check` for those. Each run rechecks the whole package; analysis is not incremental.
+Status messages go to stderr. Stop watching with Ctrl-C.
+
 ## Create a package
 
 ```sh

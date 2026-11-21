@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Package-check CLI services. Polling is portable; no platform event queue or C compiler is needed.
+use std::time::{Duration, sleep};
+
+/// Reports command syntax without creating any package artifacts.
+pub fn usage() -> i32 {
+    message("usage: corboc check [PACKAGE] [--watch]\n");
+    6
+}
+
+/// Waits between content snapshots. A second stable snapshot debounces saves.
+pub fn pause() -> bool {
+    match sleep(Duration::from_millis(250)) {
+        Ok(()) => { true },
+        Err(error) => { drop(error); false },
+    }
+}
+
+/// Writes status to stderr, leaving existing verifier diagnostics untouched.
+pub fn message(text: &str) {
+    let bytes = text.as_bytes();
+    let length = bytes.len();
+    if length == 0 { return; }
+    @unchecked {
+        let pointer = addr(&bytes[0]);
+        @c(includes={"stdio.h"}) {
+            fflush(stdout);
+            fwrite((const void *)(uintptr_t)${pointer}, 1, ${length}, stderr);
+            fflush(stderr);
+        }
+    }
+}
+
+/// Resolves the bundled STD using the same executable-relative layout as build.
+pub fn installed_stdlib(output: &mut [u8]) -> usize {
+    let length = executable_path(&mut output[0..output.len()]);
+    if length == 0 { return 0; }
+    let mut last: usize = 0;
+    let mut at: usize = 0;
+    while at < length {
+        if output[at] == 47 || output[at] == 92 { last = at + 1; }
+        at += 1;
+    }
+    let suffix = "../share/corbo/stdlib/src";
+    let bytes = suffix.as_bytes();
+    if last == 0 || last + bytes.len() >= output.len() { return 0; }
+    let mut index: usize = 0;
+    while index < bytes.len() { output[last + index] = bytes[index]; index += 1; }
+    output[last + index] = 0;
+    last + index
+}

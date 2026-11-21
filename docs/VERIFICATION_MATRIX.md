@@ -1,3 +1,12 @@
+## Package check/watch CLI
+
+- [x] Share package resolution and verifier-only mode; no code generation.
+- [x] Watch source/manifest content with debounce and recovery after errors.
+- [x] Execute focused package, dependency, error and watch tests on macOS ARM64.
+- [x] Probe the native executable-location boundary on macOS/Linux/Windows x86-64.
+
+[Evidence](PACKAGE_CHECK_CYCLE.md). Full cross-platform CLI runs were not repeated.
+
 ## Mutex API namespaces
 
 - [x] Move Mutex/MutexGuard to `std::sync` and `std::sync::asyn`.

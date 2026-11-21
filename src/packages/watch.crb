@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Content snapshots for project watching; reuse directory cursors without loading dependencies.
+use std::io::{File, FileMode};
+use std::crypto::sha256::Sha256;
+
+/// Identifies a content transition independently of directory enumeration order.
+pub fn watch_changed(left: &[u8], right: &[u8]) -> bool {
+    !left.content_eq(right)
+}
+
+/// Selects compiler input names; generated artifacts and editor temporaries are ignored.
+fn watched_file(name: &[u8]) -> bool {
+    let manifest: [u8; 12] = [112,97,99,107,97,103,101,46,116,111,109,108];
+    let lock: [u8; 10] = [99,111,114,98,111,46,108,111,99,107];
+    let extension: [u8; 4] = [46,99,114,98];
+    if name.content_eq(&manifest[..]) || name.content_eq(&lock[..]) { return true; }
+    if name.len() <= 4 { return false; }
+    let suffix = &name[name.len() - 4..name.len()];
+    suffix.content_eq(&extension[..])
+}
+
+/// Hashes a path and full contents. Streaming reads keep the working buffer bounded.
+fn watched_digest(path: &[u8], digest: &mut [u8]) -> i32 {
+    let mut file = match File::open(&path[0..path.len()], FileMode::read_only()) {
+        Ok(file) => { file }, Err(error) => { drop(error); return 11; },
+    };
+    let mut hash = Sha256::new();
+    match hash.update(&path[0..path.len()]) { Ok(()) => {}, Err(error) => { drop(error); return 4; }, };
+    let mut bytes: [u8; 4096] = [0; 4096];
+    loop {
+        let count = match file.read(&mut bytes[..]) {
+            Ok(count) => { count }, Err(error) => { drop(error); return 11; },
+        };
+        if count == 0 { break; }
+        match hash.update(&bytes[..count]) { Ok(()) => {}, Err(error) => { drop(error); return 4; }, };
+    }
+    let result = hash.finish();
+    let mut at: usize = 0;
+    while at < 32 { digest[at] ^= result[at]; at += 1; }
+    0
+}
+
+/// Walks real directories only, avoiding symlink cycles and ignored output trees.
+fn snapshot_directory(path: &[u8], depth: usize, digest: &mut [u8]) -> i32 {
+    if depth > 64 { return 4; }
+    let mut cache: [u32; 150] = [0; 150];
+    let directory = open_package_directory(&path[0..path.len()], &mut cache);
+    if directory == 0 { return 11; }
+    let mut error: i32 = 0;
+    let mut entry: [u8; 256] = [0; 256];
+    while error == 0 {
+        let kind = read_package_directory(copy(directory), &mut cache, &mut entry[..]);
+        if kind == 0 { break; }
+        if kind < 0 { error = 11; break; }
+        let length = entry_length(&entry[..]);
+        if length == 0 || entry[0] == 46 { continue; }
+        let name = &entry[..length];
+        if kind == 4 {
+            let build: [u8; 5] = [98,117,105,108,100];
+            let target: [u8; 6] = [116,97,114,103,101,116];
+            let modules: [u8; 12] = [110,111,100,101,95,109,111,100,117,108,101,115];
+            if (depth == 0 && (name.content_eq(&build[..]) || name.content_eq(&target[..])))
+                || name.content_eq(&modules[..]) { continue; }
+        } else if kind != 8 || !watched_file(&name[0..name.len()]) { continue; }
+        let mut next: [u8; 4096] = [0; 4096];
+        if path.len() + length >= 4096 { error = 4; break; }
+        let end = append(&mut next[..], 0, &path[0..path.len() - 1]);
+        next[end] = 47;
+        let full = append(&mut next[..], end + 1, &name[0..name.len()]);
+        error = if kind == 4 { snapshot_directory(&next[..full + 1], depth + 1, &mut digest[0..digest.len()]) }
+            else { watched_digest(&next[..full + 1], &mut digest[0..digest.len()]) };
+    }
+    close_package_directory(directory);
+    error
+}
+
+/// Captures project inputs into caller-owned digest storage; returns scan errors explicitly.
+pub fn watch_snapshot(root: &[u8], digest: &mut [u8]) -> i32 {
+    if root.len() == 0 || root.len() >= 4096 || digest.len() != 32 { return 4; }
+    let mut at: usize = 0;
+    while at < 32 { digest[at] = 0; at += 1; }
+    let mut path: [u8; 4096] = [0; 4096];
+    let end = append(&mut path[..], 0, root);
+    snapshot_directory(&path[..end + 1], 0, &mut digest[0..digest.len()])
+}
