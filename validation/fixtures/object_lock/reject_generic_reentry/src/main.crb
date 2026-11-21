@@ -1,0 +1,10 @@
+//! Generic specialization must preserve lock metadata and same-object rejection.
+#(lock)
+#(type: T)
+struct Boxed<T> { value: T }
+impl Boxed<T> {
+    pub fn new(value: T) -> Boxed<T> { Boxed { value: value } }
+    pub fn get(&self) -> T { (*self).value }
+    pub fn outer(&self) -> T { self.get() }
+}
+fn main() { let boxed = Boxed::new(42); print(boxed.outer()); }

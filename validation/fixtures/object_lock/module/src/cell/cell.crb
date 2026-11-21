@@ -1,0 +1,8 @@
+//! Public methods retain their contract when the type is imported.
+#(lock)
+pub struct Counter { value: i64 }
+impl Counter {
+    pub fn new(value: i64) -> Counter { Counter { value: value } }
+    fn raw(&self) -> i64 { (*self).value }
+    pub fn read(&self) -> i64 { self.raw() }
+}

@@ -1,0 +1,25 @@
+[
+  {
+    "case": "declared",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true",
+      "true"
+    ]
+  },
+  {
+    "case": "unknown_mutex",
+    "status": "rejected as ordinary unknown type",
+    "rule": "1"
+  },
+  {
+    "case": "unknown_async_mutex",
+    "status": "rejected as ordinary unknown type",
+    "rule": "1"
+  },
+  {
+    "case": "unknown_other",
+    "status": "rejected as ordinary unknown type",
+    "rule": "1"
+  }
+]

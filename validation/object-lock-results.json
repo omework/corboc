@@ -1,0 +1,95 @@
+[
+  {
+    "case": "helpers",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true",
+      "true"
+    ]
+  },
+  {
+    "case": "unmarked",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "generic",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "module",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "through_result",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42"
+    ]
+  },
+  {
+    "case": "three_threads",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "true"
+    ]
+  },
+  {
+    "case": "reject_direct",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_indirect",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_recursion",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_alias",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_possible_alias",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_function_helper",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_generic_reentry",
+    "status": "rejected",
+    "rule": 5
+  },
+  {
+    "case": "reject_marker_on_method",
+    "status": "rejected",
+    "rule": 1
+  },
+  {
+    "case": "reject_duplicate",
+    "status": "rejected",
+    "rule": 1
+  },
+  {
+    "case": "reject_enum",
+    "status": "rejected",
+    "rule": 1
+  }
+]

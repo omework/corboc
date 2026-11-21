@@ -168,3 +168,21 @@ complete: nine fatal-UBSan executions and ten refusals. Native same-lock capture
 execute on macOS ARM64/x86-64, Linux x86-64 and Windows x86-64 under Wine;
 Windows ARM64 compiles only. The scope is focused, not an independent safety audit.
 [Report and limits](MUTABLE_ACCESS_CYCLE.md).
+
+## Ordinary lock names
+
+N1/N8 name resolution: former Mutex/AsyncMutex names resolve as normal user types.
+One two-observation program executes under fatal UBSan, including an explicit
+method lock contract. Three undeclared names receive the same rule-1 rejection.
+No runtime or ABI change, platform replay or object-level annotation implementation.
+[Report](ORDINARY_LOCK_NAMES_CYCLE.md).
+
+## Object-level lock contracts
+
+MT11/N5: bare struct markers derive public instance receiver contracts. Six
+accepted fixtures execute under O1/fatal UBSan; ten refusals cover re-entry,
+possible aliasing and malformed placement. Three explicit retained-lock regressions
+pass. The native thread witness executes on macOS ARM64/x86-64, Linux x86-64 and
+Windows x86-64 under Wine; Windows ARM64 compiles only. Self-emission is identical.
+No native locking implementation or frozen Rust frontend was changed.
+[Report and conservative-analysis limits](OBJECT_LOCK_CYCLE.md).

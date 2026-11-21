@@ -1,0 +1,9 @@
+//! Object marking survives nominal specialization together with public method visibility.
+#(lock)
+#(type: T)
+struct Boxed<T> { value: T }
+impl Boxed<T> {
+    pub fn new(value: T) -> Boxed<T> { Boxed { value: value } }
+    pub fn get(&self) -> T { (*self).value }
+}
+fn main() { let boxed = Boxed::new(42); print(boxed.get() == 42); }

@@ -1,0 +1,25 @@
+//! Former lock names are ordinary concrete user types.
+/// No type argument is imposed by the spelling of this name.
+struct Mutex { value: i64 }
+impl Mutex {
+    /// A constructor uses ordinary associated-function resolution.
+    fn new(value: i64) -> Mutex { Mutex { value: value } }
+    /// The explicit contract, not the type name, establishes protection.
+    #(lock: on=self)
+    fn read(&self) -> i64 { (*self).value }
+}
+/// This name also denotes an ordinary concrete object, not an async primitive.
+struct AsyncMutex { value: i64 }
+impl AsyncMutex {
+    /// Ordinary construction with an independently declared API.
+    fn new(value: i64) -> AsyncMutex { AsyncMutex { value: value } }
+    /// Ordinary access without an implicit lock annotation.
+    fn read(&self) -> i64 { (*self).value }
+}
+/// Both type names resolve only because they are declared above.
+fn main() {
+    let first = Mutex::new(7);
+    let second = AsyncMutex::new(9);
+    print(first.read() == 7);
+    print(second.read() == 9);
+}

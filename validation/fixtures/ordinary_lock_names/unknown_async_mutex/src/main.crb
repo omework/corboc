@@ -1,0 +1,3 @@
+//! Undeclared async lock names have no builtin fallback.
+fn take(value: AsyncMutex<i64>) {}
+fn main() {}

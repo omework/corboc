@@ -46,10 +46,6 @@ fn known_builtin_type(name: &[u8]) -> bool {
     if name.content_eq(&word_12[..]) { return true; }
     let word_13: [u8; 6] = [86,101,99,116,111,114];
     if name.content_eq(&word_13[..]) { return true; }
-    let word_14: [u8; 5] = [77,117,116,101,120];
-    if name.content_eq(&word_14[..]) { return true; }
-    let word_15: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
-    if name.content_eq(&word_15[..]) { return true; }
     let word_16: [u8; 7] = [72,97,115,104,77,97,112];
     if name.content_eq(&word_16[..]) { return true; }
     false
@@ -63,10 +59,8 @@ fn builtin_arity(name: &[u8]) -> u64 {
     let allocation: [u8; 1] = [65];
     let pool: [u8; 4] = [80,111,111,108];
     let vector: [u8; 6] = [86,101,99,116,111,114];
-    let mutex: [u8; 5] = [77,117,116,101,120];
-    let async_mutex: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
     if name.content_eq(&option[..]) || name.content_eq(&allocation[..]) || name.content_eq(&pool[..])
-        || name.content_eq(&vector[..]) || name.content_eq(&mutex[..]) || name.content_eq(&async_mutex[..]) { return 1; }
+        || name.content_eq(&vector[..]) { return 1; }
     0
 }
 
@@ -125,10 +119,7 @@ fn unsupported_reference_type(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     let name = &source[nodes[node].name_start..nodes[node].name_end];
     let character: [u8; 4] = [99,104,97,114];
     let conversion_error: [u8; 22] = [78,117,109,101,114,105,99,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114];
-    let mutex: [u8; 5] = [77,117,116,101,120];
-    let async_mutex: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
-    let word = name.content_eq(&character[..]) || name.content_eq(&conversion_error[..])
-        || name.content_eq(&mutex[..]) || name.content_eq(&async_mutex[..]);
+    let word = name.content_eq(&character[..]) || name.content_eq(&conversion_error[..]);
     return word && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], node) == 0;
 }
@@ -315,11 +306,8 @@ fn qualified_call_error(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     let text: [u8; 3] = [115,116,114];
     if member.content_eq(&converts[..]) && verify_primitive(&source[0..source.len()], copy(start), copy(end)) != 0 { return 1; }
     if prefix.content_eq(&text[..]) && member.content_eq(&from_utf8[..]) { return 0; }
-    let mutex: [u8; 5] = [77,117,116,101,120];
-    let async_mutex: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
     if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], callee) != 0 { return 0; }
-    if prefix.content_eq(&mutex[..]) || prefix.content_eq(&async_mutex[..]) { return 1; }
     if !known_builtin_type(&prefix[0..prefix.len()])
         && verify_primitive(&source[0..source.len()], start, end) == 0 { return 2; }
     0

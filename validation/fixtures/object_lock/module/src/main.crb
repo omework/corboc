@@ -1,0 +1,3 @@
+//! Imported object contracts survive package linking.
+use module::cell::Counter;
+fn main() { let counter = Counter::new(12); print(counter.read() == 12); }

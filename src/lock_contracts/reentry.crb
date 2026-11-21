@@ -1,0 +1,311 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Check acquisition reachability separately from the runtime implementation of a lock.
+
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::loans::{access_root, access_callee, access_actual};
+use bootstrap::scalar::verify_primitive;
+use bootstrap::verify::violation;
+
+/// Detects a retained reference to the held object in a local aggregate/callback.
+fn mentions_held(
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    value: u64,
+    held: u64,
+    depth: u64
+) -> bool {
+    if value == 0 || depth > 64 {
+        return false;
+    }
+    if access_root(
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(value),
+        0
+    ) == access_root(
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(held),
+        0
+    ) {
+        return true;
+    }
+    if nodes[value].kind == 7 || nodes[value].kind == 57 {
+        let binding = graph[value].binding;
+        if nodes[binding].kind == 5 {
+            return mentions_held(
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                graph[binding].first_child,
+                held,
+                depth + 1
+            );
+        }
+        return false;
+    }
+    let mut child = graph[value].first_child;
+    while child != 0 {
+        if mentions_held(
+            &nodes[0..nodes.len()],
+            &graph[0..graph.len()],
+            copy(child),
+            copy(held),
+            copy(depth) + 1
+        ) {
+            return true;
+        }
+        child = graph[child].next_sibling;
+    }
+    false
+}
+
+/// Distinguishes known fresh owned objects from symbolic references that may alias self.
+fn may_be_held(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    actual: u64,
+    held: u64
+) -> bool {
+    if mentions_held(
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(actual),
+        copy(held),
+        0
+    ) {
+        return true;
+    }
+    let root = access_root(
+        &nodes[0..nodes.len()],
+        &graph[0..graph.len()],
+        copy(actual),
+        0
+    );
+    if root == 0 {
+        return true;
+    }
+    if nodes[root].kind == 5 {
+        let first = graph[root].first_child;
+        let value = if nodes[first].kind == 4 {
+            graph[first].next_sibling
+        } else {
+            copy(first)
+        };
+        if nodes[value].kind == 37 {
+            return false;
+        }
+        if nodes[value].kind == 15 {
+            let function = access_callee(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(value),
+                0
+            );
+            if function != 0 {
+                let mut result = graph[function].first_child;
+                while nodes[result].kind == 3 {
+                    result = graph[result].next_sibling;
+                }
+                if nodes[result].kind == 4 && source[nodes[result].start] != 38 {
+                    return false;
+                }
+            }
+        }
+    }
+    if nodes[root].kind == 3 {
+        // Symbolic parameters are not distinct identities merely because they
+        // have different names or are checked in a separate function body.
+        return true;
+    }
+    // Unknown aliasing is not evidence that acquisition targets are distinct.
+    true
+}
+
+/// Primitive values passed by value cannot carry a reference to the held object.
+fn carries_reference(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    parameter: u64
+) -> bool {
+    let annotation = graph[parameter].first_child;
+    if annotation == 0 {
+        return true;
+    }
+    if source[nodes[annotation].start] == 38 {
+        return true;
+    }
+    verify_primitive(
+        &source[0..source.len()],
+        nodes[annotation].name_start,
+        nodes[annotation].name_end
+    ) == 0
+}
+
+/// Traverses helper calls using symbolic parameter substitution and a finite call path.
+fn acquisition_path(
+    source: &[u8],
+    nodes: &[AstNode],
+    graph: &[StaticNode],
+    function: u64,
+    held: u64,
+    functions: &mut [u64],
+    parameters: &mut [u64],
+    depth: u64
+) -> u64 {
+    let mut prior: u64 = 0;
+    while prior < depth {
+        if functions[prior] == function && parameters[prior] == held {
+            return 0;
+        }
+        prior += 1;
+    }
+    if depth >= functions.len() as u64 {
+        return function;
+    }
+    functions[depth] = copy(function);
+    parameters[depth] = copy(held);
+    let mut point = function + 1;
+    while point < nodes.len() as u64 && nodes[point].start < nodes[function].end {
+        if nodes[point].kind == 15 || nodes[point].kind == 16 {
+            let callee = access_callee(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(point),
+                0
+            );
+            if callee != 0 {
+                let (locked, through) = lock_parameter(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(callee)
+                );
+                drop(through);
+                if locked != 0 {
+                    let actual = access_actual(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(point),
+                        copy(callee),
+                        locked
+                    );
+                    if may_be_held(
+                        &source[0..source.len()],
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        actual,
+                        copy(held)
+                    ) {
+                        return point;
+                    }
+                }
+                let mut formal = graph[callee].first_child;
+                while nodes[formal].kind == 58 {
+                    formal = graph[formal].next_sibling;
+                }
+                while nodes[formal].kind == 3 {
+                    let actual = access_actual(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(point),
+                        copy(callee),
+                        copy(formal)
+                    );
+                    if actual != 0
+                        && carries_reference(
+                        &source[0..source.len()],
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(formal)
+                    )
+                        && may_be_held(
+                        &source[0..source.len()],
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        actual,
+                        copy(held)
+                    )
+                    {
+                        let found = acquisition_path(
+                            &source[0..source.len()],
+                            &nodes[0..nodes.len()],
+                            &graph[0..graph.len()],
+                            copy(callee),
+                            copy(formal),
+                            &mut functions[0..functions.len()],
+                            &mut parameters[0..parameters.len()],
+                            copy(depth) + 1
+                        );
+                        if found != 0 {
+                            return found;
+                        }
+                    }
+                    formal = graph[formal].next_sibling;
+                }
+            } else {
+                // Opaque callbacks involving the held object provide no no-reentry proof.
+                let target = graph[point].first_child;
+                if (graph[target].binding != 0
+                        && mentions_held(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        copy(target),
+                        copy(held),
+                        0
+                ))
+                    || (nodes[point].kind == 16
+                        && mentions_held(
+                        &nodes[0..nodes.len()],
+                        &graph[0..graph.len()],
+                        target,
+                        copy(held),
+                        0
+                ))
+                {
+                    return point;
+                }
+            }
+        }
+        point += 1;
+    }
+    0
+}
+
+/// Every effective lock contract must avoid reacquiring its held object through checked calls.
+pub fn validate_lock_reentry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+    let mut function: u64 = 1;
+    while function < nodes.len() as u64 {
+        if nodes[function].kind == 1 || nodes[function].kind == 35 {
+            let (held, through) = lock_parameter(
+                &source[0..source.len()],
+                &nodes[0..nodes.len()],
+                &graph[0..graph.len()],
+                copy(function)
+            );
+            drop(through);
+            if held != 0 {
+                let mut functions: [u64; 128] = [0; 128];
+                let mut parameters: [u64; 128] = [0; 128];
+                let found = acquisition_path(
+                    &source[0..source.len()],
+                    &nodes[0..nodes.len()],
+                    &graph[0..graph.len()],
+                    copy(function),
+                    held,
+                    &mut functions[..],
+                    &mut parameters[..],
+                    0
+                );
+                if found != 0 {
+                    return violation(5, nodes[found].start);
+                }
+            }
+        }
+        function += 1;
+    }
+    0
+}

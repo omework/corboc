@@ -26,7 +26,8 @@ pub fn lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
         }
         annotation += 1;
     }
-    (0, false)
+    let receiver = inherited_lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function);
+    (receiver, false)
 }
 
 /// Attach an independent lifetime reservation to a returned aggregate graph.
@@ -69,11 +70,30 @@ pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[St
     let mut item: u64 = 1;
     while item < nodes.len() as u64 {
         let function = nodes[item].parent;
+        if nodes[item].kind == 58 {
+            let name = &source[nodes[item].name_start..nodes[item].name_end];
+            if name.content_eq(&lock[..]) {
+                let property = graph[item].first_child;
+                if nodes[function].kind == 28 {
+                    if property != 0 { return violation(1, nodes[item].start); }
+                    let mut prior = function + 1;
+                    while prior < item {
+                        let spelling = &source[nodes[prior].name_start..nodes[prior].name_end];
+                        if nodes[prior].parent == function && nodes[prior].kind == 58 && spelling.content_eq(&lock[..]) { return violation(1, nodes[item].start); }
+                        prior += 1;
+                    }
+                } else if (nodes[function].kind != 1 && nodes[function].kind != 35) || property == 0 {
+                    return violation(1, nodes[item].start);
+                }
+            }
+        }
         if nodes[item].kind == 58 && (nodes[function].kind == 1 || nodes[function].kind == 35) {
             let name = &source[nodes[item].name_start..nodes[item].name_end];
             if name.content_eq(&lock[..]) {
                 let (target, through) = lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
                 if target == 0 { return violation(1, nodes[item].start); }
+                let inherited = inherited_lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
+                if inherited != 0 && inherited != target { return violation(1, nodes[item].start); }
                 if through {
                     let mut result = graph[function].first_child;
                     while nodes[result].kind == 3 { result = graph[result].next_sibling; }
@@ -104,5 +124,31 @@ pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[St
         }
         item += 1;
     }
+    0
+}
+
+/// Finds a bare object marker without assigning meaning to the type's name.
+pub fn object_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> bool {
+    if nodes[declaration].kind != 28 { return false; }
+    let word: [u8; 4] = [108,111,99,107];
+    let mut annotation = declaration + 1;
+    while annotation < nodes.len() as u64 && nodes[annotation].start < nodes[declaration].end {
+        let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+        if nodes[annotation].kind == 58 && nodes[annotation].parent == declaration
+            && graph[annotation].first_child == 0 && name.content_eq(&word[..]) { return true; }
+        annotation += 1;
+    }
+    false
+}
+
+/// Public instance methods inherit on=self; associated constructors have no receiver.
+fn inherited_lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+    if !nodes[function].public || nodes[nodes[function].parent].kind != 49 { return 0; }
+    let owner = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nodes[function].parent);
+    if !object_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner) { return 0; }
+    let receiver = graph[function].first_child;
+    let word: [u8; 4] = [115,101,108,102];
+    let name = &source[nodes[receiver].name_start..nodes[receiver].name_end];
+    if nodes[receiver].kind == 3 && name.content_eq(&word[..]) { return receiver; }
     0
 }

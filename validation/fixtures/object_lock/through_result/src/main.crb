@@ -1,0 +1,8 @@
+#(lock)
+struct Cell { value: i64 }
+struct View { value: &mut i64 }
+impl Cell {
+    #(lock: on=self, through_result=true)
+    pub fn reserve(&mut self) -> View { View { value: &mut (*self).value } }
+}
+fn main() { let mut cell = Cell { value: 41 }; let mut view = cell.reserve(); *view.value += 1; drop(view); print(cell.value); }

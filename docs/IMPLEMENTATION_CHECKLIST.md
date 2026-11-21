@@ -204,3 +204,24 @@ Implementation and focused validation are complete. See
 platform evidence. Unknown required proofs remain refusals. The STD/runtime pin
 now references committed Corbo revision `d54cf3063861498fc721b78d9bbd11ba6ac8f667`; the source-lock and
 regenerated-runtime checks pass. The release installation is unchanged.
+
+## Ordinary lock type names
+
+- [x] Remove Mutex/AsyncMutex lexer, builtin arity and special rejection handling.
+- [x] Preserve generic named types, associated calls and explicit lock contracts.
+- [x] Execute a declared-name fixture under fatal UBSan; reject three undeclared names uniformly.
+- [x] Align English/French MT9 and retain the [focused report](ORDINARY_LOCK_NAMES_CYCLE.md).
+
+Object-level inheritance is implemented separately below; it never follows from
+naming a type Mutex.
+
+## Object-level lock contracts (MT11)
+
+- [x] Parse bare `#(lock)` on structs and retain public instance-method visibility.
+- [x] Derive receiver contracts; exclude private helpers and receiver-less constructors.
+- [x] Preserve object/method contracts through generic specialization and module loading.
+- [x] Reject checked same-object acquisition through direct calls, helpers and aliases.
+- [x] Preserve explicit through-result contracts and existing guard-release checks.
+- [x] Execute six accepted fixtures under fatal UBSan and reject ten invalid forms.
+- [x] Execute the real-lock three-thread fixture on supported targets; Windows ARM64 compile-only.
+- [x] Check identical self-emission and record the [cycle report](OBJECT_LOCK_CYCLE.md).

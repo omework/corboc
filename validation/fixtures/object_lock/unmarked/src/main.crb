@@ -1,0 +1,7 @@
+//! Public methods on an unmarked type do not acquire implicit lock contracts.
+struct Plain { value: i64 }
+impl Plain {
+    pub fn read(&self) -> i64 { (*self).value }
+    pub fn outer(&self) -> i64 { self.read() }
+}
+fn main() { let plain = Plain { value: 11 }; print(plain.outer() == 11); }

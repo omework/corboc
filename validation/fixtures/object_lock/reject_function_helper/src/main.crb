@@ -1,0 +1,10 @@
+//! Effective object contracts prohibit reacquisition of the same held instance.
+#(lock)
+struct Cell { value: i64 }
+impl Cell {
+    pub fn read(&self) -> i64 { (*self).value }
+    pub fn outer(&self) -> i64 { relay(self) }
+}
+fn main() { let cell = Cell { value: 1 }; print(cell.outer()); }
+
+fn relay(cell: &Cell) -> i64 { cell.read() }

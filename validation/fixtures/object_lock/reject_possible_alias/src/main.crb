@@ -1,0 +1,8 @@
+//! Distinct parameter names do not establish distinct lock identities.
+#(lock)
+struct Cell { value: i64 }
+impl Cell {
+    pub fn read(&self) -> i64 { (*self).value }
+    pub fn outer(&self, other: &Cell) -> i64 { other.read() }
+}
+fn main() { let cell = Cell { value: 1 }; print(cell.outer(&cell)); }

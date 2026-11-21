@@ -505,12 +505,23 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
     let mut token = token_at(&tokens[0..tokens.len()], nodes[part].start);
     let mut cursor = nodes[part].start;
     let mut written = start;
-    let mut annotation = graph[part].first_child;
-    while nodes[annotation].kind == 58 {
-        cursor = nodes[annotation].end;
-        token = token_at(&tokens[0..tokens.len()], copy(cursor));
-        annotation = graph[annotation].next_sibling;
+    // Preserve effect contracts while removing only specialization recipes.
+    // Scan AST ownership because the static field/signature view omits lock metadata.
+    let mut annotation = part + 1;
+    while annotation < nodes.len() as u64 && nodes[annotation].start < nodes[part].end {
+        if nodes[annotation].parent == part && nodes[annotation].kind == 58 {
+            let lock_word: [u8; 4] = [108,111,99,107];
+            let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
+            if name.content_eq(&lock_word[..]) {
+                written = put(&mut output[0..output.len()], written, &source[nodes[annotation].start..nodes[annotation].end]);
+                let newline: [u8; 1] = [10];
+                written = put(&mut output[0..output.len()], written, &newline[..]);
+            }
+            if nodes[annotation].end > cursor { cursor = nodes[annotation].end; }
+        }
+        annotation += 1;
     }
+    token = token_at(&tokens[0..tokens.len()], copy(cursor));
     let self_name: [u8; 4] = [83,101,108,102];
     while tokens[token].start < nodes[part].end {
         if collector != 0 && tokens[token].start == nodes[collector].start {

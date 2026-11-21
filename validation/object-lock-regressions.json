@@ -1,0 +1,19 @@
+[
+  {
+    "case": "lock_drop_release",
+    "status": "executed, fatal UBSan",
+    "output": [
+      "42"
+    ]
+  },
+  {
+    "case": "reject_double_reserve",
+    "status": "rejected",
+    "diagnostic": "5\n349"
+  },
+  {
+    "case": "reject_lock_after_use",
+    "status": "rejected",
+    "diagnostic": "5\n370"
+  }
+]

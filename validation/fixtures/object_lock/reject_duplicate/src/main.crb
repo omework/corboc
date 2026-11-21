@@ -1,0 +1,4 @@
+#(lock)
+#(lock)
+struct Cell { value: i64 }
+fn main() {}

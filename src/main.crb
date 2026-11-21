@@ -337,10 +337,6 @@ fn builtin_or_placeholder(word: &[u8]) -> bool {
     if word.content_eq(&word_21[..]) { return true; }
     let word_22: [u8; 6] = [82,101,115,117,108,116];
     if word.content_eq(&word_22[..]) { return true; }
-    let word_23: [u8; 5] = [77,117,116,101,120];
-    if word.content_eq(&word_23[..]) { return true; }
-    let word_24: [u8; 10] = [65,115,121,110,99,77,117,116,101,120];
-    if word.content_eq(&word_24[..]) { return true; }
     let word_25: [u8; 7] = [72,97,115,104,77,97,112];
     if word.content_eq(&word_25[..]) { return true; }
     let adapter: [u8; 3] = [73,116,101];
@@ -1651,6 +1647,8 @@ fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
             index += 1;
             if tokens[index].kind == 3 { break; }
         }
+    } else if tag == 4 && tokens[index].kind == 3 {
+        // Bare #(lock) is an object marker; placement is checked semantically.
     } else if tag == 4 {
         if tokens[index].kind != 10 || tokens[index + 1].annotation != 6 { return (0, 0); }
         index = index + 2;
@@ -2348,13 +2346,14 @@ fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [
     // AST ownership and child links while presenting an ordinary call signature.
     node = 1;
     while node < nodes.len() as u64 {
-        if nodes[node].kind == 1 || nodes[node].kind == 35 {
+        if nodes[node].kind == 1 || nodes[node].kind == 35 || nodes[node].kind == 28 {
             let mut first = graph[node].first_child;
             let branch: [u8; 6] = [98,114,97,110,99,104];
             let lock: [u8; 4] = [108,111,99,107];
             while nodes[first].kind == 58 {
                 let word = &source[nodes[first].name_start..nodes[first].name_end];
                 if !word.content_eq(&branch[..]) && !word.content_eq(&lock[..]) { break; }
+                if nodes[node].kind == 28 && !word.content_eq(&lock[..]) { break; }
                 first = graph[first].next_sibling;
             }
             set_child(&mut graph[0..graph.len()], copy(node), first);
@@ -2665,11 +2664,15 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
                     index = after;
                     count = total;
                 }
+                let method_public = tokens[index].kind == 57;
+                if method_public { index += 1; }
                 let method_kind: i64 = if tokens[index].kind == 60 { 35 } else { 1 };
                 if copy(method_kind) == 35 { index += 1; }
                 let (next, used) = parse_function(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                    copy(index), method, copy(count), copy(implementation), method_start, method_kind);
+                    copy(index), copy(method), copy(count), copy(implementation), method_start, method_kind);
                 if next == 0 { return 0; }
+                let exported = &mut nodes[method].public;
+                *exported = method_public;
                 count = used;
                 index = next;
             }
@@ -2749,7 +2752,8 @@ fn generic_recipes(source: &[u8], nodes: &[AstNode]) -> bool {
     let mut candidate: u64 = 1;
     while candidate < nodes.len() as u64 {
         let kind = nodes[candidate].kind;
-        if (kind == 58 || kind == 67) && (nodes[nodes[candidate].parent].kind == 28 || nodes[nodes[candidate].parent].kind == 29)
+        if (kind == 67 || (kind == 58 && nodes[candidate].name_end - nodes[candidate].name_start == 4
+            && source[nodes[candidate].name_start] == 116)) && (nodes[nodes[candidate].parent].kind == 28 || nodes[nodes[candidate].parent].kind == 29)
             && !deferred_iterator(&source[0..source.len()], &nodes[0..nodes.len()], nodes[candidate].parent) { generic = true; }
         if kind == 58
             && (nodes[nodes[candidate].parent].kind == 1 || nodes[nodes[candidate].parent].kind == 35) {

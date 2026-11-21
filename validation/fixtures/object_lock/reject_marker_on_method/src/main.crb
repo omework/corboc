@@ -1,0 +1,3 @@
+struct Plain { value: i64 }
+impl Plain { #(lock) pub fn read(&self) -> i64 { (*self).value } }
+fn main() {}

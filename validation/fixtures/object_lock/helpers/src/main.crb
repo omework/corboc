@@ -1,0 +1,22 @@
+//! Public instance methods inherit protection; helpers and constructors do not reacquire.
+#(lock)
+struct Counter { value: i64 }
+impl Counter {
+    /// Associated construction has no receiver lock.
+    pub fn new(value: i64) -> Counter { Counter { value: value } }
+    /// Shared logic executes in its caller's context without a new acquisition.
+    fn raw(&self) -> i64 { (*self).value }
+    /// Inherits the object contract without repeating an annotation.
+    pub fn read(&self) -> i64 { self.raw() }
+    /// This fresh object has a different proven lock identity.
+    pub fn independent(&self) -> i64 {
+        let other = Counter { value: 9 };
+        other.read()
+    }
+}
+/// The runtime implementation remains developer-owned; no lock code is synthesized.
+fn main() {
+    let counter = Counter::new(7);
+    print(counter.read() == 7);
+    print(counter.independent() == 9);
+}

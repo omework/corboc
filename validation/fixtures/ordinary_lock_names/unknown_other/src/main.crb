@@ -1,0 +1,3 @@
+//! A normal unknown name follows the same resolution and diagnostic path.
+fn take(value: OtherName<i64>) {}
+fn main() {}
