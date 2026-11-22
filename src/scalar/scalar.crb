@@ -2,6 +2,10 @@ use bootstrap::model::{AstNode, StaticNode, CheckedValue, hex_digit};
 use bootstrap::verify::{violation, scalar_known_type};
 use bootstrap::constants::resolve_constant;
 
+// Primitive values have no owned resources: by-value evaluation copies them.
+// usize resolves to the target's ordinary unsigned primitive type code.
+pub fn is_primitive_value(ty: i64) -> bool { ty >= 1 && ty <= 9 }
+
 pub fn verify_primitive(source: &[u8], start: u64, end: u64) -> i64 {
     let spelling = &source[start..end];
     let signed32: [u8; 3] = [105, 51, 50];

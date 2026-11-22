@@ -1,3 +1,12 @@
+## Implicit primitive copies — V3
+
+- [x] Copy primitive by-value inputs and keep their sources available.
+- [x] Preserve non-primitive moves, borrowing, drop and address provenance.
+- [x] Execute all ten primitive types, joins and eight refusals; validate five updated README examples.
+- [x] Update EN/FR rules and references. Leave the independently failing Iter example unchanged.
+
+[Evidence](IMPLICIT_PRIMITIVE_COPY_CYCLE.md). macOS ARM64 execution; no new broad audit.
+
 ## Positioned File API integration
 
 - [x] Advance STD pin to the committed read_at/write_at implementation.

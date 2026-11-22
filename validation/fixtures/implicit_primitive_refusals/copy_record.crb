@@ -1,0 +1,6 @@
+struct Point { value: i64 }
+fn main() {
+    let original = Point { value: 1 };
+    let duplicate = copy(original);
+    print(duplicate.value);
+}

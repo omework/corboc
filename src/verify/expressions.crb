@@ -1,3 +1,4 @@
+use bootstrap::scalar::is_primitive_value;
 use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::check_text;
 use bootstrap::places::value_record;
@@ -244,6 +245,21 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             values[binding] = CheckedValue { ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
                 mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, writable: false };
             return if array_move { expected } else if mode == 1 { ty } else { 0 };
+        }
+        if is_primitive_value(copy(ty)) && mode != 3 {
+            if expected != 0 && expected != ty { return 0 - violation(1, start); }
+            if values[binding].target != 0 && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+                return 0 - violation(4, start);
+            }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
+                &graph[0..graph.len()], copy(binding), copy(node), false);
+            if conflict > 0 { return 0 - violation(5, start); }
+            if conflict < 0 { return -9; }
+            // Preserve any raw-address origin; copying usize must not erase it.
+            values[node] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
+                target: values[binding].target, loan_parent: values[binding].loan_parent,
+                origin_call: values[binding].origin_call, writable: values[binding].writable };
+            return ty;
         }
         if values[binding].target != 0 {
             let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
@@ -817,9 +833,13 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if spelling.content_eq(&copy_word[..]) {
             if nodes[argument].kind != 7 || graph[argument].next_sibling != 0 { return 0 - violation(3, start); }
             let ty = values[graph[argument].binding].ty;
-            if ty >= 20 || values[graph[argument].binding].target != 0 { return 0 - violation(3, start); }
-            return verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                &mut values[0..values.len()], argument, expected, 2);
+            if !is_primitive_value(copy(ty)) { return 0 - violation(3, start); }
+            let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut values[0..values.len()], copy(argument), expected, 2);
+            if checked > 0 {
+                copy_task_summary(&mut values[0..values.len()], argument, node, copy(checked), false);
+            }
+            return checked;
         }
         let destroys = spelling.content_eq(&drop_word[..]);
         if destroys {

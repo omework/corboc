@@ -1,0 +1,231 @@
+fn relay_i32(input: i32) -> i32 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_i64(input: i64) -> i64 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_u8(input: u8) -> u8 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_u16(input: u16) -> u16 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_u32(input: u32) -> u32 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_u64(input: u64) -> u64 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_usize(input: usize) -> usize {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_bool(input: bool) -> bool {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_f32(input: f32) -> f32 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn relay_f64(input: f64) -> f64 {
+    let first = input;
+    let second = input;
+    let result = if true { first } else { second };
+    let retained = first;
+    result
+}
+
+fn tuple_of(value: i64) -> (i64, i64, i64) { (value, value, value + 1) }
+
+async fn delayed(value: i64) -> i64 {
+    yield;
+    let duplicate = value;
+    value
+}
+
+struct Point { value: i64 }
+impl Point { fn drop(&mut self) { print(99); } }
+
+fn main() {
+    {
+        let original: i32 = 7;
+        let duplicate = original;
+        let mut destination: i32 = 0;
+        destination = original;
+        let result = relay_i32(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: i64 = 7;
+        let duplicate = original;
+        let mut destination: i64 = 0;
+        destination = original;
+        let result = relay_i64(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: u8 = 7;
+        let duplicate = original;
+        let mut destination: u8 = 0;
+        destination = original;
+        let result = relay_u8(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: u16 = 7;
+        let duplicate = original;
+        let mut destination: u16 = 0;
+        destination = original;
+        let result = relay_u16(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: u32 = 7;
+        let duplicate = original;
+        let mut destination: u32 = 0;
+        destination = original;
+        let result = relay_u32(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: u64 = 7;
+        let duplicate = original;
+        let mut destination: u64 = 0;
+        destination = original;
+        let result = relay_u64(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: usize = 7;
+        let duplicate = original;
+        let mut destination: usize = 0;
+        destination = original;
+        let result = relay_usize(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: bool = true;
+        let duplicate = original;
+        let mut destination: bool = false;
+        destination = original;
+        let result = relay_bool(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = false;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: f32 = 1.5;
+        let duplicate = original;
+        let mut destination: f32 = 0.0;
+        destination = original;
+        let result = relay_f32(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0.0;
+        print(original == duplicate && original == result);
+    }
+    {
+        let original: f64 = 1.5;
+        let duplicate = original;
+        let mut destination: f64 = 0.0;
+        destination = original;
+        let result = relay_f64(original);
+        print(original == duplicate && original == destination && original == result);
+        destination = 0.0;
+        print(original == duplicate && original == result);
+    }
+    let original: i64 = 10;
+    let view = &original;
+    let duplicate = original;
+    print(*view + duplicate);
+    let (first, second, third) = tuple_of(original);
+    print(original + first + second + third);
+    let (a, b, c) = if true { (original, original, original + 1) } else { (original, original, original) };
+    print(original + a + b + c);
+    let choice: Option<i64> = Some(1);
+    let selected = match choice { Some(_) => { original }, None => { original }, };
+    print(original + selected);
+    let selected_loop = loop { break original; };
+    print(original + selected_loop);
+    let point = Point { value: original };
+    let received = point;
+    print(original + received.value);
+    let legacy = copy(original);
+    print(original + legacy);
+    let mut observed: i64 = 0;
+    @unchecked {
+        let raw = addr(&original);
+        let implicit_address = raw;
+        let explicit_address = copy(raw);
+        @c { ${observed} = *(const int64_t *)(uintptr_t)${implicit_address} + *(const int64_t *)(uintptr_t)${explicit_address}; }
+    }
+    print(observed);
+    {
+        let disposable: i64 = 3;
+        let retained = relay_i64(disposable);
+        drop(disposable);
+        print(retained);
+    }
+    let execution = runtime::spawn(delayed(original));
+    match execution.join() {
+        Ok(result) => { print(original + result); },
+        Err(error) => { drop(error); print(-1); },
+    };
+
+}

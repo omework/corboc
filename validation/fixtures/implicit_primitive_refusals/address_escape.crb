@@ -1,0 +1,10 @@
+fn main() {
+    let original: i64 = 1;
+    let mut escaped: usize = 0;
+    @unchecked {
+        let address = addr(&original);
+        let duplicate = address;
+        escaped = duplicate;
+    }
+    print(escaped);
+}

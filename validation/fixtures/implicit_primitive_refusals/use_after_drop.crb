@@ -1,0 +1,7 @@
+fn main() {
+    let original: i64 = 1;
+    let duplicate = original;
+    drop(original);
+    print(original);
+    print(duplicate);
+}

@@ -63,6 +63,27 @@ build/install/
   share/corbo/stdlib/src/
 ```
 
+## Primitive value copies
+
+Assignments, arguments and returns copy primitive values implicitly:
+
+```rust
+fn identity(value: i64) -> i64 { value }
+
+fn main() {
+    let original: i64 = 12;
+    let duplicate = original;
+    let returned = identity(original);
+    print(original + duplicate + returned);
+}
+```
+
+This applies to `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `usize`, `bool`,
+`f32` and `f64`. `copy(x)` remains valid and optional for primitives. Other
+values retain move semantics, including structs and tuples containing only
+primitives. Reference, allocation and explicit destruction rules are unchanged.
+Raw addresses remain confined to their originating `@unchecked` block.
+
 ## Check a package without building
 
 ```sh

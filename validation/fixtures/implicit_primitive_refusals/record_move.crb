@@ -1,0 +1,7 @@
+struct Point { value: i64 }
+fn main() {
+    let original = Point { value: 1 };
+    let moved = original;
+    print(original.value);
+    print(moved.value);
+}

@@ -1,0 +1,7 @@
+fn main() {
+    let original = (1, 2);
+    let moved = original;
+    let (a, b) = original;
+    print(a + b);
+    drop(moved);
+}

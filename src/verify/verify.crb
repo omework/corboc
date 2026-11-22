@@ -1,3 +1,4 @@
+use bootstrap::scalar::is_primitive_value;
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::lowering_types::optional;
 use bootstrap::places::bind_record_pool;
@@ -516,6 +517,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
             let exclusive=values[origin].writable;let mutable=values[origin].mutable;
             values[origin]=CheckedValue{ty:ty,state:2,mutable:mutable,target:target,loan_parent:parent,origin_call:shape,writable:exclusive};
         } else if kind == 5 && nodes[initializer].kind == 7
+            && !is_primitive_value(values[graph[initializer].binding].ty)
             && !scalar_option(values[graph[initializer].binding].ty)
             && (values[graph[initializer].binding].target != 0
                 || (values[graph[initializer].binding].ty >= 300 && !task_value(values[graph[initializer].binding].ty))) {
@@ -772,6 +774,9 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 let members=values[origin].loan_parent;
                 values[node] = CheckedValue { ty: ty, state: 1, mutable: graph[node].mutable, target: 0,
                     loan_parent: members, origin_call: shape, writable: false };
+            } else if is_primitive_value(copy(ty)) && values[origin].target != 0 {
+                // A copied address-valued usize retains its original target.
+                copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if result_type(copy(ty)) && values[origin].state == 1 {
                 copy_task_summary(&mut values[0..values.len()], origin, copy(node), ty, graph[node].mutable);
             } else if option_borrow(copy(ty)) != 0 {
@@ -915,7 +920,8 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 node = graph[node].next_sibling;
                 continue;
             }
-            if values[binding].target != 0 || values[binding].ty > 9 { return (violation(1, start), 0); }
+            if (values[binding].target != 0 && !is_primitive_value(values[binding].ty))
+                || values[binding].ty > 9 { return (violation(1, start), 0); }
             let expected = values[binding].ty;
             let value = graph[child].next_sibling;
             if nodes[value].kind == 26 {
@@ -936,7 +942,12 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 &graph[0..graph.len()], copy(binding), copy(node), true, nodes[node].end);
             if conflict > 0 { return (violation(5, start), 0); }
             if conflict < 0 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
-            values[binding] = CheckedValue { ty: expected, state: 1, mutable: true, target: 0, loan_parent: 0, origin_call: 0, writable: false };
+            values[binding] = CheckedValue { ty: copy(expected), state: 1, mutable: true, target: 0, loan_parent: 0, origin_call: 0, writable: false };
+            let mut copied = graph[child].next_sibling;
+            while nodes[copied].kind == 19 { copied = graph[copied].first_child; }
+            if is_primitive_value(copy(expected)) && values[copied].target != 0 {
+                copy_task_summary(&mut values[0..values.len()], copied, binding, expected, true);
+            }
         } else if kind == 8 && nodes[child].kind == 16 {
             let method = resolve_record_receiver(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &values[0..values.len()], copy(child));

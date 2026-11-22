@@ -1,3 +1,4 @@
+use bootstrap::scalar::is_primitive_value;
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::scalar::{scalar_hint, verify_primitive};
 use bootstrap::loans::loan_conflict;
@@ -73,8 +74,7 @@ fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     result
 }
 
-// A bare name in a value-producing tail can move. Validate both alternatives
-// against the incoming state before marking bindings possibly moved at the join.
+// Primitive tails copy. Retain move merging for non-primitive bindings only.
 pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
     expression: u64, merge: bool) -> i64 {
     let mut node = expression;
@@ -92,6 +92,7 @@ pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Check
     }
     if nodes[node].kind != 7 { return 0; }
     let binding = graph[node].binding;
+    if is_primitive_value(values[binding].ty) { return 0; }
     if merge {
         let ty = values[binding].ty;
         let mutable = values[binding].mutable;
@@ -124,8 +125,7 @@ pub fn readonly_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         let mut operand = copy(argument);
         while nodes[operand].kind == 19 { operand = graph[operand].first_child; }
         if graph[annotation].first_child == 0 {
-            if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0
-                || nodes[operand].kind == 7 || nodes[operand].kind == 26 { return false; }
+            if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 { return false; }
         } else {
             if nodes[operand].kind != 13 || graph[operand].mutable { return false; }
             let (slice, shape, exclusive) = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],

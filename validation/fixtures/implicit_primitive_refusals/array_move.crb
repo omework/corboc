@@ -1,0 +1,6 @@
+fn main() {
+    let original: [i64; 1] = [1];
+    let moved = original;
+    print(original[0]);
+    print(moved[0]);
+}

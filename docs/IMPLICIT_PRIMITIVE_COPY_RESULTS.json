@@ -1,0 +1,148 @@
+{
+  "date": "2026-11-22",
+  "host": "macOS ARM64",
+  "focused": [
+    {
+      "case": "primitives, calls, branches, tuples, independent copies, borrows, async and owned cleanup",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "true",
+        "20",
+        "41",
+        "41",
+        "20",
+        "20",
+        "20",
+        "20",
+        "20",
+        "3",
+        "20",
+        "99"
+      ]
+    },
+    {
+      "case": "address_escape",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "4\n168"
+    },
+    {
+      "case": "array_move",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "6\n82"
+    },
+    {
+      "case": "copied_address_after_drop",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n172"
+    },
+    {
+      "case": "copy_record",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "3\n119"
+    },
+    {
+      "case": "record_move",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "6\n135\n6\n135"
+    },
+    {
+      "case": "reference_move",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "4\n97"
+    },
+    {
+      "case": "tuple_move",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "6\n82"
+    },
+    {
+      "case": "use_after_drop",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "6\n99"
+    }
+  ],
+  "readme_examples": [
+    {
+      "example": "budget",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "1000"
+      ]
+    },
+    {
+      "example": "tuples",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "22",
+        "42",
+        "true"
+      ]
+    },
+    {
+      "example": "moves",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "42",
+        "7"
+      ]
+    },
+    {
+      "example": "regions",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "3"
+      ]
+    },
+    {
+      "example": "map",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "42",
+        "42"
+      ]
+    },
+    {
+      "example": "iter",
+      "status": "unchanged pre-existing parse refusal",
+      "previous_compiler_exit": 7,
+      "updated_compiler_exit": 7
+    }
+  ],
+  "installed_build": {
+    "corbo_revision": "dd44494d08ba8ca67d01da14936a1cef1f410541",
+    "c_sha256": "2cfedc4f0a589d70a7124256d17a25dd90e4ad6d4007c5c9e6879a6abf78f005",
+    "self_verified": false
+  },
+  "installed_cli": {
+    "check": "passed",
+    "build": "passed",
+    "stdout": "36"
+  }
+}

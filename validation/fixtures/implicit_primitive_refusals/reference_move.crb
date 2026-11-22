@@ -1,0 +1,7 @@
+fn main() {
+    let original: i64 = 1;
+    let view = &original;
+    let moved = view;
+    print(*view);
+    print(*moved);
+}

@@ -1,3 +1,4 @@
+use bootstrap::scalar::is_primitive_value;
 use bootstrap::tasks::record_capture;
 use bootstrap::signatures::{move_slice_argument,check_slice_argument};
 use bootstrap::value_summaries::annotation_kind;
@@ -173,6 +174,10 @@ fn scalar_tuple_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Che
     let mut item = graph[tuple].first_child;
     while item != 0 {
         let binding = scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(item));
+        if binding != 0 && is_primitive_value(values[binding].ty) {
+            item = graph[item].next_sibling;
+            continue;
+        }
         if binding != 0 {
             if !merge {
                 let mut previous = graph[tuple].first_child;
@@ -195,7 +200,7 @@ fn scalar_tuple_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Che
                 let mut previous = graph[tuple].first_child;
                 while previous != item {
                     let moved = scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous));
-                    if moved != 0 {
+                    if moved != 0 && !is_primitive_value(values[moved].ty) {
                         let mut at = copy(item);
                         while at < nodes.len() as u64 && nodes[at].start < nodes[item].end {
                             if graph[at].binding == moved { return 0 - violation(6, nodes[at].start); }

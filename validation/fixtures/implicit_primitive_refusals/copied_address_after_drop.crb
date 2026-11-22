@@ -1,0 +1,11 @@
+fn main() {
+    let original: i64 = 1;
+    let mut observed: i64 = 0;
+    @unchecked {
+        let address = addr(&original);
+        let duplicate = address;
+        drop(original);
+        @c { ${observed} = *(const int64_t *)(uintptr_t)${duplicate}; }
+    }
+    print(observed);
+}

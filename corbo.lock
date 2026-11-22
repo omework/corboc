@@ -2,7 +2,7 @@
 # Update this revision deliberately and regenerate runtime_sources before building.
 [corbo]
 git = "git@github.com:omework/corbo-lang.git"
-rev = "e577e97319ff7bda3c9e4b15af0b53158e732ecb"
+rev = "dd44494d08ba8ca67d01da14936a1cef1f410541"
 stdlib = "stdlib/src"
 runtime = "runtime"
 runtime_implementation = "corbo"
