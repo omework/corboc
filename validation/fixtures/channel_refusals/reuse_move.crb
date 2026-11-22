@@ -1,0 +1,8 @@
+use std::sync::channel::Channel;
+struct Message { value:i64 }
+fn main() {
+    let channel=Channel<Message>::new(1);
+    let message=Message {value:42};
+    drop(channel.send(message));
+    print(message.value);
+}

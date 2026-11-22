@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Connect bounded channel wait Futures to their stable scheduler poll frames.
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::target_c::{byte_text, character};
+use bootstrap::lowering_types::{number, local};
+use bootstrap::lowering_annotations::same_bytes;
+
+/// Recognizes the three stable parameters of the STD channel wait binding only.
+pub fn channel_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+    if nodes[node].kind != 15 { return false; }
+    let name = graph[node].first_child;
+    let expected: [u8;21] = [114,117,110,116,105,109,101,58,58,119,97,105,116,95,99,104,97,110,110,101,108];
+    if nodes[name].kind != 36 || !same_bytes(&source[nodes[name].start..nodes[name].end], &expected[..]) { return false; }
+    let mut owner = nodes[node].parent;
+    while owner != 0 && nodes[owner].kind != 35 && nodes[owner].kind != 1 { owner = nodes[owner].parent; }
+    if nodes[owner].kind != 35 || graph[owner].fact != 53 { return false; }
+    let mut argument = graph[name].next_sibling;
+    let mut count:u64=0;
+    while argument!=0 {
+        if nodes[argument].kind!=7 || nodes[graph[argument].binding].parent!=owner { return false; }
+        count+=1;argument=graph[argument].next_sibling;
+    }
+    count==3
+}
+/// Parks this poll frame until a channel epoch changes, without blocking a worker.
+pub fn emit_channel_wait(nodes: &[AstNode], graph: &[StaticNode], node:u64) {
+    { let bytes: [u8; 9] = [105,110,116,54,52,95,116,32,116]; byte_text(&bytes[..]); } number(node);
+    { let bytes: [u8; 7] = [59,10,99,97,115,101,32]; byte_text(&bytes[..]); } number(node);
+    { let bytes: [u8; 25] = [58,59,10,105,102,40,33,99,104,97,110,110,101,108,95,112,111,108,108,40,116,97,115,107,44]; byte_text(&bytes[..]); }
+    let mut argument=graph[graph[node].first_child].next_sibling;
+    while argument!=0 {
+        local(graph[argument].binding);argument=graph[argument].next_sibling;
+        if argument!=0 { character(44); }
+    }
+    { let bytes: [u8; 12] = [41,41,123,116,97,115,107,45,62,112,99,61]; byte_text(&bytes[..]); } number(node);
+    { let bytes: [u8; 17] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,125,10,116]; byte_text(&bytes[..]); } number(node);
+    { let bytes: [u8; 4] = [61,48,59,10]; byte_text(&bytes[..]); }
+}

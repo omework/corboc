@@ -1,3 +1,5 @@
+use bootstrap::results::owned_data_type;
+use bootstrap::scalar_options::scalar_option;
 use bootstrap::scalar::primitive_enum;
 use bootstrap::loans::reference_preparation;
 use bootstrap::lowering_types::optional;
@@ -645,6 +647,9 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if summary<0{return summary;}
     }
     if deferred {
+        // This ordinary Option path carries an owning result, not a hidden
+        // borrowed-output summary. Retain specialized dependency paths for those.
+        if scalar_option(result) && !owned_data_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[parameter].first_child,0) { return -9; }
         // A borrowed aggregate result keeps its instantiated per-field graph
         // separately from captures, then await adopts that same graph.
         let mut returned_record: u64 = 0;
@@ -658,7 +663,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             values[returned_record] = CheckedValue { ty: 300, state: 1, mutable: false,
                 target: target, loan_parent: members, origin_call: shape, writable: false };
         }
-        if (!result_type(copy(result)) && result != 300 && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
+        if (!result_type(copy(result)) && !scalar_option(result) && result != 300 && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
         let mut captures: u64 = 0;
         let mut index: u64 = 0;
         while index < reservations {

@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::channel_wait_call;
 use bootstrap::scalar::{is_primitive_value, primitive_enum, implicit_copy, primitive_envelope, value_enum};
 use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::check_text;
@@ -86,6 +87,18 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if values[address].state!=1 || values[address].ty!=pointer_integer_type(){return 0-violation(1,start);}
             if !live_roots(&values[0..values.len()],&graph[0..graph.len()],address){return 0-violation(4,start);}
         }return 2;
+    }
+    if channel_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], node) {
+        if mode==2 || (expected!=0 && expected!=2) { return 0-violation(1,start); }
+        let mut argument=graph[child].next_sibling;
+        let mut index:u64=0;
+        while argument!=0 {
+            let ty:i64=if index==0 {7} else if index==1 {7} else {3};
+            let checked=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],argument,ty,0);
+            if checked<0 { return checked; }
+            index+=1;argument=graph[argument].next_sibling;
+        }
+        return 2;
     }
     if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
         if mode == 2 || (expected != 0 && expected != 2) { return 0 - violation(1,start); }

@@ -291,6 +291,11 @@ pub fn task_code(kind: i64, payload: i64) -> i64 {
     if result_type(copy(payload)) {
         return tag * 1000000000000000000 + 910000000000000000 + (payload - 9000000000000000000);
     }
+    if optional(payload) {
+        let inner=payload-5000000000000000000;
+        if inner>=1000000000000 { return -1; }
+        return tag*1000000000000000000+920000000000000000+inner;
+    }
     if payload >= 1000000000000000000 { return -1; }
     tag * 1000000000000000000 + payload
 }
@@ -300,6 +305,9 @@ pub fn task_payload(ty: i64) -> i64 {
         let payload = ty % 1000000000000000000;
         if payload > 910000000000000000 && payload < 910256000000000000 {
             return 9000000000000000000 + (payload - 910000000000000000);
+        }
+        if payload>=920000000000000000 && payload<920001000000000000 {
+            return 5000000000000000000+payload-920000000000000000;
         }
         if payload >= 900000000000000000 && payload <= 900000001000000000 {
             return 4000000000000000000 + payload - 900000000000000000;

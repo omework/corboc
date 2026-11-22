@@ -1,0 +1,25 @@
+use std::sync::channel::Channel;
+// Capacity one forces producer/consumer backpressure across native threads.
+fn produce(channel:&Channel<i64>) {
+    let mut next:i64=1;
+    while next<=100 { drop(channel.send(next));next+=1; }
+    channel.close();
+}
+fn main() {
+    let channel = Channel<i64>::new(2);
+    drop(channel.send(41));
+    drop(channel.send(42));
+    match channel.recv() { Some(value) => { print(value); }, None => { print(-1); }, }
+    channel.close();
+    match channel.recv() { Some(value) => { print(value); }, None => { print(-1); }, }
+    match channel.recv() { Some(value) => { print(value); }, None => { print(0); }, }
+    let bounded=Channel<i64>::new(1);
+    let source=&bounded;
+    let writer=runtime::thread({move source;produce(source);});
+    let mut sum:i64=0;
+    loop {
+        match bounded.recv() {Some(value)=>{sum+=value;},None=>{break;},}
+    }
+    drop(writer.join());
+    print(sum);
+}

@@ -1,3 +1,24 @@
+## Bounded sync/async channels
+
+- [x] Implement bounded FIFO transport, ownership-preserving failure and close/drain.
+- [x] Integrate native condition waits and authenticated async wait registration.
+- [x] Preserve typed cleanup and payload thread-transfer restrictions.
+- [x] Carry owning Option results through general Future verification/lowering.
+- [x] Execute three combined API programs, five refusals, both runtime witnesses and adjacent mutex regressions.
+- [x] Validate macOS ARM64, Linux x86-64 and Windows x86-64; link Windows ARM64 with execution explicitly deferred.
+- [x] Document payload integration limits and regenerate the STD/runtime references.
+- [x] Pin Corbo, rebuild/install corboc and execute the README package through automatic STD discovery.
+
+[Evidence](CHANNELS_CYCLE.md). No broad corpus or adversarial campaign.
+
+## Compact enum layout — planned
+
+- [x] Record tag plus shared payload storage, sized and aligned for the largest variant.
+- [ ] Implement shared storage and propagate its layout through placement and C declarations.
+- [ ] Validate affected operations and target layouts when implemented.
+
+[Accepted design](../../corbo-lang/docs/ENUM_LAYOUT.md). Documentation only; no compiler changes yet.
+
 ## Enum patterns, equality and copies — EN1 / V3
 
 - [x] Parse if-let, else-if chains and value expressions through match/scopes.

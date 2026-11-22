@@ -1,0 +1,14 @@
+use std::sync::channel::Channel;
+struct Message { value:i64 }
+impl Message { fn drop(&mut self) { print((*self).value); } }
+fn main() {
+    {
+        let channel=Channel<Message>::new(2);
+        drop(channel.send(Message {value:101}));
+        drop(channel.send(Message {value:102}));
+        match channel.recv() {Some(value)=>{drop(value);},None=>{},}
+    }
+    let channel=Channel<Message>::new(1);
+    channel.close();
+    match channel.send(Message {value:103}) {Ok(())=>{},Err(error)=>{drop(error);},}
+}

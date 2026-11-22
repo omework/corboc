@@ -1,3 +1,4 @@
+use bootstrap::scalar_options::{scalar_option_annotation, scalar_option};
 use bootstrap::loans::{access_conflict, checked_access_root, launch_access_conflict};
 use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::value_summaries::borrowed_record_type;
@@ -40,14 +41,23 @@ pub fn in_async(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u
     false
 }
 
-// A range per task state preserves the complete ordinary Result descriptor.
+// A range per task state preserves the ordinary Result/owned-Option layout.
 pub fn result_task_code(kind: i64, result: i64) -> i64 {
+    if scalar_option(result) {
+        let payload = if result<1000 {result} else {1000+result-5000000000000000000};
+        return 8000000000000000000 + kind*1000000000000000 + 500000000000000 + payload;
+    }
     8000000000000000000 + kind * 1000000000000000 + (result - 9000000000000000000)
 }
 
 fn result_task_kind(ty: i64) -> i64 {
     if ty <= 8001000000000000000 || ty >= 8005000000000000000 { return 0; }
-    if !result_type(9000000000000000000 + ty % 1000000000000000) { return 0; }
+    let payload=ty%1000000000000000;
+    if payload>=500000000000000 {
+        let code=payload-500000000000000;
+        let option=if code<1000 {code} else {5000000000000000000+code-1000};
+        if !scalar_option(option) { return 0; }
+    } else if !result_type(9000000000000000000+payload) { return 0; }
     return (ty - 8000000000000000000) / 1000000000000000;
 }
 
@@ -208,7 +218,14 @@ pub fn task_output(ty: i64) -> i64 {
     if nested_async_future(copy(ty)) || nested_async_launch(copy(ty)) || nested_async_completion(copy(ty)) {
         return 640 + ty % 10;
     }
-    if result_task_kind(copy(ty)) != 0 { return 9000000000000000000 + ty % 1000000000000000; }
+    if result_task_kind(copy(ty)) != 0 {
+        let payload=ty%1000000000000000;
+        if payload>=500000000000000 {
+            let code=payload-500000000000000;
+            return if code<1000 {code} else {5000000000000000000+code-1000};
+        }
+        return 9000000000000000000+payload;
+    }
     if ty >= 4101 && ty <= 4117 { return ty - 2000; }
     if ty >= 3100 {
         let code = ty % 100;
@@ -803,6 +820,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     &graph[0..graph.len()], &mut values[0..values.len()], expression, function, check, true);
             }
             result = result_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(check));
+            if result==0 { result=scalar_option_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],check); }
             if result == 0 {
                 result = growing_value_result(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(check));
             }
@@ -822,7 +840,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[input_type].first_child);drop(shape);drop(exclusive);
         if slice!=0 || record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[input_type].first_child, false) != 0 {has_slice=true;}input_type=graph[input_type].next_sibling;
     }
-    if result_type(copy(result)) || (result<=9 && has_slice) {
+    if result_type(copy(result)) || scalar_option(result) || (result<=9 && has_slice) {
         return check_signature(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], function, graph[callee].next_sibling, 0, 1, expression);
     }

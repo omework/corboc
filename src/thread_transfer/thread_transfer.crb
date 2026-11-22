@@ -456,6 +456,24 @@ pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[Stati
     }
     item = 1;
     while item < nodes.len() as u64 {
+        // A channel transfers ownership to a potential receiving thread even
+        // when send itself is called from the current thread.
+        if nodes[item].kind == 49 && graph[nominal_declaration(
+            &source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], item
+        )].fact == 54 {
+            let mut method = graph[item].first_child;
+            while method != 0 {
+                let mut parameter = graph[method].first_child;
+                while nodes[parameter].kind == 3 {
+                    if facts[parameter] != 0 {
+                        return violation(8, nodes[parameter].start);
+                    }
+                    parameter = graph[parameter].next_sibling;
+                }
+                method = graph[method].next_sibling;
+            }
+        }
         if launch_call(
             &source[0..source.len()],
             &nodes[0..nodes.len()],

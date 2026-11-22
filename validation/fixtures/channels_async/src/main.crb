@@ -1,0 +1,45 @@
+use std::sync::asyn::channel::Channel;
+async fn producer(channel: &Channel<i64>) {
+    let mut value:i64=1;
+    while value<=20 {
+        drop(channel.send(value).await);
+        value+=1;
+    }
+    channel.close();
+}
+async fn consumer(channel: &Channel<i64>)->i64 {
+    let mut sum:i64=0;
+    loop {
+        let received = channel.recv().await;
+        match received {
+            Some(value)=>{sum+=value;},
+            None=>{break;},
+        }
+    }
+    sum
+}
+struct Message { value:i64 }
+impl Message {
+    fn drop(&mut self) { print((*self).value); }
+}
+
+// The Future owns an unsent value; successful receive returns that ownership.
+async fn resources() -> i64 {
+    let channel=Channel<Message>::new(1);
+    drop(channel.send(Message {value:201}).await);
+    let received=channel.recv().await;
+    match received {Some(value)=>{drop(value);},None=>{},}
+    channel.close();
+    drop(channel.send(Message {value:202}).await);
+    1
+}
+
+fn main() {
+    let channel=Channel<i64>::new(1);
+    let reader=runtime::spawn(consumer(&channel));
+    let writer=runtime::spawn(producer(&channel));
+    drop(writer.join());
+    match reader.join() {Ok(sum)=>{print(sum);},Err(_)=>{print(-1);},}
+    let cleanup=runtime::spawn(resources());
+    drop(cleanup.join());
+}

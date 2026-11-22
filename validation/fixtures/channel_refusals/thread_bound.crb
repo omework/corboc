@@ -1,0 +1,7 @@
+use std::sync::channel::Channel;
+#(thread: transfer=false)
+struct ThreadBound { value:i64 }
+fn main() {
+    let channel=Channel<ThreadBound>::new(1);
+    drop(channel.send(ThreadBound {value:42}));
+}

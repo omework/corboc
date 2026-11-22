@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::{channel_wait_call, emit_channel_wait};
 use bootstrap::socket_runtime::{mutex_wait_call, emit_mutex_wait};
 use bootstrap::process_arguments::is_utf8_call;
 use bootstrap::process_arguments::split_callee;
@@ -574,6 +575,11 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
     if completion!=0 {
         if (completion==2 && (*ctx).poll_body==0) || (expected!=0 && expected!=2){return -1;}
         if emit{emit_completion(&nodes[0..nodes.len()],&graph[0..graph.len()],node,completion);}return 2;
+    }
+    if channel_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], node) {
+        if (*ctx).poll_body==0 || (expected!=0 && expected!=2) { return 0; }
+        if emit { emit_channel_wait(&nodes[0..nodes.len()],&graph[0..graph.len()],node); }
+        return 2;
     }
     if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
         if (*ctx).poll_body == 0 || (expected != 0 && expected != 2) { return -1; }

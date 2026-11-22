@@ -1,0 +1,188 @@
+{
+  "public_api": [
+    {
+      "case": "channels_sync",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "41",
+        "42",
+        "0",
+        "5050"
+      ]
+    },
+    {
+      "case": "channels_async",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "210",
+        "201",
+        "202"
+      ]
+    },
+    {
+      "case": "channels_ownership",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "101",
+        "102",
+        "103"
+      ]
+    },
+    {
+      "case": "borrowed_payload",
+      "status": "rejected",
+      "exit": 9,
+      "diagnostic": "9\n106\n9\n1"
+    },
+    {
+      "case": "outlive",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "4\n139"
+    },
+    {
+      "case": "raw_wait",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n70"
+    },
+    {
+      "case": "reuse_move",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "6\n204\n6\n204"
+    },
+    {
+      "case": "thread_bound",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n2676"
+    }
+  ],
+  "runtime": [
+    {
+      "runtime": "corbo",
+      "status": "executed, fatal UBSan"
+    },
+    {
+      "runtime": "c-reference",
+      "status": "executed, fatal UBSan"
+    }
+  ],
+  "platforms": [
+    {
+      "target": "x86_64-linux-gnu",
+      "case": "corbo",
+      "status": "executed",
+      "stdout": []
+    },
+    {
+      "target": "x86_64-linux-gnu",
+      "case": "c-reference",
+      "status": "executed",
+      "stdout": []
+    },
+    {
+      "target": "x86_64-linux-gnu",
+      "case": "channels_sync",
+      "status": "executed",
+      "stdout": [
+        "41",
+        "42",
+        "0",
+        "5050"
+      ]
+    },
+    {
+      "target": "x86_64-linux-gnu",
+      "case": "channels_async",
+      "status": "executed",
+      "stdout": [
+        "210",
+        "201",
+        "202"
+      ]
+    },
+    {
+      "target": "x86_64-linux-gnu",
+      "case": "channels_ownership",
+      "status": "executed",
+      "stdout": [
+        "101",
+        "102",
+        "103"
+      ]
+    },
+    {
+      "target": "x86_64-windows-gnu",
+      "case": "corbo",
+      "status": "executed",
+      "stdout": []
+    },
+    {
+      "target": "x86_64-windows-gnu",
+      "case": "c-reference",
+      "status": "executed",
+      "stdout": []
+    },
+    {
+      "target": "x86_64-windows-gnu",
+      "case": "channels_sync",
+      "status": "executed",
+      "stdout": [
+        "41",
+        "42",
+        "0",
+        "5050"
+      ]
+    },
+    {
+      "target": "x86_64-windows-gnu",
+      "case": "channels_async",
+      "status": "executed",
+      "stdout": [
+        "210",
+        "201",
+        "202"
+      ]
+    },
+    {
+      "target": "x86_64-windows-gnu",
+      "case": "channels_ownership",
+      "status": "executed",
+      "stdout": [
+        "101",
+        "102",
+        "103"
+      ]
+    },
+    {
+      "target": "aarch64-windows-gnu",
+      "case": "corbo",
+      "status": "compiled; execution deferred"
+    },
+    {
+      "target": "aarch64-windows-gnu",
+      "case": "c-reference",
+      "status": "compiled; execution deferred"
+    },
+    {
+      "target": "aarch64-windows-gnu",
+      "case": "channels_sync",
+      "status": "compiled; execution deferred"
+    },
+    {
+      "target": "aarch64-windows-gnu",
+      "case": "channels_async",
+      "status": "compiled; execution deferred"
+    },
+    {
+      "target": "aarch64-windows-gnu",
+      "case": "channels_ownership",
+      "status": "compiled; execution deferred"
+    }
+  ],
+  "adjacent_mutex": "three programs executed with fatal UBSan; ten refusal fixtures rejected",
+  "readme_channels": "executed with fatal UBSan; stdout 30",
+  "windows_arm64": "compile/link only; execution deferred by user"
+}

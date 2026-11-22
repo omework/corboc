@@ -2968,7 +2968,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             let mut end = views[item].name;
             while end < length && ((current[end] >= 48 && current[end] <= 57) || (current[end] >= 65 && current[end] <= 90) || (current[end] >= 97 && current[end] <= 122) || current[end] == 95) { end += 1; }
             while end < length && current[end] <= 32 { end += 1; }
-            if views[item].kind == 0 && end < length && current[end] == 60 { generic_layout = true; }
+            if (views[item].kind == 0 || views[item].kind == 14) && end < length && current[end] == 60 { generic_layout = true; }
             item += 1;
         }
         if generic_layout {
@@ -2999,7 +2999,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
                             && same_bytes(&expanded[actual_start..actual_end], &current[old_start..end]);
                         let minimum: u64 = name_length + 21;
                         let mut instance = false;
-                        if views[item].kind == 0 && syntax[candidate].kind == 28 && actual_length > minimum {
+                        if (views[item].kind == 0 || views[item].kind == 14) && syntax[candidate].kind == 28 && actual_length > minimum {
                             let prefix_end = actual_start + 20;
                             let origin_end = prefix_end + copy(name_length);
                             instance = same_bytes(&expanded[actual_start..prefix_end], &prefix[..])
@@ -3029,7 +3029,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
                 let original = impl_origins[implementation * 2 + 2];
                 let mut owner: usize = 0;
                 while owner < view {
-                    if views[owner].kind == 0 && original >= views[owner].start && original < views[owner].end {
+                    if (views[owner].kind == 0 || views[owner].kind == 14) && original >= views[owner].start && original < views[owner].end {
                         if stored == 4096 { return 4; }
                         mapped[stored] = LayoutVisibility { kind: 12,
                             name: impl_origins[implementation * 2 + 1], start: 0, end: 0, origin: views[owner].origin };

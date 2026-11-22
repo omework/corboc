@@ -1,0 +1,4 @@
+async fn forged(raw:usize,epoch:u64,sending:bool)->i64 {
+    runtime::wait_channel(raw,epoch,sending)
+}
+fn main() { drop(runtime::spawn(forged(0,0,false)).join()); }

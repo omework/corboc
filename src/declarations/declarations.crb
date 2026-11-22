@@ -1,3 +1,4 @@
+use bootstrap::socket_runtime::channel_wait_call;
 use bootstrap::scalar::primitive_enum;
 use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::split_callee;
@@ -281,6 +282,7 @@ pub fn nonzero_integer(source: &[u8], start: u64, end: u64) -> bool {
 // Standalone checking has no package resolver. Identify invalid type positions
 // even if a later dataflow operation is outside the verifier's coverage.
 fn qualified_call_error(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> i64 {
+    if channel_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], call) { return 0; }
     if mutex_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call)) { return 0; }
     if socket_wait_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call))
         || completion_call(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call))!=0 { return 0; }

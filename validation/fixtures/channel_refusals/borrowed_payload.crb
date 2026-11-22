@@ -1,0 +1,6 @@
+use std::sync::channel::Channel;
+fn main() {
+    let value:i64=42;
+    let channel=Channel<&i64>::new(1);
+    drop(channel.send(&value));
+}
