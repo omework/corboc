@@ -1,3 +1,7 @@
+Current file targets and dependency-aware watching are documented in
+[File checks and dependency-aware watch](FILE_CHECK_WATCH_CYCLE.md). The original
+cycle below records the earlier package-only behavior.
+
 # Package check and watch
 
 Date: 2026-11-22. Scope: CLI/build tooling; no grammar or normative rule change.

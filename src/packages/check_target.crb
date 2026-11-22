@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Resolve check targets without changing package or language semantics.
+use bootstrap::package_io::read_source;
+use std::io::{File, FileMode};
+
+/// Resolved CLI context; lengths index the caller-owned path buffers.
+pub struct CheckTarget {
+    /// Package, package-backed file, standalone file, or an error status.
+    kind: i32,
+    /// Canonical enclosing package path length, zero for standalone files.
+    root_end: usize,
+    /// Canonical selected source path length, zero for package targets.
+    file_end: usize,
+}
+
+/// Returns package=0, package-backed file=1, standalone file=2, or an error.
+/// Canonical identities remain stable across editor save-by-rename operations.
+pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) -> CheckTarget {
+    if input.len() == 0 || input.len() >= 4096 || root.len() < 4096 || file.len() < 4096 {
+        return CheckTarget { kind: 4, root_end: 0, file_end: 0 };
+    }
+    let mut path: [u8; 4096] = [0; 4096];
+    let empty: [u8; 0] = [];
+    let end = resolve_path(&empty[..], input, &mut path[..]);
+    if end == 0 {
+        return CheckTarget { kind: 11, root_end: 0, file_end: 0 };
+    }
+    let mut cache: [u32; 150] = [0; 150];
+    let directory = open_package_directory(&path[..end + 1], &mut cache);
+    if directory != 0 {
+        close_package_directory(directory);
+        let length = append(&mut root[0..root.len()], 0, &path[..end]);
+        return CheckTarget { kind: 0, root_end: length, file_end: 0 };
+    }
+    let extension: [u8; 4] = [46, 99, 114, 98];
+    if end < 4 { return CheckTarget { kind: 6, root_end: 0, file_end: 0 }; }
+    let suffix = &path[end - 4..end];
+    if !suffix.content_eq(&extension[..]) {
+        return CheckTarget { kind: 6, root_end: 0, file_end: 0 };
+    }
+    let file_end = append(&mut file[0..file.len()], 0, &path[..end]);
+    let mut parent = end;
+    let mut depth: usize = 0;
+    while parent > 0 && depth < 64 {
+        while parent > 0 && path[parent - 1] != 47 {
+            parent -= 1;
+        }
+        if parent == 0 {
+            break;
+        }
+        // Keep '/' and drive roots intact while ascending.
+        let last = if parent == 1 || (parent == 3 && path[1] == 58) {
+            parent
+        } else {
+            parent - 1
+        };
+        let mut manifest: [u8; 4096] = [0; 4096];
+        let prefix = append(&mut manifest[..], 0, &path[..parent]);
+        let suffix: [u8; 12] = [112, 97, 99, 107, 97, 103, 101, 46, 116, 111, 109, 108];
+        let manifest_end = append(&mut manifest[..], prefix, &suffix[..]);
+        if manifest_end == 0 || manifest_end >= 4096 {
+            return CheckTarget { kind: 4, root_end: 0, file_end: 0 };
+        }
+        let found = match File::open(&manifest[..manifest_end + 1], FileMode::read_only()) {
+            Ok(opened) => {
+                drop(opened);
+                true
+            },
+            Err(error) => {
+                drop(error);
+                false
+            },
+        };
+        if found {
+            let src: [u8; 4] = [115, 114, 99, 47];
+            // Files outside src are checked independently, not silently omitted.
+            if parent + 4 <= end {
+                let relative = &path[parent..parent + 4];
+                if relative.content_eq(&src[..]) {
+                    let length = append(&mut root[0..root.len()], 0, &path[..last]);
+                    return CheckTarget { kind: 1, root_end: length, file_end: file_end };
+                }
+            }
+            break;
+        }
+        if last == parent {
+            break;
+        }
+        parent = last;
+        depth += 1;
+    }
+    if depth == 64 {
+        return CheckTarget { kind: 4, root_end: 0, file_end: 0 };
+    }
+    CheckTarget { kind: 2, root_end: 0, file_end: file_end }
+}
+
+/// Keep the selected file an explicit input even when its package still checks
+/// after the file is deleted. Scope closes the read-only probe automatically.
+pub fn check_file_present(path: &[u8]) -> bool {
+    if path.len() == 0 || path.len() >= 4096 { return false; }
+    let mut terminated: [u8;4096] = [0;4096];
+    let length = append(&mut terminated[..],0,path);
+    match File::open(&terminated[..length + 1], FileMode::read_only()) {
+        Ok(opened) => {
+            drop(opened);
+            true
+        },
+        Err(error) => {
+            drop(error);
+            false
+        },
+    }
+}
+
+/// Load a standalone source and the installed STD using ordinary module linking.
+/// Library files need no synthetic main; check mode permits an absent entry point.
+pub fn read_check_file(
+    path: &[u8],
+    stdlib: &[u8],
+    source: &mut [u8],
+    names: &mut [u8],
+    files: &mut [PackageFile]
+) -> PackageInput {
+    let invalid = PackageInput {
+        source_end: 0,
+        names_end: 0,
+        files_end: 0,
+        error: 4,
+    };
+    if path.len() == 0 || path.len() >= 4096 || source.len() < 2 || files.len() == 0 {
+        return invalid;
+    }
+    let mut terminated: [u8; 4096] = [0; 4096];
+    let length = append(&mut terminated[..], 0, path);
+    let limit = source.len() - 1;
+    let (status, count) = read_source(&terminated[..length + 1], &mut source[0..limit]);
+    if status != 0 {
+        return PackageInput {
+            source_end: 0,
+            names_end: 0,
+            files_end: 0,
+            error: status,
+        };
+    }
+    source[count] = 10;
+    let module: [u8; 14] = [
+        95, 95, 99, 104, 101, 99, 107, 95, 102, 105, 108, 101, 95, 95,
+    ];
+    let module_end = append(&mut names[0..names.len()], 0, &module[..]);
+    if module_end == 0 {
+        return invalid;
+    }
+    files[0] = PackageFile {
+        end: count as u64,
+        module_start: 0,
+        module_end: module_end as u64,
+        entry: true,
+        package: 0,
+        visible: 1,
+    };
+    if stdlib.len() == 0 {
+        return PackageInput {
+            source_end: (count + 1) as u64,
+            names_end: module_end as u64,
+            files_end: 1,
+            error: 0,
+        };
+    }
+    let std_name: [u8; 3] = [115, 116, 100];
+    let std_end = append(&mut names[0..names.len()], module_end, &std_name[..]);
+    if std_end == 0 || stdlib.len() >= 4096 {
+        return invalid;
+    }
+    let mut directory: [u8; 4096] = [0; 4096];
+    let used = append(&mut directory[..], 0, stdlib);
+    walk(
+        &directory[..used + 1],
+        module_end,
+        std_end,
+        &mut source[0..source.len()],
+        &mut names[0..names.len()],
+        &mut files[0..files.len()],
+        count + 1,
+        std_end,
+        1,
+        64
+    )
+}
+
+/// Select the source loader while retaining the shared package verification path.
+pub fn read_check_input(
+    root: &[u8],
+    stdlib: &[u8],
+    source: &mut [u8],
+    names: &mut [u8],
+    files: &mut [PackageFile],
+    file: bool
+) -> PackageInput {
+    if file {
+        return read_check_file(
+            root,
+            stdlib,
+            &mut source[0..source.len()],
+            &mut names[0..names.len()],
+            &mut files[0..files.len()]
+        );
+    }
+    read_package(
+        root,
+        stdlib,
+        &mut source[0..source.len()],
+        &mut names[0..names.len()],
+        &mut files[0..files.len()]
+    )
+}

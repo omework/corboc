@@ -19,12 +19,12 @@ use bootstrap::codegen::emit_pool_c;
 use bootstrap::model::{Token, AstNode, StaticNode, LayoutVisibility, hex_digit, token_at};
 use bootstrap::verify_tree::check_tree;
 use bootstrap::package_io::read_source;
-use bootstrap::packages::{PackageFile, read_package};
+use bootstrap::packages::PackageFile;
 use bootstrap::package_link::{link_package, prepare_native_exports};
 use std::env::args;
 use bootstrap::package_new::{run as new_package, usage as new_usage};
 use bootstrap::package_check::{usage as check_usage, message as check_message, installed_stdlib, pause};
-use bootstrap::packages::{watch_snapshot, watch_changed};
+use bootstrap::packages::{check_target, check_file_present, read_check_input, check_snapshot, watch_changed};
 #(if: target.os == "macos" && target.arch == "aarch64")
     use bootstrap::build_driver::{stdlib_path, workspace_path, redirect_stdout, restore_stdout,
         toolchain, publish, clean, diagnostic, ensure_directory};
@@ -2486,9 +2486,9 @@ fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i
             item = graph[item].next_sibling;
         }
         prepare_accesses(&source[0..source.len()], &nodes[0..nodes.len()], &mut graph[..]);
-        let status = check_tree(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], &tokens[0..tokens.len()], copy(custom), check == 5 || check == 2 || check == 6, copy(env_call), package, check==6);
+        let status = check_tree(&source[0..source.len()], &nodes[0..nodes.len()], &graph[..], &tokens[0..tokens.len()], copy(custom), check == 5 || check == 2 || check == 6 || check == 7, copy(env_call), package, check==6 || check==7);
         if status != 0 { return status; }
-        if check == 5 || (check == 1 && !custom) { return 0; }
+        if check == 5 || check == 7 || (check == 1 && !custom) { return 0; }
         if check==6 {
             if lower_program(&source[0..source.len()],&nodes[0..nodes.len()],&graph[..],false,false,true)
                 && lower_program(&source[0..source.len()],&nodes[0..nodes.len()],&graph[..],true,false,true){return 0;}
@@ -3208,46 +3208,96 @@ fn main() -> i32 {
     };
 }
 
-// Check diagnostics are retained, but mode 5 returns before either C backend.
-fn check_once(root: &[u8], stdlib: &[u8]) -> i32 {
-    check_message("corboc: checking package\n");
-    let result = compile_package_mode(root, stdlib, 5);
-    if copy(result) == 0 { check_message("corboc: check passed\n"); }
-    else { print(copy(result)); check_message("corboc: check failed (see compiler diagnostics)\n"); }
+// Package and file checks return before C generation and share verification.
+fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) -> i32 {
+    if kind == 0 {
+        check_message("corboc: checking package\n");
+    } else {
+        check_message("corboc: checking file (with module context)\n");
+    }
+    let result: i32 = if kind != 0 && !check_file_present(&file[0..file.len()]) {
+        11
+    } else if kind == 2 {
+        compile_input_mode(file, stdlib, 7, true)
+    } else {
+        compile_input_mode(root, stdlib, if kind == 0 { 5 } else { 7 }, false)
+    };
+    if result == 0 {
+        check_message("corboc: check passed\n");
+    } else {
+        print(result);
+        check_message("corboc: check failed (see compiler diagnostics)\n");
+    }
     result
 }
 
-fn check_package(root: &[u8], watch: bool) -> i32 {
+fn check_package(input: &[u8], watch: bool) -> i32 {
+    let mut root: [u8; 4096] = [0; 4096];
+    let mut file: [u8; 4096] = [0; 4096];
+    let context = check_target(input, &mut root[..], &mut file[..]);
+    let kind = context.kind;
+    let root_end = context.root_end;
+    let file_end = context.file_end;
+    if kind > 2 {
+        return kind;
+    }
     let mut stdlib: [u8; 4096] = [0; 4096];
     let end = installed_stdlib(&mut stdlib[..]);
     if end == 0 {
         check_message("corboc: cannot locate installed STD at ../share/corbo/stdlib/src\n");
         return 11;
     }
-    if !watch { return check_once(&root[0..root.len()], &stdlib[..end]); }
-    let mut observed: [u8; 32] = [0; 32];
-    let mut scan_status = watch_snapshot(&root[0..root.len()], &mut observed[..]);
-    if scan_status != 0 {
-        check_message("corboc: cannot scan project for source changes\n");
-        return scan_status;
+    if !watch {
+        return check_once(&root[..root_end], &file[..file_end], &stdlib[..end], kind);
     }
-    drop(check_once(&root[0..root.len()], &stdlib[..end]));
-    check_message("corboc: watching sources and manifests; press Ctrl-C to stop\n");
+    let mut observed: [u8; 32] = [0; 32];
+    let mut scan_status = check_snapshot(
+        &root[..root_end],
+        &file[..file_end],
+        &stdlib[..end],
+        &mut observed[..]
+    );
+    drop(check_once(
+        &root[..root_end],
+        &file[..file_end],
+        &stdlib[..end],
+        kind
+    ));
+    check_message("corboc: watching sources, dependencies and manifests; press Ctrl-C to stop\n");
     let mut dirty = false;
     while true {
-        if !pause() { check_message("corboc: watcher sleep failed\n"); return 11; }
+        if !pause() {
+            check_message("corboc: watcher sleep failed\n");
+            return 11;
+        }
         let mut current: [u8; 32] = [0; 32];
-        let current_status = watch_snapshot(&root[0..root.len()], &mut current[..]);
-        if copy(scan_status) != copy(current_status) || watch_changed(&observed[..], &current[..]) {
+        let current_status = check_snapshot(
+            &root[..root_end],
+            &file[..file_end],
+            &stdlib[..end],
+            &mut current[..]
+        );
+        if scan_status != current_status || watch_changed(&observed[..], &current[..]) {
             let mut at: usize = 0;
-            while at < 32 { observed[at] = current[at]; at += 1; }
+            while at < 32 {
+                observed[at] = current[at];
+                at += 1;
+            }
             scan_status = current_status;
             dirty = true;
         } else if dirty {
-            // Two equal content snapshots debounce saves; edits during checking
-            // are observed on the next pass. Failed checks keep the watcher alive.
-            if scan_status == 0 { drop(check_once(&root[0..root.len()], &stdlib[..end])); }
-            else { check_message("corboc: source scan failed; waiting for readable files\n"); }
+            // Two stable snapshots debounce saves. Failed checks keep watching;
+            // missing dependency directories are retried by subsequent snapshots.
+            if scan_status == 0 {
+                drop(check_once(
+                    &root[..root_end],
+                    &file[..file_end],
+                    &stdlib[..end],
+                    kind
+                ));
+            } else {
+                check_message("corboc: source scan failed; waiting for readable files\n");
+            }
             dirty = false;
         }
     }
@@ -3274,11 +3324,15 @@ fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
 
 // Package resolution/linking is identical for verification and code generation.
 fn compile_package_mode(root: &[u8], stdlib: &[u8], mode: i32) -> i32 {
+    compile_input_mode(root,stdlib,mode,false)
+}
+
+fn compile_input_mode(root: &[u8], stdlib: &[u8], mode: i32, file:bool) -> i32 {
     // Include the compiler sources and the documented standard library in a single package.
     let mut source: [u8; 4194304] = [0; 4194304];
     let mut names: [u8; 131072] = [0; 131072];
     let mut files = [PackageFile { end: 0, module_start: 0, module_end: 0, entry: false, package: 0, visible: 0 }; 256];
-    let package = read_package(root, stdlib, &mut source[..], &mut names[..], &mut files[..]);
+    let package = read_check_input(root,stdlib,&mut source[..],&mut names[..],&mut files[..],file);
     if package.error != 0 { return package.error; }
     // Allow 1536 Ki tokens for the combined compiler and standard library, plus sentinels.
     let mut tokens: [Token; 1572867] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
@@ -3304,7 +3358,7 @@ fn compile_package_mode(root: &[u8], stdlib: &[u8], mode: i32) -> i32 {
     let mut linked: [u8; 4194304] = [0; 4194304];
     let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
     let (error, length, env_call) = link_package(&source[..package.source_end], &names[..package.names_end],
-        &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..]);
+        &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..], mode==7);
     if error != 0 { return error; }
     // Reuse the package token storage for the rewritten source.
     let (rewritten_status, rewritten_count) = scan_tokens(&linked[..length], &mut tokens[..], copy(mode));

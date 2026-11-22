@@ -520,7 +520,7 @@ fn private_layout(module: &[u8], name: &[u8]) -> bool {
 }
 
 pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
-    nodes: &[AstNode], graph: &[StaticNode], output: &mut [u8], visibility: &mut [LayoutVisibility]) -> (i32, usize, u64) {
+    nodes: &[AstNode], graph: &[StaticNode], output: &mut [u8], visibility: &mut [LayoutVisibility], library: bool) -> (i32, usize, u64) {
     let mut token: u64 = 0;
     while token < tokens.len() as u64 {
         let start = tokens[token].start;
@@ -580,7 +580,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
         }
         node = node + 1;
     }
-    if main_node == 0 { return (15, 0, 0); }
+    if main_node == 0 && !library { return (15, 0, 0); }
     let mut count: usize = 0;
     node = 1;
     while node < nodes.len() as u64 {

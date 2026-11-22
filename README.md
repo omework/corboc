@@ -91,6 +91,8 @@ corboc check
 corboc check path/to/package
 corboc check --watch
 corboc check path/to/package --watch
+corboc check src/main.crb
+corboc check src/main.crb --watch
 ```
 
 `check` resolves the package manifest, imports, dependencies and installed STD,
@@ -98,18 +100,34 @@ then parses and runs the static verifier. It does not emit C, invoke a C compile
 or create a binary/build directory. Dependency resolution may populate its usual
 Git cache. It returns zero on success and the existing nonzero compiler status on
 failure. Existing rule/offset diagnostics are retained; this is not yet an IDE
-or file/line diagnostic service. `--verify FILE` remains the single-file mode.
+or file/line diagnostic service. `--verify FILE` remains the raw single-file
+frontend mode; `check FILE.crb` adds normal STD/module resolution.
+
+A file below a package's `src/` uses its enclosing `package.toml`, module context
+and dependencies. The complete package is checked, so diagnostics in companion
+modules are retained. Standalone files (including files outside `src/`) are
+checked with the installed STD and need no `main`; named local-package imports
+require a package context. A missing selected file is reported even when the
+remaining package could still pass.
 
 `--watch` runs an initial check and stays alive after errors. It polls contents
 at 250 ms intervals and rechecks after one stable interval, debouncing rapid saves.
 It detects edits (including equal-size edits), additions, deletions and atomic
 save-by-rename for `.crb`, `package.toml` and `corbo.lock` files recursively under
 the selected project. Hidden entries, root `build`/`target` directories and
-`node_modules` are ignored; symlinks are not followed. The scanner uses
+`node_modules` are ignored; symlink entries inside scanned trees are not followed.
+Explicit targets and dependency roots use the loader's canonical paths. The scanner uses
 bounded 4096-byte paths and a maximum depth of 64. Unreadable trees report a scan
 error; recoverable errors during watching are retried as files become readable.
-Changes in external path dependencies or installed STD are not watched: rerun
-`check` for those. Each run rechecks the whole package; analysis is not incremental.
+The watched inputs include transitive local path dependencies and installed STD
+sources. Each stable pass rereads manifests, so adding an import or changing a
+path dependency refreshes both resolution and watching. Trees are deduplicated
+by canonical identity, including cycles and overlapping paths. Git dependencies
+with a pinned `rev` are immutable inputs: their manifest source/revision changes
+are watched; polling neither fetches repositories nor follows moving remote refs.
+Standalone-file watches ignore unrelated neighboring files. Package-backed file
+watches conservatively cover the complete package and its declared local
+dependency trees. Each run is a full check, not incremental analysis.
 Status messages go to stderr. Stop watching with Ctrl-C.
 
 ## Create a package

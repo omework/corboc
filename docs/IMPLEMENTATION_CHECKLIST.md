@@ -1,3 +1,14 @@
+## File check targets and dependency watching
+
+- [x] Accept standalone and package-backed `.crb` targets with existing static verification.
+- [x] Resolve STD imports and allow library-file checking without `main`.
+- [x] Watch transitive local path dependencies and installed STD; refresh manifest graphs.
+- [x] Preserve package checking, debounce, source deletion/recovery and ignored outputs.
+- [x] Execute seven focused file observations and thirteen package regressions on macOS ARM64.
+- [x] Rebuild/install against the committed pin and check two real-STD/file targets.
+
+[Evidence](FILE_CHECK_WATCH_CYCLE.md). No language-rule changes or broad corpus run.
+
 ## Bounded sync/async channels
 
 - [x] Implement bounded FIFO transport, ownership-preserving failure and close/drain.

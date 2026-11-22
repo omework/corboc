@@ -1,0 +1,94 @@
+{
+  "platform": "Darwin arm64",
+  "file_checks": [
+    {
+      "case": "standalone with STD import",
+      "exit": 0
+    },
+    {
+      "case": "library file without main",
+      "exit": 0
+    },
+    {
+      "case": "standalone semantic rejection",
+      "exit": 8
+    },
+    {
+      "case": "standalone watch: initial error, source/STD edits, atomic save, deletion recovery, ignored neighbor",
+      "status": "passed"
+    },
+    {
+      "case": "file resolves enclosing package and transitive imports",
+      "exit": 0
+    },
+    {
+      "case": "module file uses enclosing package context",
+      "exit": 0
+    },
+    {
+      "case": "package-file watch: transitive path edit, manifest graph refresh, selected-file deletion recovery, both flag orders",
+      "status": "passed"
+    }
+  ],
+  "package_regressions": [
+    {
+      "case": "current two-module package without C toolchain",
+      "exit": 0
+    },
+    {
+      "case": "explicit package",
+      "exit": 0
+    },
+    {
+      "case": "installed executable symlink",
+      "exit": 0
+    },
+    {
+      "case": "semantic error in imported module",
+      "exit": 8
+    },
+    {
+      "case": "syntax error in imported module",
+      "exit": 7
+    },
+    {
+      "case": "owner destruction with live guard",
+      "exit": 8
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "invalid CLI arguments",
+      "exit": 6
+    },
+    {
+      "case": "missing package",
+      "exit": 11
+    },
+    {
+      "case": "path dependency resolution",
+      "exit": 0
+    },
+    {
+      "case": "shared compilation path still builds executable",
+      "exit": 0
+    },
+    {
+      "case": "watch saves, errors, recovery, atomic replacement, add/delete, manifest and ignored outputs",
+      "status": "passed"
+    }
+  ],
+  "scope": "CLI tooling; focused validation, no corpus or rule-breaking campaign",
+  "installed_smoke": {
+    "standalone_real_std_import": 0,
+    "package_backed_channel_example": 0,
+    "corbo_revision": "37f3192ecf361d97f2818911123f2c99f84c0d10",
+    "single_rebuild": true
+  }
+}

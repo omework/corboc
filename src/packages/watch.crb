@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Content snapshots for project watching; reuse directory cursors without loading dependencies.
+//! Content snapshots for project watching; watch local dependency inputs without fetching Git checkouts.
+use bootstrap::package_io::read_source;
 use std::io::{File, FileMode};
 use std::crypto::sha256::Sha256;
 
@@ -82,4 +83,167 @@ pub fn watch_snapshot(root: &[u8], digest: &mut [u8]) -> i32 {
     let mut path: [u8; 4096] = [0; 4096];
     let end = append(&mut path[..], 0, root);
     snapshot_directory(&path[..end + 1], 0, &mut digest[0..digest.len()])
+}
+
+/// Salt each tree aggregate with its root identity so overlapping dependency
+/// trees cannot cancel identical file digests in the order-independent reduction.
+fn merge_snapshot(identity: &[u8], tree: &[u8], digest: &mut [u8]) -> i32 {
+    let mut hash = Sha256::new();
+    match hash.update(identity) {
+        Ok(()) => {},
+        Err(error) => {
+            drop(error);
+            return 4;
+        },
+    };
+    match hash.update(tree) {
+        Ok(()) => {},
+        Err(error) => {
+            drop(error);
+            return 4;
+        },
+    };
+    let value = hash.finish();
+    let mut at: usize = 0;
+    while at < 32 {
+        digest[at] ^= value[at];
+        at += 1;
+    }
+    0
+}
+
+/// Hash local dependency trees once per canonical identity. Pinned Git contents
+/// are immutable inputs; their manifest source/revision changes are already hashed.
+fn dependency_snapshot(
+    root: &[u8],
+    visited: &mut [u8],
+    digest: &mut [u8]
+) -> i32 {
+    let mut slot: usize = 0;
+    while slot < 64 {
+        let base = slot * 4096;
+        let length = entry_length(&visited[base..base + 4096]);
+        if length == 0 { break; }
+        if root.content_eq(&visited[base..base + length]) {
+            return 0;
+        }
+        slot += 1;
+    }
+    if slot == 64 {
+        return 4;
+    }
+    let base = slot * 4096;
+    let stored = append(&mut visited[base..base + 4096], 0, &root[0..root.len()]);
+    if stored == 0 {
+        return 4;
+    }
+    let mut tree: [u8; 32] = [0; 32];
+    let result = watch_snapshot(&root[0..root.len()], &mut tree[..]);
+    let merged = merge_snapshot(
+        &root[0..root.len()],
+        &tree[..],
+        &mut digest[0..digest.len()]
+    );
+    if result != 0 {
+        return result;
+    }
+    if merged != 0 {
+        return merged;
+    }
+    let mut path: [u8; 4096] = [0; 4096];
+    let manifest_name: [u8; 12] = [112, 97, 99, 107, 97, 103, 101, 46, 116, 111, 109, 108];
+    let prefix = append(&mut path[..], 0, &root[0..root.len()]);
+    if prefix == 0 || prefix + 13 >= 4096 {
+        return 4;
+    }
+    path[prefix] = 47;
+    let end = append(&mut path[..], prefix + 1, &manifest_name[..]);
+    let mut bytes: [u8; 65536] = [0; 65536];
+    let (status, filled) = read_source(&path[..end + 1], &mut bytes[..]);
+    // Missing/malformed manifests are diagnosed by check. Watching their tree
+    // remains useful: writing a corrected manifest must trigger recovery.
+    if status != 0 {
+        return 0;
+    }
+    let parsed = read_manifest(&bytes[..filled]);
+    if !parsed.valid {
+        return 0;
+    }
+    let mut line = parsed.dependencies_start;
+    while line < parsed.dependencies_end {
+        let last = line_end(&bytes[..filled], line);
+        let first = horizontal(&bytes[..filled], line, last);
+        if first < last && bytes[first] != 35 {
+            let entry = read_dependency(&bytes[..filled], first, last);
+            if !entry.valid {
+                return 0;
+            }
+            if entry.revision_start == entry.revision_end {
+                let mut child: [u8; 4096] = [0; 4096];
+                let length = resolve_path(
+                    &root[0..root.len()],
+                    &bytes[entry.source_start..entry.source_end],
+                    &mut child[..]
+                );
+                if length == 0 {
+                    return 11;
+                }
+                let nested = dependency_snapshot(
+                    &child[..length],
+                    &mut visited[0..visited.len()],
+                    &mut digest[0..digest.len()]
+                );
+                if nested != 0 {
+                    return nested;
+                }
+            }
+        }
+        line = last + 1;
+    }
+    0
+}
+
+/// Snapshot the checked unit, transitive local packages and installed STD.
+/// The dependency graph is reread each pass, including after import/manifest edits.
+pub fn check_snapshot(root: &[u8], file: &[u8], stdlib: &[u8], digest: &mut [u8]) -> i32 {
+    if digest.len() != 32 {
+        return 4;
+    }
+    let mut at: usize = 0;
+    while at < 32 {
+        digest[at] = 0;
+        at += 1;
+    }
+    let mut visited: [u8; 262144] = [0; 262144];
+    let mut result: i32 = 0;
+    if root.len() != 0 {
+        result = dependency_snapshot(
+            root,
+            &mut visited[..],
+            &mut digest[0..digest.len()]
+        );
+    } else {
+        let mut path: [u8; 4096] = [0; 4096];
+        if file.len() == 0 || file.len() >= 4096 {
+            return 4;
+        }
+        let length = append(&mut path[..], 0, file);
+        result = watched_digest(&path[..length + 1], &mut digest[0..digest.len()]);
+    }
+    if stdlib.len() != 0 {
+        let mut standard: [u8; 32] = [0; 32];
+        let scanned = watch_snapshot(&stdlib[0..stdlib.len()], &mut standard[..]);
+        let merged = merge_snapshot(
+            &stdlib[0..stdlib.len()],
+            &standard[..],
+            &mut digest[0..digest.len()]
+        );
+        if result == 0 {
+            result = scanned;
+        }
+        if result == 0 {
+            result = merged;
+        }
+    }
+    result
 }

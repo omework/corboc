@@ -4,7 +4,7 @@ use std::time::{Duration, sleep};
 
 /// Reports command syntax without creating any package artifacts.
 pub fn usage() -> i32 {
-    message("usage: corboc check [PACKAGE] [--watch]\n");
+    message("usage: corboc check [PACKAGE|FILE.crb] [--watch]\n");
     6
 }
 
