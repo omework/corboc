@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_input;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Resolve check targets without changing package or language semantics.
 use bootstrap::package_io::read_source;
@@ -144,6 +145,7 @@ pub fn read_check_file(
         };
     }
     source[count] = 10;
+    diagnostic_input(&terminated[..length+1],&source[0..count+1]);
     let module: [u8; 14] = [
         95, 95, 99, 104, 101, 99, 107, 95, 102, 105, 108, 101, 95, 95,
     ];

@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::{diagnostic_link,diagnostic_emit};
 use bootstrap::constants::constant_name_reserved;
 use bootstrap::model::{AstNode, StaticNode, LayoutVisibility, Token, token_at};
 use bootstrap::packages::PackageFile;
@@ -561,7 +562,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                     return (report_violation(1, start), 0, 0);
                 }
                 if declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
-                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end)) != 0 { return (14, 0, 0); }
+                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end)) != 0 { drop(diagnostic_emit(5,14,nodes[node].name_start));return (14, 0, 0); }
                 if kind == 1 && files[file].module_start != 0 {
                     let argument_call = process_arguments(&source[0..source.len()], &names[0..names.len()],
                         &files[0..files.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node), copy(file));
@@ -590,7 +591,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             let (code, written) = install_imports(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
                 &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[..symbols_end],
                 &mut entries[..], copy(count), file, token + 1);
-            if code != 0 { return (code, 0, 0); }
+            if code != 0 { drop(diagnostic_emit(5,code as i64,nodes[node].start));return (code, 0, 0); }
             count = written;
             edits[nodes[node].start] = Edit { end: nodes[node].end, target: 0 };
         }
@@ -638,13 +639,13 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                     if !dependency_reported && kind == 36 && nodes[parent].kind == 15 && graph[parent].first_child == node {
                         unknown_qualified_function(&source[nodes[node].start..nodes[node].end]);
                     }
-                    return (13, 0, 0);
+                    drop(diagnostic_emit(5,13,nodes[node].start));return (13, 0, 0);
                 }
             }
-            if target == 0 && alias != 0 { return (13, 0, 0); }
+            if target == 0 && alias != 0 { drop(diagnostic_emit(5,13,nodes[node].start));return (13, 0, 0); }
             if target == 0 && end - start >= generated.len() as u64 {
                 let prefix = &source[start..start + (generated.len() as u64)];
-                if prefix.content_eq(&generated[0..generated.len()]) { return (13, 0, 0); }
+                if prefix.content_eq(&generated[0..generated.len()]) { drop(diagnostic_emit(5,13,nodes[node].start));return (13, 0, 0); }
             }
             // String<N> selects the STD fixed-layout template, while bare String
             // retains its existing native growing representation.
@@ -703,6 +704,8 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
         }
         if !selected[file] { cursor = (files[file].end + 1) as usize; continue; }
         if env_call != 0 && cursor as u64 == env_call { arguments_offset = written as u64; }
+        let diagnostic_start=written;
+        let diagnostic_old=cursor;
         if edits[cursor].end != 0 {
             let target = edits[cursor].target;
             if target != 0 {
@@ -804,6 +807,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             written = written + 1;
             cursor = cursor + 1;
         }
+        diagnostic_link(diagnostic_start as u64,diagnostic_old as u64,cursor as u64,written as u64);
     }
     return (0, written, arguments_offset);
 }

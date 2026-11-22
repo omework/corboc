@@ -99,9 +99,21 @@ corboc check src/main.crb --watch
 then parses and runs the static verifier. It does not emit C, invoke a C compiler
 or create a binary/build directory. Dependency resolution may populate its usual
 Git cache. It returns zero on success and the existing nonzero compiler status on
-failure. Existing rule/offset diagnostics are retained; this is not yet an IDE
-or file/line diagnostic service. `--verify FILE` remains the raw single-file
-frontend mode; `check FILE.crb` adds normal STD/module resolution.
+failure. `check`, `check --watch` and `build` report the original file, line and
+column, a source excerpt and a caret:
+
+```text
+src/main.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type
+     2 |     let value: i64 = true;
+       |                      ^~~~
+```
+
+Source locations survive linking, generic specialization and closure lowering.
+An approximate generated-code anchor is explicitly labeled. Compiler limitations
+are reported separately from rule failures. This is terminal output, not an IDE
+language server. `--verify FILE` and other raw frontend modes retain their numeric
+protocol; `check FILE.crb` adds normal STD/module resolution.
+See [diagnostic validation](docs/DIAGNOSTICS_CYCLE.md).
 
 A file below a package's `src/` uses its enclosing `package.toml`, module context
 and dependencies. The complete package is checked, so diagnostics in companion

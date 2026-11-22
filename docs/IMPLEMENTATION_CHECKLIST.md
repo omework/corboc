@@ -1,3 +1,13 @@
+## Source diagnostics
+
+- [x] Render filename, line, column, source excerpt and caret for check/watch/build.
+- [x] Preserve original source provenance through linking and rewriting.
+- [x] Distinguish rule failures, unsupported constructs and approximate anchors.
+- [x] Preserve raw frontend protocols and reset provenance on each watch pass.
+- [x] Validate thirteen focused diagnostic observations, thirteen package regressions and seven file/watch observations on macOS ARM64.
+
+[Evidence](DIAGNOSTICS_CYCLE.md). No grammar or normative-rule changes.
+
 ## File check targets and dependency watching
 
 - [x] Accept standalone and package-backed `.crb` targets with existing static verification.

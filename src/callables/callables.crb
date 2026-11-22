@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_reverse;
 use bootstrap::lowering_annotations::same_bytes;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Materialize callable values before the ordinary ownership and placement passes.
@@ -820,6 +821,7 @@ fn next_identity(source: &[u8], nodes: &[AstNode]) -> u64 {
 
 // Keep generated declarations inside the defining file's visibility span.
 fn reverse(out: &mut [u8], start: u64, end: u64) {
+    diagnostic_reverse(start,end);
     let mut left = copy(start); let mut right = copy(end);
     while left < right {
         right = right - 1;

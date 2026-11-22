@@ -1,0 +1,155 @@
+{
+  "host": "macOS ARM64",
+  "date": "2026-11-22",
+  "observations": {
+    "diagnostics": [
+      {
+        "case": "type",
+        "exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/type.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let value: i64 = true;\n       |                      ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "move",
+        "exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/move.crb:5:11: error[N6]: value is unavailable on this path (for example, after a move or drop)\n     5 |     print(item.value);\n       |           ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "syntax",
+        "exit": 7,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/syntax.crb:2:9: error[E0007]: invalid syntax near this token\n     2 |     let = 42;\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "unclosed",
+        "exit": 7,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/unclosed.crb:1:1: error[E0017]: declaration is not closed before the end of this source file\n     1 | fn main() {\n       | ^~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "lex",
+        "exit": 3,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/lex.crb:2:26: error[E0003]: unterminated string literal before end of line\n     2 |     print(\"unterminated);\n       |                          ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "generic",
+        "exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/generic.crb:5:21: error[N8]: call, capture, or result does not satisfy its inferred contract\n     5 |     let value: i64 = identity(true);\n       |                     ^~~~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "closure",
+        "exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/closure.crb:2:28: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let read = || -> i64 { true };\n       |                            ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "unresolved import",
+        "exit": 13,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/missing_import.crb:1:1: error[E0013]: cannot resolve this import or qualified name\n     1 | use missing::answer;\n       | ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "watch refreshes source locations after recovery",
+        "status": "passed"
+      },
+      {
+        "case": "imported source",
+        "exit": 8,
+        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "legacy machine protocol",
+        "exit": 8
+      },
+      {
+        "case": "normal build source diagnostic",
+        "exit": 8,
+        "stderr": "/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: package compilation failed\n"
+      },
+      {
+        "case": "manifest path",
+        "exit": 12,
+        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/package.toml: error[E0012]: invalid package manifest or dependency declaration\ncorboc: check failed (see compiler diagnostics)\n"
+      }
+    ],
+    "package_regressions": [
+      {
+        "case": "current two-module package without C toolchain",
+        "exit": 0
+      },
+      {
+        "case": "explicit package",
+        "exit": 0
+      },
+      {
+        "case": "installed executable symlink",
+        "exit": 0
+      },
+      {
+        "case": "semantic error in imported module",
+        "exit": 8
+      },
+      {
+        "case": "syntax error in imported module",
+        "exit": 7
+      },
+      {
+        "case": "owner destruction with live guard",
+        "exit": 8
+      },
+      {
+        "case": "invalid CLI arguments",
+        "exit": 6
+      },
+      {
+        "case": "invalid CLI arguments",
+        "exit": 6
+      },
+      {
+        "case": "invalid CLI arguments",
+        "exit": 6
+      },
+      {
+        "case": "missing package",
+        "exit": 11
+      },
+      {
+        "case": "path dependency resolution",
+        "exit": 0
+      },
+      {
+        "case": "shared compilation path still builds executable",
+        "exit": 0
+      },
+      {
+        "case": "watch saves, errors, recovery, atomic replacement, add/delete, manifest and ignored outputs",
+        "status": "passed"
+      }
+    ],
+    "file_watch_regressions": [
+      {
+        "case": "standalone with STD import",
+        "exit": 0
+      },
+      {
+        "case": "library file without main",
+        "exit": 0
+      },
+      {
+        "case": "standalone semantic rejection",
+        "exit": 8
+      },
+      {
+        "case": "standalone watch: initial error, source/STD edits, atomic save, deletion recovery, ignored neighbor",
+        "status": "passed"
+      },
+      {
+        "case": "file resolves enclosing package and transitive imports",
+        "exit": 0
+      },
+      {
+        "case": "module file uses enclosing package context",
+        "exit": 0
+      },
+      {
+        "case": "package-file watch: transitive path edit, manifest graph refresh, selected-file deletion recovery, both flag orders",
+        "status": "passed"
+      }
+    ]
+  }
+}

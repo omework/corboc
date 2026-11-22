@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_emit;
 use bootstrap::model::{AstNode, StaticNode, Token, token_at};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::nested_loans::nested_loan_type;
@@ -27,6 +28,7 @@ pub fn check_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn violation(rule: i64, offset: u64) -> i64 {
+    if diagnostic_emit(1,rule,offset) {return 8;}
     print(rule);
     print(offset);
     8

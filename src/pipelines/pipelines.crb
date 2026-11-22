@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_copy;
 use bootstrap::lowering_annotations::same_bytes;
 use bootstrap::generics::{expression_layout, deferred_iterator};
 use bootstrap::results::payload_type;
@@ -638,6 +639,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
 
 fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
     if text.len() as u64 >= out.len() as u64 - cursor { return out.len() as u64; }
+    diagnostic_copy(cursor,&text[0..text.len()]);
     let mut i: u64 = 0;
     while i < text.len() as u64 {
         out[cursor + i] = text[i];

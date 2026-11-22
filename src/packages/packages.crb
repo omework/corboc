@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::{diagnostic_input,diagnostic_copy};
 use bootstrap::package_io::read_source;
 
 pub struct PackageFile {
@@ -18,6 +19,7 @@ pub struct PackageInput {
 
 pub fn append(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
     if bytes.len() > output.len() - cursor { return 0; }
+    diagnostic_copy(cursor as u64,&bytes[0..bytes.len()]);
     let mut offset: usize = 0;
     while offset < bytes.len() {
         output[cursor + offset] = bytes[offset];
@@ -108,6 +110,7 @@ fn walk(path: &[u8], module_start: usize, module_end: usize, source: &mut [u8],
             if status != 0 { error = status; break; }
             let last = base + count;
             source[last] = 10;
+            diagnostic_input(&next[..full+1],&source[base..last+1]);
             let entry = module_start == 0 && name.content_eq(&entry_file[..]);
             files[files_end] = PackageFile { end: copy(last) as u64, module_start: copy(module_start) as u64,
                 module_end: copy(module_end) as u64, entry: entry, package: copy(package), visible: 0 };

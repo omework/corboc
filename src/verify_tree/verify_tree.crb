@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_emit;
 use bootstrap::stored::forwarded_reference_method;
 use bootstrap::thread_transfer::validate_thread_transfer;
 use bootstrap::lock_contracts::{validate_effect_annotations, validate_lock_reentry};
@@ -29,6 +30,7 @@ use bootstrap::loan_contracts::infer_loan_contracts;
 use bootstrap::check_flow::LoopEdge;
 
 fn unsupported_declaration(nodes: &[AstNode], item: u64) -> i32 {
+    if diagnostic_emit(4,9,nodes[item].start) {return 9;}
     print(9);
     print(nodes[item].start);
     9

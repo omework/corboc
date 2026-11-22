@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_path;
 use bootstrap::package_io::read_source;
 use bootstrap::model::hex_digit;
 
@@ -138,7 +139,7 @@ fn load_directory(root: &[u8], input: &[u8], revision: &[u8], expected: &[u8], b
     if status != 0 { return (11, 0); }
     let contents = &manifest[..count];
     let parsed = read_manifest(&contents[0..contents.len()]);
-    if !parsed.valid { return (12, 0); }
+    if !parsed.valid { diagnostic_path(&path[..manifest_end],12);return (12, 0); }
     let name = &contents[parsed.name_start..parsed.name_end];
     if !valid_package_name(&name[0..name.len()]) { return (12, 0); }
     if expected.len() != 0 && !expected.content_eq(&name[0..name.len()]) { return (17, 0); }

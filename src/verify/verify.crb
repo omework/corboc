@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_emit;
 use bootstrap::scalar::{is_primitive_value, implicit_copy, primitive_envelope};
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::lowering_types::optional;
@@ -43,6 +44,7 @@ pub fn check_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
 }
 
 fn unsupported_statement(nodes: &[AstNode], point: u64) -> i64 {
+    if diagnostic_emit(4,9,nodes[point].start) {return 9;}
     print(9);
     print(nodes[point].start);
     9
