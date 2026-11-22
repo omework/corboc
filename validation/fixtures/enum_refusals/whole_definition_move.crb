@@ -1,0 +1,1 @@
+struct Item { value: i64 } enum E { Empty, Value(Item) } fn main() { let e = E.Empty; let f = e; if let E.Empty = e { print(1); } }

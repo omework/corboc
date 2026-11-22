@@ -31,7 +31,8 @@ use bootstrap::lowering_types::{
 use bootstrap::lowering_regions::{stack_region, enter_region, exit_region, unwind_regions, free_pages, reclaim_scope, forced_reclaim};
 use bootstrap::ownership::nominal_variant;
 
-use bootstrap::check_flow::pattern_variant;
+use bootstrap::check_flow::{pattern_variant, wildcard_pattern};
+use bootstrap::scalar::primitive_enum;
 use bootstrap::target_c::{byte_text, character};
 
 pub struct Lowering {
@@ -490,8 +491,9 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
             if kind != 7 { return -1; }
             if emit {
                 declaration(copy(ty), node); character(61); local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
-                local(binding);
+                if !optional(ty) || option_payload(ty) > 9 { local(binding);
                 if map_type(copy(ty)) { { let code: [u8;7] = [61,78,85,76,76,59,10]; byte_text(&code[..]); } } else { { let code: [u8;13] = [46,115,111,109,101,61,102,97,108,115,101,59,10]; byte_text(&code[..]); } }
+            }
             }
             return ty;
         }
@@ -541,7 +543,7 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
             if kind == 14 { character(42); }
             local(copy(binding)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
             if kind == 7 && result_has_nominal_payload(copy(ty)) { clear_result(copy(binding)); }
-            if kind == 7 && ((ty >= 3000000 && ty < 4000000 && (*ctx).storage) || array_has_owners(copy(ty)) || tuple_has_owners(copy(ty))) {
+            if kind == 7 && ((ty >= 3000000 && ty < 4000000 && (*ctx).storage && !primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal_type(ty))) || array_has_owners(copy(ty)) || tuple_has_owners(copy(ty))) {
                 { let code: [u8;8] = [109,101,109,115,101,116,40,38]; byte_text(&code[..]); } local(copy(binding)); { let code: [u8;10] = [44,48,44,115,105,122,101,111,102,32]; byte_text(&code[..]); } local(binding); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); }
             }
         }
@@ -938,10 +940,12 @@ fn option_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
     while arm != 0 {
         let pattern = graph[arm].first_child;
         let present = word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &some[..]);
-        if !present && !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &none[..]) { return -1; }
+        let wildcard = wildcard_pattern(&source[0..source.len()], &nodes[0..nodes.len()], pattern);
+        if !wildcard && !present && !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern), &none[..]) { return -1; }
         let binder = graph[pattern].first_child;
         if emit {
-            if first {
+            if first && wildcard { { let text: [u8; 2] = [123,10]; byte_text(&text[..]); } }
+            else if first {
                 { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } if !present { character(33); } temporary(copy(subject)); { let code: [u8;8] = [46,115,111,109,101,41,123,10]; byte_text(&code[..]); }
             } else { { let code: [u8;6] = [101,108,115,101,123,10]; byte_text(&code[..]); } }
         }
@@ -952,7 +956,7 @@ fn option_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
                 local(copy(binder)); character(61);
                 temporary(copy(subject)); { let code: [u8;8] = [46,118,97,108,117,101,59,10]; byte_text(&code[..]); } consume(copy(payload), copy(binder), true);
             }
-        } else if present && emit {
+        } else if (present || wildcard) && emit {
             drop_value(option_code(copy(payload)), copy(subject), false);
         }
         let ty = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -1004,16 +1008,22 @@ fn enum_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
     let mut first = true;
     let mut arm = graph[subject].next_sibling;
     let mut result = expected;
+    let mut has_wildcard = false;
     while arm != 0 {
         let pattern = graph[arm].first_child;
         let variant = pattern_variant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             copy(pattern), copy(record));
-        if variant == 0 { return -1; }
+        let wildcard = wildcard_pattern(&source[0..source.len()], &nodes[0..nodes.len()], pattern);
+        if variant == 0 && !wildcard { return -1; }
+        if wildcard { has_wildcard = true; }
         if emit {
             if !first { { let code: [u8;5] = [101,108,115,101,32]; byte_text(&code[..]); } }
+            if wildcard { { let text: [u8; 2] = [123,10]; byte_text(&text[..]); } } else {
             { let code: [u8;3] = [105,102,40]; byte_text(&code[..]); } temporary(copy(subject));
             if borrowed { { let code: [u8;7] = [45,62,116,97,103,61,61]; byte_text(&code[..]); } } else { { let code: [u8;6] = [46,116,97,103,61,61]; byte_text(&code[..]); } }
             number(copy(variant)); { let code: [u8;3] = [41,123,10]; byte_text(&code[..]); }
+            }
+            if wildcard && !borrowed { drop_value(ty, subject, false); }
         }
         let mut item = graph[pattern].first_child;
         while item != 0 {
@@ -1038,19 +1048,39 @@ fn enum_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
                     number(field); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } consume(copy(bound), copy(binding), true);
                 }
                 types[binding] = bound;
+                if emit && !borrowed && needs_cleanup(payload, (*ctx).storage) {
+                    // Ownership moved into the pattern binding. Leave ignored
+                    // fields in the subject for the common cleanup below.
+                    { let text: [u8; 8] = [109,101,109,115,101,116,40,38]; byte_text(&text[..]); }
+                    temporary(subject); { let text: [u8; 2] = [46,109]; byte_text(&text[..]); } number(field);
+                    { let text: [u8; 10] = [44,48,44,115,105,122,101,111,102,32]; byte_text(&text[..]); }
+                    temporary(subject); { let text: [u8; 2] = [46,109]; byte_text(&text[..]); } number(field);
+                    { let text: [u8; 3] = [41,59,10]; byte_text(&text[..]); }
+                }
             }
             item = graph[item].next_sibling;
         }
+        if emit && !borrowed && !wildcard { drop_value(ty, subject, false); }
         let body = graph[pattern].next_sibling;
         let found = block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut types[0..types.len()], ctx, body, copy(result), copy(slot));
         if found < 0 || (result != 0 && found != 0 && result != found) { return -1; }
         if result == 0 { result = found; }
+        if emit && !borrowed {
+            item = graph[pattern].first_child;
+            while item != 0 {
+                let binding = graph[item].first_child;
+                if graph[binding].declaration && needs_cleanup(types[binding], (*ctx).storage) {
+                    drop_value(types[binding], binding, true);
+                }
+                item = graph[item].next_sibling;
+            }
+        }
         if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
         first = false;
         arm = graph[arm].next_sibling;
     }
-    if emit { { let code: [u8;15] = [101,108,115,101,123,97,98,111,114,116,40,41,59,125,10]; byte_text(&code[..]); } }
+    if emit && !has_wildcard { { let code: [u8;15] = [101,108,115,101,123,97,98,111,114,116,40,41,59,125,10]; byte_text(&code[..]); } }
     result
 }
 
@@ -1653,8 +1683,56 @@ fn binary(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i
     }
     let ty = if compare { 3 } else { copy(a) };
     if !compare && (a > 9 || b > 9) { return -1; }
-    if emit { emit_binary(node, left, right, copy(a), copy(ty), first, second, pair, shift, compare); }
+    if compare && ((a >= 3000000 && a < 4000000) || optional(a) || result_type(a)) {
+        if first != 61 && first != 33 { return -1; }
+        if emit { emit_enum_equality(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()], node, left, right, a, first == 33); }
+    } else if emit { emit_binary(node, left, right, copy(a), copy(ty), first, second, pair, shift, compare); }
     ty
+}
+
+// Both operands have already been evaluated into stable temporaries.
+fn emit_enum_equality(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], node: u64,
+    left: u64, right: u64, ty: i64, negate: bool) {
+    declaration(3, node); character(61);
+    temporary(left);
+    if optional(ty) { { let text: [u8; 7] = [46,115,111,109,101,61,61]; byte_text(&text[..]); } }
+    else if result_type(ty) { { let text: [u8; 5] = [46,111,107,61,61]; byte_text(&text[..]); } }
+    else { { let text: [u8; 6] = [46,116,97,103,61,61]; byte_text(&text[..]); } }
+    temporary(right);
+    if optional(ty) { { let text: [u8; 7] = [46,115,111,109,101,59,10]; byte_text(&text[..]); } }
+    else if result_type(ty) { { let text: [u8; 5] = [46,111,107,59,10]; byte_text(&text[..]); } }
+    else { { let text: [u8; 6] = [46,116,97,103,59,10]; byte_text(&text[..]); } }
+    { let text: [u8; 3] = [105,102,40]; byte_text(&text[..]); } temporary(node); { let text: [u8; 3] = [41,123,10]; byte_text(&text[..]); }
+    if optional(ty) {
+        temporary(node); { let text: [u8; 2] = [61,33]; byte_text(&text[..]); } temporary(left); { let text: [u8; 7] = [46,115,111,109,101,124,124]; byte_text(&text[..]); }
+        temporary(left); { let text: [u8; 8] = [46,118,97,108,117,101,61,61]; byte_text(&text[..]); } temporary(right); { let text: [u8; 8] = [46,118,97,108,117,101,59,10]; byte_text(&text[..]); }
+    } else if result_type(ty) {
+        { let text: [u8; 3] = [105,102,40]; byte_text(&text[..]); } temporary(left); { let text: [u8; 6] = [46,111,107,41,123,10]; byte_text(&text[..]); }
+        if result_payload(ty, true) != 10 {
+            temporary(node); character(61); temporary(left); result_field(true); { let text: [u8; 2] = [61,61]; byte_text(&text[..]); } temporary(right); result_field(true); { let text: [u8; 2] = [59,10]; byte_text(&text[..]); }
+        }
+        { let text: [u8; 7] = [125,101,108,115,101,123,10]; byte_text(&text[..]); }
+        if result_payload(ty, false) != 10 {
+            temporary(node); character(61); temporary(left); result_field(false); { let text: [u8; 2] = [61,61]; byte_text(&text[..]); } temporary(right); result_field(false); { let text: [u8; 2] = [59,10]; byte_text(&text[..]); }
+        }
+        { let text: [u8; 2] = [125,10]; byte_text(&text[..]); }
+    } else {
+        let mut variant = graph[nominal_type(ty)].first_child;
+        while variant != 0 {
+            { let text: [u8; 3] = [105,102,40]; byte_text(&text[..]); } temporary(left); { let text: [u8; 6] = [46,116,97,103,61,61]; byte_text(&text[..]); } number(variant); { let text: [u8; 3] = [41,123,10]; byte_text(&text[..]); }
+            let mut field = graph[variant].first_child;
+            while field != 0 {
+                temporary(node); { let text: [u8; 1] = [61]; byte_text(&text[..]); } temporary(node); { let text: [u8; 3] = [38,38,40]; byte_text(&text[..]); }
+                temporary(left); { let text: [u8; 2] = [46,109]; byte_text(&text[..]); } number(field); { let text: [u8; 2] = [61,61]; byte_text(&text[..]); }
+                temporary(right); { let text: [u8; 2] = [46,109]; byte_text(&text[..]); } number(field); { let text: [u8; 3] = [41,59,10]; byte_text(&text[..]); }
+                field = graph[field].next_sibling;
+            }
+            { let text: [u8; 2] = [125,10]; byte_text(&text[..]); }
+            variant = graph[variant].next_sibling;
+        }
+    }
+    { let text: [u8; 2] = [125,10]; byte_text(&text[..]); }
+    if negate { temporary(node); { let text: [u8; 2] = [61,33]; byte_text(&text[..]); } temporary(node); { let text: [u8; 2] = [59,10]; byte_text(&text[..]); } }
 }
 
 fn emit_binary(node: u64, left: u64, right: u64, a: i64, ty: i64,

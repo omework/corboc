@@ -1,7 +1,7 @@
-use bootstrap::scalar::is_primitive_value;
+use bootstrap::scalar::{is_primitive_value, primitive_enum, implicit_copy, primitive_envelope, value_enum};
 use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::check_text;
-use bootstrap::places::value_record;
+use bootstrap::places::{value_record, scalar_place};
 use bootstrap::signatures::move_slice_argument;
 use bootstrap::socket_runtime::completion_call;
 use bootstrap::scalar::pointer_integer_type;
@@ -148,6 +148,16 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if state == 3 {
             let rule: i64 = if mode == 3 { 7 } else { 6 };
             return 0 - violation(rule, start);
+        }
+        if mode != 3 && !is_primitive_value(ty)
+            && implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], binding) {
+            if expected != 0 && expected != ty { return 0 - violation(1, start); }
+            if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], binding) { return 0 - violation(4, start); }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], binding, node, false);
+            if conflict > 0 { return 0 - violation(5, start); }
+            if conflict < 0 { return -9; }
+            copy_task_summary(&mut values[0..values.len()], binding, node, ty, false);
+            return ty;
         }
         if ty == argument_text_type() {
             if mode == 2 || (expected != 0 && expected != ty) { return 0 - violation(1, start); }
@@ -303,7 +313,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 &mut values[0..values.len()], copy(node), node);
         }
     }
-    if (kind == 17 || kind == 37) && expected == 310 && mode == 1 {
+    if (kind == 17 || kind == 37) && (expected == 0 || expected == 310) && (mode == 0 || mode == 1) {
         let name = graph[node].first_child;
         if nodes[name].kind == 7 && graph[name].binding == 0 {
             let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -441,12 +451,35 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], copy(reference), copy(node), false);
         if conflict > 0 { return 0 - violation(5, start); }
         if conflict < 0 { return -9; }
+        if values[reference].ty == 734 {
+            let declaration = value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], reference);
+            if primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], declaration) {
+                if mode == 3 { return 0 - violation(3, start); }
+                if expected != 0 && expected != 310 { return 0 - violation(1, start); }
+                values[node] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
+                    loan_parent: 0, origin_call: values[reference].origin_call, writable: false };
+                return 310;
+            }
+        }
         if values[reference].ty >= 295 { return -9; }
         let ty = loan_element(&values[0..values.len()], reference);
         if expected != 0 && ty != expected { return 0 - violation(1, start); }
         return ty;
     }
     if kind == 17 || kind == 18 {
+        let (selected_enum, root, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], node);
+        if selected_enum < 0 { return selected_enum; }
+        if selected_enum == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], shape)) {
+            if mode == 3 { return 0 - violation(3, start); }
+            if expected != 0 && expected != 310 { return 0 - violation(1, start); }
+            let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], root, node, false);
+            if conflict > 0 { return 0 - violation(5, start); }
+            if conflict < 0 { return -9; }
+            values[node] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: shape, writable: false };
+            return 310;
+        }
         if kind == 18 && nodes[child].kind == 19 {
             let inner = graph[child].first_child;
             if nodes[inner].kind == 15 {
@@ -779,6 +812,15 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let other = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], right, left, 0);
         if other < 0 { return other; }
+        if (scalar_option(left) || result_type(left)) && !primitive_envelope(left) {
+            return 0 - violation(1, start);
+        }
+        if left == 310 {
+            if !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], child)
+                || value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], child)
+                    != value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], right)
+                || (first != 61 && first != 33) { return 0 - violation(1, start); }
+        }
         return 3;
     }
     if kind == 19 && child != 0 {
@@ -833,7 +875,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if spelling.content_eq(&copy_word[..]) {
             if nodes[argument].kind != 7 || graph[argument].next_sibling != 0 { return 0 - violation(3, start); }
             let ty = values[graph[argument].binding].ty;
-            if !is_primitive_value(copy(ty)) { return 0 - violation(3, start); }
+            if !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], graph[argument].binding) { return 0 - violation(3, start); }
             let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(argument), expected, 2);
             if checked > 0 {

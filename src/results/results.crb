@@ -35,6 +35,16 @@ pub fn checked_result_payload(ty: i64) -> i64 {
 
 // Payload admissibility follows the fixed data layout through nominal fields.
 pub fn plain_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) -> bool {
+    data_payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, depth, false)
+}
+
+// Moving a payload may invoke a destructor; unlike replication, it does not
+// require that destruction be trivial.
+pub fn owned_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) -> bool {
+    data_payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, depth, true)
+}
+
+fn data_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64, destructors: bool) -> bool {
     if annotation == 0 || depth >= 128 || source[nodes[annotation].start] == 38 { return false; }
     if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 0 {
         return graph[annotation].first_child == 0;
@@ -47,12 +57,13 @@ pub fn plain_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a
     while member != 0 {
         let mut field = if nodes[nominal].kind == 29 { graph[member].first_child } else { copy(member) };
         while field != 0 {
-            if !plain_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
-                &graph[0..graph.len()], graph[field].first_child, depth + 1) { return false; }
+            if !data_payload_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], graph[field].first_child, depth + 1, destructors) { return false; }
             field = if nodes[nominal].kind == 29 { graph[field].next_sibling } else { 0 };
         }
         member = graph[member].next_sibling;
     }
+    if destructors { return true; }
     let mut item = graph[0].first_child;
     let drop_name: [u8; 4] = [100,114,111,112];
     while item != 0 {

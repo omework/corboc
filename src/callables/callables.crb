@@ -8,7 +8,7 @@ use bootstrap::packages::append;
 use bootstrap::calls::bootstrap_callee;
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::generics::expression_layout;
-use bootstrap::scalar::{verify_primitive, verify_literal_hint};
+use bootstrap::scalar::{verify_primitive, verify_literal_hint, primitive_enum};
 use bootstrap::verify::report_violation;
 
 fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
@@ -230,6 +230,12 @@ fn capture_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
     let length = infer(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(node), 0, &mut spelling[..], 0, 0);
     if length >= 4096 { return false; }
     if verify_primitive(&spelling[0..length], 0,copy(length)) != 0 { return true; }
+    let mut declaration = graph[0].first_child;
+    while declaration != 0 {
+        if same_bytes(&spelling[0..length], &source[nodes[declaration].name_start..nodes[declaration].name_end])
+            && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], declaration) { return true; }
+        declaration = graph[declaration].next_sibling;
+    }
     length > 1 && spelling[0] == 38 && !(length >= 4 && spelling[1] == 109 && spelling[2] == 117 && spelling[3] == 116)
 }
 

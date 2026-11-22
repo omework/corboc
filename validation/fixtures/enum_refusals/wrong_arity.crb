@@ -1,0 +1,1 @@
+enum E { Pair(i64, bool), Empty } fn main() { let x = E.Pair(1, true); if let E.Pair(v) = x { print(v); } }

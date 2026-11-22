@@ -1,3 +1,4 @@
+use bootstrap::scalar::primitive_enum;
 use bootstrap::loans::reference_preparation;
 use bootstrap::lowering_types::optional;
 use bootstrap::value_summaries::instantiate_envelope_record;
@@ -607,7 +608,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], copy(parameter));
                 if autonomous_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(parameter)) != 0 {
-                    if mode != 1 { return -9; }
+                    if mode != 1 && !(mode == 0 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal)) { return -9; }
                     result = 310;
                     values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
                         loan_parent: 0, origin_call: copy(parameter), writable: false };

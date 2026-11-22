@@ -1,4 +1,4 @@
-use bootstrap::scalar::is_primitive_value;
+use bootstrap::scalar::{is_primitive_value, implicit_copy, value_enum};
 use bootstrap::tasks::record_capture;
 use bootstrap::signatures::{move_slice_argument,check_slice_argument};
 use bootstrap::value_summaries::annotation_kind;
@@ -28,6 +28,19 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let mut exclusive = false;
         while member != 0 {
             if annotation != 0 && field == 0 { return 0 - violation(1, nodes[expression].start); }
+            if nodes[member].kind == 7 && values[graph[member].binding].ty == 310 {
+                let owner = graph[member].binding;
+                if field != 0 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], field)
+                    != value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], owner) {
+                    return 0 - violation(1, nodes[member].start);
+                }
+                let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut values[0..values.len()], member, 310, 1);
+                if checked < 0 { return checked; }
+                if field != 0 { field = graph[field].next_sibling; }
+                member = graph[member].next_sibling;
+                continue;
+            }
             let ty = if field == 0 { 0 } else {
                 verify_primitive(&source[0..source.len()], nodes[field].name_start, nodes[field].name_end)
             };

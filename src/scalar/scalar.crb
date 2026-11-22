@@ -1,3 +1,5 @@
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::model::{result_type, result_payload};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, hex_digit};
 use bootstrap::verify::{violation, scalar_known_type};
 use bootstrap::constants::resolve_constant;
@@ -5,6 +7,51 @@ use bootstrap::constants::resolve_constant;
 // Primitive values have no owned resources: by-value evaluation copies them.
 // usize resolves to the target's ordinary unsigned primitive type code.
 pub fn is_primitive_value(ty: i64) -> bool { ty >= 1 && ty <= 9 }
+
+// Eligibility is a property of the complete enum, never its current tag.
+// References and nested aggregates are deliberately not primitive payloads.
+pub fn primitive_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> bool {
+    if declaration == 0 || nodes[declaration].kind != 29 { return false; }
+    let mut variant = graph[declaration].first_child;
+    while variant != 0 {
+        let mut field = graph[variant].first_child;
+        while field != 0 {
+            let annotation = graph[field].first_child;
+            if annotation == 0 || source[nodes[annotation].start] == 38
+                || graph[annotation].first_child != 0
+                || !is_primitive_value(verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end)) {
+                return false;
+            }
+            field = graph[field].next_sibling;
+        }
+        variant = graph[variant].next_sibling;
+    }
+    true
+}
+
+// Builtin Option/Result use compact type codes but obey the same payload rule.
+pub fn primitive_envelope(ty: i64) -> bool {
+    if ty > 910 && ty < 920 { return true; }
+    if result_type(ty) {
+        let ok = result_payload(ty, true);
+        let err = result_payload(ty, false);
+        return (is_primitive_value(ok) || ok == 10) && (is_primitive_value(err) || err == 10);
+    }
+    false
+}
+
+pub fn value_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) -> u64 {
+    let mut origin = values[value].origin_call;
+    if nodes[origin].kind == 29 { return origin; }
+    if nodes[origin].kind != 4 { origin = graph[origin].first_child; }
+    nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], origin)
+}
+
+pub fn implicit_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) -> bool {
+    let ty = values[value].ty;
+    if is_primitive_value(ty) || primitive_envelope(ty) { return true; }
+    ty == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], value))
+}
 
 pub fn verify_primitive(source: &[u8], start: u64, end: u64) -> i64 {
     let spelling = &source[start..end];

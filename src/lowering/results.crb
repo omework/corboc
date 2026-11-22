@@ -1,3 +1,4 @@
+use bootstrap::check_flow::wildcard_pattern;
 use bootstrap::model::{AstNode, StaticNode, result_payload, result_has_nominal_payload};
 use bootstrap::lowering_types::{optional, option_payload};
 use bootstrap::results::{result_variant, scalar_result_payload, unit_result_payload};
@@ -46,10 +47,12 @@ fn lower_result_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty
     while arm != 0 {
         let pattern = graph[arm].first_child;
         let variant = result_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(pattern));
-        if variant == 0 { return -1; }
+        let wildcard = wildcard_pattern(&source[0..source.len()], &nodes[0..nodes.len()], pattern);
+        if variant == 0 && !wildcard { return -1; }
         let ok = variant == 1;
         if emit {
-            if first {
+            if first && wildcard { { let text: [u8; 2] = [123,10]; byte_text(&text[..]); } }
+            else if first {
                 { let code: [u8; 3] = [105,102,40]; byte_text(&code[..]); } if !ok { character(33); } temporary(copy(subject)); { let code: [u8; 6] = [46,111,107,41,123,10]; byte_text(&code[..]); }
             } else { { let code: [u8; 6] = [101,108,115,101,123,10]; byte_text(&code[..]); } }
         }

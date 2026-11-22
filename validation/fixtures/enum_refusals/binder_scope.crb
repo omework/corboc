@@ -1,0 +1,1 @@
+enum E { Value(i64), Empty } fn main() { let x = E.Value(1); if let E.Value(v) = x { print(v); } print(v); }

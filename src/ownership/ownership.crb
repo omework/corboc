@@ -1,3 +1,4 @@
+use bootstrap::scalar::implicit_copy;
 use bootstrap::value_dependencies::owned_fields_survive;
 use bootstrap::value_dependencies::{live_owned_fields};
 use bootstrap::vector_storage::vector_pool_nominal;
@@ -491,6 +492,14 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(constructor));
             if declared==0 || declared!=actual{return 0-violation(1,nodes[given].start);}
             let ty = values[owner].ty;
+            if implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], owner) {
+                let copied = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &mut values[0..values.len()], expression, ty, 1);
+                if copied < 0 { return copied; }
+                copy_task_summary(&mut values[0..values.len()], expression, given, ty, false);
+                given = graph[given].next_sibling;
+                continue;
+            }
             let pool = values[owner].target;
             let mutable = values[owner].mutable;
             let dependency = values[owner].loan_parent;

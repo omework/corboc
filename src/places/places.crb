@@ -1,3 +1,4 @@
+use bootstrap::scalar::primitive_enum;
 use bootstrap::native_checks::unchecked_ancestor;
 use bootstrap::process_arguments::{shared_text_annotation, check_text};
 use bootstrap::lowering_types::array_code;
@@ -274,7 +275,8 @@ pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) == 0 {
             let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], annotation);
-            if !value_record(&source[0..source.len()], &nodes[0..nodes.len()],
+            if !primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nested)
+                && !value_record(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], nested, copy(depth) + 1, copy(allow_destructor)) { return false; }
         }
         field = graph[field].next_sibling;

@@ -1,4 +1,4 @@
-use bootstrap::scalar::is_primitive_value;
+use bootstrap::scalar::{is_primitive_value, implicit_copy, primitive_envelope};
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::lowering_types::optional;
 use bootstrap::places::bind_record_pool;
@@ -517,7 +517,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
             let exclusive=values[origin].writable;let mutable=values[origin].mutable;
             values[origin]=CheckedValue{ty:ty,state:2,mutable:mutable,target:target,loan_parent:parent,origin_call:shape,writable:exclusive};
         } else if kind == 5 && nodes[initializer].kind == 7
-            && !is_primitive_value(values[graph[initializer].binding].ty)
+            && !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], graph[initializer].binding)
             && !scalar_option(values[graph[initializer].binding].ty)
             && (values[graph[initializer].binding].target != 0
                 || (values[graph[initializer].binding].ty >= 300 && !task_value(values[graph[initializer].binding].ty))) {
@@ -699,9 +699,10 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                         declared = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                             &graph[0..graph.len()], copy(child));
                         let initializer = graph[child].next_sibling;
-                        if nodes[declared].kind != 28 || graph[child].first_child != 0
+                        if nodes[declared].kind == 29 { expected = 310; }
+                        if (nodes[declared].kind != 28 && nodes[declared].kind != 29) || graph[child].first_child != 0
                             || (nodes[initializer].kind != 26 && nodes[initializer].kind != 39
-                                && nodes[initializer].kind != 16 && nodes[initializer].kind != 15) { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
+                                && nodes[initializer].kind != 16 && nodes[initializer].kind != 15 && nodes[initializer].kind != 7) { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
                     }
                 }
                 value = graph[child].next_sibling;
@@ -752,7 +753,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
             }
             }
             if ty == 0 { return (violation(1, start), 0); }
-            if declared != 0 && (ty != 300 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            if declared != 0 && (ty != (if nodes[declared].kind == 29 { 310 } else { 300 }) || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], values[initializer].origin_call) != declared) {
                 return (violation(1, start), 0);
             }
@@ -895,19 +896,20 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
             if binding == 0 || values[binding].state == 0 { return (violation(1, start), 0); }
             if !values[binding].mutable { return (violation(5, start), 0); }
             if source[nodes[node].name_start] != 61 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
-            if values[binding].ty == 300 && values[binding].target == 0 {
+            if (values[binding].ty == 300 || (values[binding].ty == 310 && implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], binding))) && values[binding].target == 0 {
                 let shape = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], values[binding].origin_call);
                 let value = graph[child].next_sibling;
+                let receiver_type = values[binding].ty;
                 let actual = if nodes[value].kind == 37 {
                     check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                         &mut values[0..values.len()], copy(value), copy(value))
                 } else {
                     verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                        &mut values[0..values.len()], copy(value), 300, 1)
+                        &mut values[0..values.len()], copy(value), receiver_type, 1)
                 };
                 if actual < 0 { return (0 - actual, 0); }
-                if actual != 300 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+                if actual != receiver_type || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], values[value].origin_call) != shape { return (violation(1, start), 0); }
                 if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(value), graph[binding].scope) {
                     return (violation(4, start), 0);
@@ -916,12 +918,12 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                     &graph[0..graph.len()], copy(binding), copy(node), true, nodes[node].end);
                 if conflict > 0 { return (violation(5, start), 0); }
                 if conflict < 0 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
-                copy_task_summary(&mut values[0..values.len()], value, binding, 300, true);
+                copy_task_summary(&mut values[0..values.len()], value, binding, receiver_type, true);
                 node = graph[node].next_sibling;
                 continue;
             }
             if (values[binding].target != 0 && !is_primitive_value(values[binding].ty))
-                || values[binding].ty > 9 { return (violation(1, start), 0); }
+                || (values[binding].ty > 9 && !primitive_envelope(values[binding].ty)) { return (violation(1, start), 0); }
             let expected = values[binding].ty;
             let value = graph[child].next_sibling;
             if nodes[value].kind == 26 {

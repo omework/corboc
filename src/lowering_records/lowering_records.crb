@@ -34,7 +34,8 @@ pub fn record_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], t
             { let bytes:[u8;6]=[117,110,105,111,110,123];byte_text(&bytes[..]); };c_type(types[field]);{ let bytes:[u8;2]=[32,109];byte_text(&bytes[..]); };number(copy(field));character(59);
             c_type(types[field]);character(32);
             if tagged{{ let bytes:[u8;2]=[118,95];byte_text(&bytes[..]); };c_identifier(&source[0..source.len()],nodes[group].name_start,nodes[group].name_end);character(95);}
-            { let bytes:[u8;2]=[102,95];byte_text(&bytes[..]); };byte_text(&source[nodes[field].name_start..nodes[field].name_end]);{ let bytes:[u8;4]=[59,125,59,10];byte_text(&bytes[..]); };
+            { let bytes:[u8;2]=[102,95];byte_text(&bytes[..]); };if nodes[field].name_start == nodes[field].name_end { number(nodes[field].name_start); }
+            else { byte_text(&source[nodes[field].name_start..nodes[field].name_end]); }{ let bytes:[u8;4]=[59,125,59,10];byte_text(&bytes[..]); };
             field = graph[field].next_sibling;
         }
         group = if tagged { graph[group].next_sibling } else { 0 };

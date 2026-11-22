@@ -1,3 +1,14 @@
+## Enum patterns, equality and copies — EN1 / V3
+
+- [x] Parse if-let, else-if chains and value expressions through match/scopes.
+- [x] Share whole-definition eligibility across enum copying and equality.
+- [x] Preserve moves, borrows and once-only payload destruction.
+- [x] Execute four fatal-UBSan programs, ten refusals and primitive regressions.
+- [x] Rebuild corboc, compare emitted compiler C and check the README package.
+- [x] Align grammar and EN/FR documentation and examples.
+
+[Evidence](ENUM_PATTERNS_CYCLE.md). macOS ARM64 execution; runtime unchanged.
+
 ## Implicit primitive copies — V3
 
 - [x] Copy primitive by-value inputs and keep their sources available.

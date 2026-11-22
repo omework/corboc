@@ -1,0 +1,1 @@
+enum E { Value(i64) } fn main() { let e = E.Value(1); drop(e); let f = e; }

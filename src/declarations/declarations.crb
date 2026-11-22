@@ -1,3 +1,4 @@
+use bootstrap::scalar::primitive_enum;
 use bootstrap::socket_runtime::mutex_wait_call;
 use bootstrap::process_arguments::split_callee;
 use bootstrap::socket_runtime::completion_call;
@@ -781,7 +782,9 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if spelling.content_eq(&clone_word[..]) && nodes[argument].kind == 7 {
                 let initializer = graph[graph[argument].binding].initializer;
                 if nodes[initializer].kind == 44 || nodes[initializer].kind == 45
-                    || nodes[initializer].kind == 37 || nodes[initializer].kind == 20 {
+                    || (nodes[initializer].kind == 37 && !primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()],
+                        &graph[0..graph.len()], nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], initializer)))
+                    || nodes[initializer].kind == 20 {
                     return report_violation(3, nodes[at].start);
                 }
             }

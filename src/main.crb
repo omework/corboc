@@ -1314,6 +1314,55 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
         if next == 0 { return (0, 0, 0); }
         index = next;
         count = used;
+    } else if atom == 44 && tokens[index + 1].kind == 15 {
+        let pattern_token = index + 2;
+        let (separator, discarded) = parse_pattern(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()], pattern_token, count, root);
+        drop(discarded);
+        if separator == 0 || tokens[separator].kind != 13 { return (0, 0, 0); }
+        let (body_token, after_subject, subject) = parse_expression_context(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+            separator + 1, count, root, 0, 1, false);
+        drop(subject);
+        if body_token == 0 { return (0, 0, 0); }
+        let arm = after_subject;
+        let (again, after_pattern) = parse_pattern(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()], pattern_token, arm + 1, arm);
+        if again != separator { return (0, 0, 0); }
+        let (after_body, used) = parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()], body_token, after_pattern, arm);
+        if after_body == 0 { return (0, 0, 0); }
+        nodes[arm] = AstNode { kind: 40, parent: root, start: tokens[pattern_token].start,
+            end: tokens[after_body - 1].end, name_start: 0, name_end: 0, public: false };
+        let fallback = used;
+        nodes[fallback + 1] = AstNode { kind: 41, parent: fallback, start: tokens[after_body - 1].end,
+            end: tokens[after_body - 1].end, name_start: 0, name_end: 0, public: false };
+        index = after_body;
+        count = fallback + 3;
+        let fallback_body = fallback + 2;
+        if tokens[index].kind == 45 {
+            if tokens[index + 1].kind == 44 {
+                let statement = count;
+                let (next, used_else, otherwise) = parse_expression_context(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
+                    index + 1, statement + 1, statement, 11, 0, true);
+                drop(otherwise);
+                if next == 0 { return (0, 0, 0); }
+                count = used_else;
+                index = next;
+                nodes[statement] = AstNode { kind: 10, parent: fallback_body, start: tokens[after_body + 1].start,
+                    end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false };
+                nodes[fallback_body] = AstNode { kind: 2, parent: fallback, start: tokens[after_body].start,
+                    end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false };
+            } else {
+                let (next, used_else) = parse_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()], index + 1, fallback_body, fallback);
+                if next == 0 { return (0, 0, 0); }
+                index = next;
+                count = used_else;
+            }
+        } else {
+            nodes[fallback_body] = AstNode { kind: 2, parent: fallback, start: tokens[index - 1].end,
+                end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false };
+        }
+        nodes[fallback] = AstNode { kind: 40, parent: root, start: nodes[fallback + 1].start,
+            end: tokens[index - 1].end, name_start: 0, name_end: 0, public: false };
+        nodes[root] = AstNode { kind: 39, parent: parent, start: start, end: tokens[index - 1].end,
+            name_start: start, name_end: tokens[first].end, public: false };
     } else if atom == 44 || atom == 49 || atom == 76 {
         index = index + 1;
         let (next, used) = if atom == 44 {
@@ -1326,7 +1375,21 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
         if next == 0 { return (0, 0, 0); }
         index = next;
         count = used;
-        if atom == 44 && tokens[index].kind == 45 {
+        if atom == 44 && tokens[index].kind == 45 && tokens[index + 1].kind == 44 && tokens[index + 2].kind == 15 {
+            // Normalize else-if-let to an ordinary else scope with a match tail.
+            let fallback = count;
+            let statement = fallback + 1;
+            let (after, total, branch) = parse_expression_context(depth + 1, &tokens[0..tokens.len()],
+                &mut nodes[0..nodes.len()], index + 1, statement + 1, statement, 11, 0, true);
+            drop(branch);
+            if after == 0 { return (0, 0, 0); }
+            nodes[fallback] = AstNode { kind: 2, parent: root, start: tokens[index + 1].start,
+                end: tokens[after - 1].end, name_start: 0, name_end: 0, public: false };
+            nodes[statement] = AstNode { kind: 10, parent: fallback, start: tokens[index + 1].start,
+                end: tokens[after - 1].end, name_start: 0, name_end: 0, public: false };
+            index = after;
+            count = total;
+        } else if atom == 44 && tokens[index].kind == 45 {
             let (after, total, branch) = parse_expression_context(depth + 1, &tokens[0..tokens.len()],
                 &mut nodes[0..nodes.len()], index + 1, copy(count), copy(root), 11, 0, true);
             if after == 0 || (nodes[branch].kind != 2 && nodes[branch].kind != 26) { return (0, 0, 0); }
@@ -2129,6 +2192,10 @@ struct ExitContext {
 fn child_order(nodes: &[AstNode], left: u64, right: u64) -> bool {
     let left_kind = nodes[left].kind;
     let right_kind = nodes[right].kind;
+    // A conditional pattern precedes its subject in source, but match analysis
+    // always evaluates the subject before visiting either arm.
+    if left_kind == 40 && right_kind != 40 { return false; }
+    if left_kind != 40 && right_kind == 40 { return true; }
     if left_kind == 48 && right_kind != 48 { return false; }
     if left_kind != 48 && right_kind == 48 { return true; }
     if left_kind == 68 && (right_kind == 69 || right_kind == 70) { return true; }

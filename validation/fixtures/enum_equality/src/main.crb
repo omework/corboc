@@ -1,0 +1,33 @@
+enum Value { Empty, Number(i64), Pair(i32, bool), Float(f64) }
+enum Scalars { Empty, All(i32, i64, u8, u16, u32, u64, usize, bool, f32, f64) }
+
+fn main() {
+    let all = Scalars.All(1, 2, 3, 4, 5, 6, 7, true, 1.5, 2.5);
+    let saved_all = all;
+    print(all == saved_all);
+    if let Scalars.All(a, b, _, _, _, _, _, _, _, _) = all { print((a as i64) + b); }
+
+    let first = Value.Number(12);
+    let second = first;
+    print(first == second);
+    print(first != second);
+    let empty = Value.Empty;
+    print(empty != first);
+    print(empty == Value.Empty);
+    let mut pair = Value.Pair(5, true);
+    let saved = pair;
+    pair = Value.Pair(6, true);
+    print(saved != pair);
+    let option: Option<i64> = Some(9);
+    let copied = option;
+    print(option == copied);
+    let none: Option<i64> = None;
+    print(none != option);
+    let result: Result<i64, i32> = Ok(42);
+    let saved_result = result;
+    print(result == saved_result);
+    let error: Result<i64, i32> = Err(2);
+    print(error != result);
+    let floating = Value.Float(0.0);
+    print(floating == Value.Float(-0.0));
+}

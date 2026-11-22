@@ -1,0 +1,47 @@
+struct Resource { id: i64 }
+impl Resource {
+    fn drop(&mut self) { print((*self).id); }
+}
+
+enum Envelope { Empty, Item(Resource) }
+enum Event { Empty, Number(i64) }
+
+fn read(event: Event) -> i64 {
+    if let Event.Number(value) = event { return value; }
+    return 0;
+}
+
+// An unmatched payload is destroyed before an early return from else.
+fn unmatched_return() {
+    let owner = Envelope.Item(Resource { id: 104 });
+    if let Envelope.Empty = owner { print(0); } else { return; }
+}
+
+// A matched owning binding follows ordinary return-path cleanup.
+fn matched_return() {
+    let owner = Envelope.Item(Resource { id: 105 });
+    if let Envelope.Item(value) = owner { return; }
+}
+
+fn main() {
+    let event = Event.Number(7);
+    print(read(event));
+    print(read(event));
+    let mut writable = Event.Number(8);
+    if let Event.Number(value) = &mut writable { *value = 9; }
+    if let Event.Number(value) = writable { print(value); }
+    {
+        let owner = Envelope.Item(Resource { id: 101 });
+        if let Envelope.Item(view) = &owner { print((*view).id); }
+    }
+    {
+        let owner = Envelope.Item(Resource { id: 102 });
+        if let Envelope.Empty = owner { print(0); } else { print(2); }
+    }
+    {
+        let owner = Envelope.Item(Resource { id: 103 });
+        if let Envelope.Item(value) = owner { print(value.id); }
+    }
+    unmatched_return();
+    matched_return();
+}

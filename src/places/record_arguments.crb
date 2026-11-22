@@ -1,3 +1,4 @@
+use bootstrap::scalar::primitive_enum;
 use bootstrap::native_checks::unchecked_ancestor;
 use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::regional_calls::region_signature;
@@ -220,9 +221,10 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let (ty, root, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(place));
     if ty < 0 { return ty; }
-    if ty != 300 { return 0; }
+    if ty != 300 && ty != 310 { return 0; }
     let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(shape));
-    if !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), 0, true)
+    if !primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record)
+        && !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), 0, true)
         && !record_with_record_loans(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, 0) {
         return -9;
     }

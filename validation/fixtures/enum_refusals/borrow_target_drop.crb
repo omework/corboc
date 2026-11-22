@@ -1,0 +1,1 @@
+enum E { Value(i64) } fn main() { let mut e = E.Value(1); if let E.Value(view) = &mut e { drop(e); print(*view); } }

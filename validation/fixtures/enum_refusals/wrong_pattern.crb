@@ -1,0 +1,1 @@
+enum First { Value(i64) } enum Other { Value(i64) } fn main() { let x = First.Value(1); if let Other.Value(v) = x { print(v); } }

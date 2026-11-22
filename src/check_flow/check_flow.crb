@@ -2,7 +2,7 @@ use bootstrap::tuples::{tuple_conditional,tuple_value};
 use bootstrap::scalar_options::{scalar_option, checked_option_payload, option_borrow, copy_option_borrow, option_allocation, option_handle, record_borrow, slice_borrow, slice_borrow_type};
 use bootstrap::places::inline_array;
 use bootstrap::scalar_options::{allocation_kind, nested_checked_option};
-use bootstrap::results::{result_variant, scalar_result_payload, checked_result_payload, unit_result_payload, plain_data_type};
+use bootstrap::results::{result_variant, scalar_result_payload, checked_result_payload, unit_result_payload, plain_data_type, owned_data_type};
 use bootstrap::model::{result_type, result_payload};
 use bootstrap::lowering_types::unsigned;
 use bootstrap::task_vectors::drain_handles;
@@ -10,7 +10,7 @@ use bootstrap::value_dependencies::{live_owned_fields, equivalent_result};
 use bootstrap::map_entries::{dependent_option, bind_entry_option};
 use bootstrap::model::{Token, AstNode, StaticNode, CheckedValue};
 use bootstrap::tasks::{match_payload, completion_type, task_output, scalar_handle_type, copy_task_summary, dependent_handle, pending_task, complete_task, merge_borrowing_future};
-use bootstrap::scalar::verify_primitive;
+use bootstrap::scalar::{verify_primitive, implicit_copy};
 use bootstrap::places::scalar_array_type;
 use bootstrap::loans::loan_conflict;
 use bootstrap::verify::{verify_expr, violation, check_block, check_block_with_destination, scalar_known_type, readonly_scalar};
@@ -26,6 +26,14 @@ struct BranchState {
 pub struct LoopEdge {
     breaks: i64,
     continues: i64,
+}
+
+// An empty spelling denotes the parser-generated else arm of if-let.
+pub fn wildcard_pattern(source: &[u8], nodes: &[AstNode], pattern: u64) -> bool {
+    if nodes[pattern].kind != 41 { return false; }
+    let start = nodes[pattern].name_start;
+    let end = nodes[pattern].name_end;
+    end == start || (end == start + 1 && source[start] == 95)
 }
 
 fn join_availability(left: i64, right: i64) -> i64 {
@@ -298,7 +306,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         }
         let constructor = values[base].origin_call;
         let name = if nodes[constructor].kind == 4 || nodes[constructor].kind == 29 { copy(constructor) } else { graph[constructor].first_child };
-        if nodes[name].kind != 7 && nodes[name].kind != 4 && nodes[name].kind != 29 { return (9, 0); }
+        if nodes[name].kind != 7 && nodes[name].kind != 4 && nodes[name].kind != 29 && nodes[name].kind != 17 { return (9, 0); }
         nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name);
         if nodes[nominal].kind != 29 { return (9, 0); }
         if !borrowed {
@@ -309,7 +317,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let annotation = graph[field].first_child;
                     let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation));
-                    if handle == 0 && !plain_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                    if handle == 0 && !owned_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation), 0) { return (9, 0); }
                     if handle != 0 && nodes[constructor].kind != 4 && !values[base].writable && (variant != graph[nominal].first_child || graph[variant].next_sibling != 0) {
                         return (9, 0);
@@ -320,13 +328,15 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             }
         }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
-            copy(base), copy(subject), !borrowed || graph[subject].mutable);
+            copy(base), copy(subject), (!borrowed && !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], base)) || graph[subject].mutable);
         if conflict > 0 { return (violation(5, nodes[subject].start), 0); }
         if conflict < 0 { return (9, 0); }
         if borrowed && graph[subject].mutable && !(if owner==734{values[base].writable}else{values[base].mutable}) { return (violation(5, nodes[subject].start), 0); }
         if !borrowed {
             if owner == 301 { return (9, 0); }
-            set_state(&mut values[0..values.len()], copy(base), 2);
+            if !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], base) {
+                set_state(&mut values[0..values.len()], base, 2);
+            }
         }
     } else {
         if nodes[subject].kind == 2 {
@@ -340,7 +350,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(subject), 0, 1);
             if ty < 0 { return (0 - ty, 0); }
         }
-        if !result_type(copy(ty)) && ty != 951 && !(ty >= 2801 && ty <= 2807) && !completion_type(copy(ty)) && (ty <= 900 || ty >= 950) && !scalar_option(copy(ty)) && !dependent_option(copy(ty)) { return (9, 0); }
+        if ty == 310 {
+            nominal = bootstrap::scalar::value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], subject);
+            if nominal == 0 { return (9, 0); }
+        }
+        if nominal == 0 && !result_type(copy(ty)) && ty != 951 && !(ty >= 2801 && ty <= 2807) && !completion_type(copy(ty)) && (ty <= 900 || ty >= 950) && !scalar_option(copy(ty)) && !dependent_option(copy(ty)) { return (9, 0); }
     }
     let collection_option = ty == 951 || (ty >= 2801 && ty <= 2807) || (ty > 900 && ty < 950) || scalar_option(copy(ty)) || dependent_option(copy(ty));
     let mut state = [BranchState { before: 0, yes: 0 }; 524289];
@@ -351,6 +365,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
     }
     let mut arm = graph[subject].next_sibling;
     let mut seen: [bool; 524289] = [false; 524289];
+    let mut wildcard_seen = false;
     let mut ok_seen = false;
     let mut err_seen = false;
     let mut output: i64 = 0;
@@ -361,7 +376,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         let body = graph[pattern].next_sibling;
         if nodes[body].kind != 2 { return (9, 0); }
         let mut absent = false;
-        if nominal != 0 {
+        if wildcard_pattern(&source[0..source.len()], &nodes[0..nodes.len()], pattern) {
+            if wildcard_seen || graph[arm].next_sibling != 0 { return (violation(1, nodes[pattern].start), 0); }
+            if !borrowed && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], base) { return (violation(8, nodes[pattern].start), 0); }
+            wildcard_seen = true;
+        } else if nominal != 0 {
             if nodes[pattern].kind != 53 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(pattern)) != nominal {
                 return (violation(1, nodes[pattern].start), 0);
@@ -436,7 +455,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let mutable = borrowed && graph[subject].mutable;
                     if payload != 0 && graph[annotation].first_child == 0 {
                         if mutable { bound = 40 + payload; root = copy(base); }
-                    } else if !borrowed && plain_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
+                    } else if !borrowed && owned_data_type(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation), 0) {
                         let structure = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                             &graph[0..graph.len()], copy(annotation));
@@ -683,11 +702,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         arm = graph[arm].next_sibling;
     }
     if nominal == 0 {
-        if !ok_seen || !err_seen { return (violation(1, nodes[expression].start), 0); }
+        if !wildcard_seen && (!ok_seen || !err_seen) { return (violation(1, nodes[expression].start), 0); }
     } else {
         let mut variant = graph[nominal].first_child;
         while variant != 0 {
-            if !seen[variant] { return (violation(1, nodes[expression].start), 0); }
+            if !wildcard_seen && !seen[variant] { return (violation(1, nodes[expression].start), 0); }
             variant = graph[variant].next_sibling;
         }
     }
