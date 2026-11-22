@@ -1,10 +1,28 @@
+## Universal reference spelling and for loops
+
+- [x] Specify exact ref/mut_ref equivalence and loop ownership semantics.
+- [x] Add loop parsing and normalization through existing operations.
+- [x] Validate indexed and next-based iteration, borrowing and cleanup (ten focused observations, plus sixteen diagnostic regressions).
+- [x] Rebuild final source with the new compiler generation and update the local installation.
+
+[Evidence](ITERATION_CYCLE.md).
+
+## Interactive watch refresh
+
+- [x] Clear the visible terminal before initial and repeated watch checks.
+- [x] Preserve redirected logs, Unix `TERM=dumb` output and terminal scrollback.
+- [x] Validate terminal refresh and redirected output on macOS ARM64; rebuild local installation.
+
+[Evidence](WATCH_TERMINAL_CYCLE.md).
+
 ## Source diagnostics
 
 - [x] Render filename, line, column, source excerpt and caret for check/watch/build.
 - [x] Preserve original source provenance through linking and rewriting.
 - [x] Distinguish rule failures, unsupported constructs and approximate anchors.
+- [x] Explain common parser expectations and malformed for-loop headers (for syntax is now supported).
 - [x] Preserve raw frontend protocols and reset provenance on each watch pass.
-- [x] Validate thirteen focused diagnostic observations, thirteen package regressions and seven file/watch observations on macOS ARM64.
+- [x] Validate sixteen focused diagnostic observations, thirteen package regressions and seven file/watch observations on macOS ARM64.
 
 [Evidence](DIAGNOSTICS_CYCLE.md). No grammar or normative-rule changes.
 

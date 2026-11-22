@@ -6,42 +6,57 @@
       {
         "case": "type",
         "exit": 8,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/type.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let value: i64 = true;\n       |                      ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/type.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let value: i64 = true;\n       |                      ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "move",
         "exit": 8,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/move.crb:5:11: error[N6]: value is unavailable on this path (for example, after a move or drop)\n     5 |     print(item.value);\n       |           ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/move.crb:5:11: error[N6]: value is unavailable on this path (for example, after a move or drop)\n     5 |     print(item.value);\n       |           ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "syntax",
         "exit": 7,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/syntax.crb:2:9: error[E0007]: invalid syntax near this token\n     2 |     let = 42;\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/syntax.crb:2:9: error[E0100]: expected a binding name after let or let mut\n     2 |     let = 42;\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "unclosed",
         "exit": 7,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/unclosed.crb:1:1: error[E0017]: declaration is not closed before the end of this source file\n     1 | fn main() {\n       | ^~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/unclosed.crb:1:1: error[E0017]: declaration is not closed before the end of this source file\n     1 | fn main() {\n       | ^~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "for-loop",
+        "exit": 7,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/for-loop.crb:3:5: error[E0018]: for ... in loops are not supported by the current grammar\n     3 |     for slot in buffer { print(slot); }\n       |     ^~~\n       = help: use an indexed while loop or loop with an explicit next() call; for ... in syntax is not implemented\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "initializer",
+        "exit": 7,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/initializer.crb:2:19: error[E0101]: expected '=' and an initializer for this binding\n     2 |     let value: i64;\n       |                   ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "separator",
+        "exit": 7,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/separator.crb:2:14: error[E0103]: expected ';' after this expression, or '}' to return its value\n     2 |     print(1) print(2);\n       |              ^~~~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "lex",
         "exit": 3,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/lex.crb:2:26: error[E0003]: unterminated string literal before end of line\n     2 |     print(\"unterminated);\n       |                          ^\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/lex.crb:2:26: error[E0003]: unterminated string literal before end of line\n     2 |     print(\"unterminated);\n       |                          ^\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "generic",
         "exit": 8,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/generic.crb:5:21: error[N8]: call, capture, or result does not satisfy its inferred contract\n     5 |     let value: i64 = identity(true);\n       |                     ^~~~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/generic.crb:5:21: error[N8]: call, capture, or result does not satisfy its inferred contract\n     5 |     let value: i64 = identity(true);\n       |                     ^~~~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "closure",
         "exit": 8,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/closure.crb:2:28: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let read = || -> i64 { true };\n       |                            ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/closure.crb:2:28: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let read = || -> i64 { true };\n       |                            ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "unresolved import",
         "exit": 13,
-        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/missing_import.crb:1:1: error[E0013]: cannot resolve this import or qualified name\n     1 | use missing::answer;\n       | ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/missing_import.crb:1:1: error[E0013]: cannot resolve this import or qualified name\n     1 | use missing::answer;\n       | ^~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "watch refreshes source locations after recovery",
@@ -50,7 +65,7 @@
       {
         "case": "imported source",
         "exit": 8,
-        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
       },
       {
         "case": "legacy machine protocol",
@@ -59,12 +74,12 @@
       {
         "case": "normal build source diagnostic",
         "exit": 8,
-        "stderr": "/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: package compilation failed\n"
+        "stderr": "/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: package compilation failed\n"
       },
       {
         "case": "manifest path",
         "exit": 12,
-        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-0pvtfvbu/project/package.toml: error[E0012]: invalid package manifest or dependency declaration\ncorboc: check failed (see compiler diagnostics)\n"
+        "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-dmqo27f3/project/package.toml: error[E0012]: invalid package manifest or dependency declaration\ncorboc: check failed (see compiler diagnostics)\n"
       }
     ],
     "package_regressions": [

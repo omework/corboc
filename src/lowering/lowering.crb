@@ -462,7 +462,7 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if element <= 0 || uses_pool(copy(element)) { return -1; }
         let ty = if kind != 13 { element } else if element < 20 {
             element + (if graph[node].mutable { 40 } else { 20 })
-        } else if element >= 3000000 && element < 4000000 && !graph[node].mutable {
+        } else if element >= 3000000 && element < 4000000 {
             element + 1000000
         } else { return -1; };
         if emit {

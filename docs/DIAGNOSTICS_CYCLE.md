@@ -20,7 +20,7 @@ private native C boundary; this is not a new public runtime API.
 
 ## Validation
 
-- Thirteen diagnostic observations cover type/move/syntax/lex failures, unclosed
+- Sixteen diagnostic observations cover type/move/syntax/lex failures, unclosed
   declarations, generics, closures, unresolved imports, imported source, watch
   recovery, normal build, manifests and unchanged numeric machine output.
 - Thirteen existing package checks and seven file/watch observations pass.
@@ -37,3 +37,24 @@ borrow-origin labels. Columns count Unicode code points with tab expansion, not
 full terminal display width. This does not implement an IDE/LSP diagnostic service.
 Historical numeric-output descriptions in earlier cycle reports are superseded
 for user-facing commands by this report.
+
+## Parser context follow-up
+
+The parser now records an expected-syntax reason alongside its farthest failure.
+Common block/binding failures explain the required token or binding, rather than
+only reporting invalid syntax. An expression-statement failure originating at
+`for` explains that `for ... in` is absent from the current grammar and suggests
+`while`/explicit `next()`. This is diagnostic classification after parsing fails:
+no keyword is reserved and no grammar or accepted program is changed.
+
+Sixteen focused diagnostic observations pass on macOS ARM64, including the new
+loop, initializer and separator explanations. Checking the actual SubDB source
+now identifies line 49 column 9 (`for`), rather than column 13 (`slot`). A valid
+function named `for` still checks successfully. No SubDB source was modified.
+
+## Iteration follow-up
+
+The later for-loop implementation supersedes the unsupported-loop diagnostic
+above. Valid for headers are now parsed; a malformed header reports the missing
+`in` token. Reference-method arity failures identify the method name and explain
+that the intrinsic takes no arguments.

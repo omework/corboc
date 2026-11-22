@@ -399,6 +399,9 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
         } else if kind == 5 && nodes[initializer].kind == 16
             && split_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(initializer))==0
             && !slice_view(values[graph[graph[initializer].first_child].binding].ty)
+            && !is_scalar_array(values[graph[graph[initializer].first_child].binding].ty)
+            && values[graph[graph[initializer].first_child].binding].ty!=451
+            && values[graph[graph[initializer].first_child].binding].ty!=470
             && !(values[graph[graph[initializer].first_child].binding].ty >= 2701
                 && values[graph[graph[initializer].first_child].binding].ty <= 2708)
             && !task_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(initializer))
@@ -632,7 +635,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
                 return (0 - nested, 0);
             }
             if nested != 0 { node = graph[node].next_sibling; continue; }
-            if nodes[place].kind == 7 && values[target].ty == 300 && !annotated {
+            if nodes[place].kind == 7 && (values[target].ty == 300 || values[target].ty == 310) && !annotated {
                 if exclusive && !values[target].mutable { return (violation(5, start), 0); }
                 let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
                     copy(target), copy(node), copy(exclusive));

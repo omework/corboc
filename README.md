@@ -95,6 +95,10 @@ corboc check src/main.crb
 corboc check src/main.crb --watch
 ```
 
+Watch clears interactive terminals before each check, showing only the latest
+result. Redirected output retains its history; `TERM=dumb` disables clearing on
+Unix. The terminal scrollback is preserved.
+
 `check` resolves the package manifest, imports, dependencies and installed STD,
 then parses and runs the static verifier. It does not emit C, invoke a C compiler
 or create a binary/build directory. Dependency resolution may populate its usual
@@ -110,7 +114,9 @@ src/main.crb:2:22: error[N1]: value is undefined, uninitialized, or does not mat
 
 Source locations survive linking, generic specialization and closure lowering.
 An approximate generated-code anchor is explicitly labeled. Compiler limitations
-are reported separately from rule failures. This is terminal output, not an IDE
+are reported separately from rule failures. Common parser errors explain the
+expected syntax, including malformed for-loop headers.
+This is terminal output, not an IDE
 language server. `--verify FILE` and other raw frontend modes retain their numeric
 protocol; `check FILE.crb` adds normal STD/module resolution.
 See [diagnostic validation](docs/DIAGNOSTICS_CYCLE.md).
@@ -267,3 +273,26 @@ See the [STD API convention](https://github.com/omework/corbo-lang/blob/main/doc
 `read_at(buffer, offset)` and `write_at(buffer, offset)` without changing the
 sequential cursor. See the pinned STD's File guide for mode/range restrictions
 and Windows companion-handle/event resource costs.
+
+## Universal reference methods and for loops
+
+`value.ref()` and `value.mut_ref()` normalize to `&value` and `&mut value` for
+all types. They do not implicitly dereference an existing reference or grant
+mutation permission. `for item in source` evaluates its source once, then uses
+indexed array/slice access or the source's `next() -> Option<T>` method.
+
+```rust
+fn main() {
+    let mut values = [1, 2, 3];
+
+    for value in values.mut_ref() {
+        *value += 10;
+    }
+
+    for value in values.ref() {
+        print(*value);
+    }
+}
+```
+
+See the language repository's `docs/ITERATION_SYNTAX.md` for ownership semantics.

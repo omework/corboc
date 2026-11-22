@@ -822,13 +822,13 @@ pub fn slice_length(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let base = graph[call].first_child;
     let binding = graph[base].binding;
     let ty = values[binding].ty;
-    if nodes[base].kind != 7 || !slice_view(ty) { return 0; }
+    if nodes[base].kind != 7 || (!slice_view(ty) && !is_scalar_array(ty) && ty!=451 && ty!=470) { return 0; }
     let word: [u8; 3] = [108,101,110];
     let spelling = &source[nodes[call].name_start..nodes[call].name_end];
     if !spelling.content_eq(&word[..]) { return 0; }
     if graph[base].next_sibling != 0 { return -9; }
     if values[binding].state != 1 { return 0 - violation(6, nodes[base].start); }
-    if values[values[binding].target].state != 1 { return 0 - violation(4, nodes[base].start); }
+    if slice_view(ty) && values[values[binding].target].state != 1 { return 0 - violation(4, nodes[base].start); }
     let pointer: [u8; 5] = [117,115,105,122,101];
     let result = verify_primitive(&pointer[..], 0, 5);
     if expected != 0 && expected != result { return 0 - violation(1, nodes[call].start); }

@@ -185,6 +185,9 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut place = graph[initializer].first_child;
     while nodes[place].kind == 19 { place = graph[place].first_child; }
     let projected = graph[place].first_child;
+    // A range creates a slice descriptor; element borrowing must not consume
+    // this case before bind_slice processes its bounds and lifetime.
+    if nodes[place].kind==18 && nodes[graph[projected].next_sibling].kind==46 {return 0;}
     // A local reborrow retains the same record identity and parent loan as a
     // borrowed record argument; its destination is a new reference binding.
     if nodes[place].kind == 14 && nodes[projected].kind == 7 {
@@ -217,7 +220,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         return reborrow_record_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], destination, initializer, projected);
     }
-    if nodes[place].kind != 17 { return 0; }
+    if nodes[place].kind != 17 && nodes[place].kind != 18 { return 0; }
     let (ty, root, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(place));
     if ty < 0 { return ty; }
@@ -229,7 +232,8 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         return -9;
     }
     let exclusive = graph[initializer].mutable;
-    let reference = values[root].ty == 734;
+    let mut reference = values[root].ty == 734;
+    if slice_view(values[root].ty) {reference=true;}
     let writable = if reference { values[root].writable } else { values[root].mutable };
     if exclusive && !writable && unchecked_ancestor(&nodes[0..nodes.len()], copy(place)) == 0 { return 0 - violation(5, nodes[place].start); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],

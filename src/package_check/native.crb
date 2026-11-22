@@ -54,3 +54,39 @@ fn executable_path(output: &mut [u8]) -> usize {
     length
 }
 #(endif)
+
+/// Clears only an interactive stderr terminal; redirected logs remain append-only.
+#(if: target.family == "unix")
+pub fn refresh_terminal() {
+    @unchecked {
+        @c(includes={"stdio.h", "stdlib.h", "string.h", "unistd.h"}) {
+            const char *term = getenv("TERM");
+            if (isatty(STDERR_FILENO) && term && strcmp(term, "dumb") != 0) {
+                fputs("\033[2J\033[H", stderr);
+                fflush(stderr);
+            }
+        }
+    }
+}
+#(endif)
+
+/// Uses console APIs so Windows does not require ANSI processing to be enabled.
+#(if: target.os == "windows")
+pub fn refresh_terminal() {
+    @unchecked {
+        @c(includes={"stdio.h", "windows.h"}) {
+            HANDLE console = GetStdHandle(STD_ERROR_HANDLE);
+            DWORD mode, written;
+            CONSOLE_SCREEN_BUFFER_INFO info;
+            if (GetConsoleMode(console, &mode) && GetConsoleScreenBufferInfo(console, &info)) {
+                COORD origin = {0, info.srWindow.Top};
+                DWORD cells = (DWORD)info.dwSize.X * (info.srWindow.Bottom - info.srWindow.Top + 1);
+                fflush(stderr);
+                FillConsoleOutputCharacterW(console, L' ', cells, origin, &written);
+                FillConsoleOutputAttribute(console, info.wAttributes, cells, origin, &written);
+                SetConsoleCursorPosition(console, origin);
+            }
+        }
+    }
+}
+#(endif)

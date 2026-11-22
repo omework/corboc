@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Normalize universal reference spelling and for loops before verification.
+//! Generated operations use the ordinary dependency, ownership and cleanup paths.
+use bootstrap::model::{AstNode,StaticNode,Token,token_at};
+use bootstrap::packages::append;
+use bootstrap::generics::iteration_mode;
+use bootstrap::diagnostics::diagnostic_emit;
+
+fn reference_method(source:&[u8],node:&AstNode)->i64 {
+    if (*node).kind!=16 {return 0;}
+    let name=&source[(*node).name_start..(*node).name_end];
+    let shared="ref";let mutable="mut_ref";
+    let shared_bytes=shared.as_bytes();let mutable_bytes=mutable.as_bytes();
+    if name.content_eq(shared_bytes){return 1;}
+    if name.content_eq(mutable_bytes){return 2;}
+    0
+}
+
+/// Detect syntax requiring normalization without affecting other programs.
+pub fn has_iteration_syntax(source:&[u8],nodes:&[AstNode])->bool {
+    let mut n:usize=1;
+    while n<nodes.len(){
+        if nodes[n].kind==95 || reference_method(&source[0..source.len()],&nodes[n])!=0 {return true;}
+        n+=1;
+    }
+    false
+}
+
+fn text(out:&mut [u8],pos:usize,value:&str)->usize {
+    let bytes=value.as_bytes();
+    if pos>=out.len() || bytes.len()>out.len()-pos {return out.len();}
+    append(out,pos,bytes)
+}
+
+fn span(source:&[u8],out:&mut [u8],offsets:&mut [u64],pos:usize,start:u64,end:u64)->usize {
+    if pos>=out.len() || end<start || end-start>out.len()-pos {return out.len();}
+    let mut n=start;
+    while n<=end && n<offsets.len() as u64 {offsets[n]=(pos as u64)+n-start;n+=1;}
+    append(out,pos,&source[start..end])
+}
+
+/// Names are checked against every source identifier, including names introduced
+/// by previous normalization passes; source code cannot capture these temporaries.
+fn fresh(source:&[u8],tokens:&[Token],name:&mut [u8])->usize {
+    let prefix="corbo_for";let bytes=prefix.as_bytes();
+    let mut length=bytes.len();let mut n:usize=0;
+    while n<length {name[n]=bytes[n];n+=1;}
+    loop {
+        let mut collision=false;n=0;
+        while n<tokens.len(){
+            let token=&source[tokens[n].start..tokens[n].end];
+            if token.len()>=length {let prefix=&token[0..length]; if prefix.content_eq(&name[0..length]){collision=true;}}
+            n+=1;
+        }
+        if !collision {return length;}
+        if length+1>=name.len(){return 0;}
+        name[length]=95;length+=1;
+    }
+    0
+}
+
+fn named(out:&mut [u8],pos:usize,name:&[u8],suffix:&str)->usize {
+    if pos>=out.len() || name.len()>out.len()-pos {return out.len();}
+    let next=append(&mut out[0..out.len()],pos,name);
+    text(out,next,suffix)
+}
+
+/// Rewrite one expression/loop per pass; the caller reparses and composes source
+/// provenance, visibility and environment offsets before processing the next one.
+pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],
+    out:&mut [u8],offsets:&mut [u64])->(i32,u64) {
+    let mut chosen:u64=0;let mut reference:i64=0;let mut n:u64=1;
+    while n<nodes.len() as u64 {
+        let mode=reference_method(&source[0..source.len()],&nodes[n]);
+        if mode!=0 {chosen=n;reference=mode;break;}
+        n+=1;
+    }
+    if chosen==0 {
+        n=1;
+        while n<nodes.len() as u64 {
+            if nodes[n].kind==95 {chosen=n;break;}
+            n+=1;
+        }
+    }
+    if chosen==0 {return (0,0);}
+    let start=nodes[chosen].start;let end=nodes[chosen].end;
+    let mut anchor=start;
+    while anchor<=end && anchor<offsets.len() as u64 {offsets[anchor]=start;anchor+=1;}
+    let first=graph[chosen].first_child;
+    let mut pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],0,0,start);
+    if reference!=0 {
+        // Exactly one receiver and no explicit arguments; invalid arity is a
+        // parser-level spelling error, never silently discarded.
+        if first==0 || graph[first].next_sibling!=0 {drop(diagnostic_emit(2,105,nodes[chosen].name_start));return (7,0);}
+        let parent=nodes[chosen].parent;
+        let grouping=(nodes[parent].kind==16 || nodes[parent].kind==17 || nodes[parent].kind==18 || nodes[parent].kind==15)
+            && graph[parent].first_child==chosen;
+        if grouping {pos=text(&mut out[0..out.len()],pos,"(");}
+        if reference==2 {pos=text(&mut out[0..out.len()],pos,"&mut ");}
+        else {pos=text(&mut out[0..out.len()],pos,"&");}
+        let mut receiver=first;
+        while nodes[receiver].kind==19 {receiver=graph[receiver].first_child;}
+        pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[receiver].start,nodes[receiver].end);
+        if grouping {pos=text(&mut out[0..out.len()],pos,")");}
+    } else {
+        let body=graph[first].next_sibling;
+        if first==0 || body==0 {return (7,0);}
+        let mut mode=iteration_mode(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],first);
+        let mut storage:[u8;256]=[0;256];
+        let length=fresh(&source[0..source.len()],&tokens[0..tokens.len()],&mut storage[..]);
+        if length==0 {return (4,0);}
+        let name=&storage[..length];
+        pos=text(&mut out[0..out.len()],pos,"{ let mut ");
+        pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_source = ");
+        // A direct array borrow can be captured as a view without first
+        // materializing a reference-to-array descriptor. The place is still
+        // evaluated once and the same root/permission is checked by bind_slice.
+        let mut expression=first;
+        while nodes[expression].kind==19 {expression=graph[expression].first_child;}
+        if (mode==2 || mode==3) && nodes[expression].kind==13 {
+            pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[expression].start,nodes[expression].end);
+            pos=text(&mut out[0..out.len()],pos,"[..]");
+            mode+=2;
+        } else {
+            pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[first].start,nodes[first].end);
+        }
+        pos=text(&mut out[0..out.len()],pos,"; ");
+        if mode!=0 {
+            if mode==2 || mode==3 {
+                pos=text(&mut out[0..out.len()],pos,"let mut ");
+                pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_view = &");
+                if mode==3 || mode==5 {pos=text(&mut out[0..out.len()],pos,"mut ");}
+                pos=text(&mut out[0..out.len()],pos,"(*");
+                pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_source)[..]; ");
+            }
+            pos=text(&mut out[0..out.len()],pos,"let ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_length = ");
+            if mode==2 || mode==3 {pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_view.len(); ");}
+            else {pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_source.len(); ");}
+            pos=text(&mut out[0..out.len()],pos,"let mut ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_index: usize = 0; while ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_index < ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_length { let ");
+        } else {
+            pos=text(&mut out[0..out.len()],pos,"loop { let ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_next = ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_source.next(); match ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_next { Some(");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_item) => { let ");
+        }
+        let loop_token=token_at(&tokens[0..tokens.len()],nodes[chosen].start);
+        if tokens[loop_token+1].kind==16 {pos=text(&mut out[0..out.len()],pos,"mut ");}
+        pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[chosen].name_start,nodes[chosen].name_end);
+        if mode!=0 {
+            if mode==3 || mode==5 {pos=text(&mut out[0..out.len()],pos," = &mut ");}
+            else if mode==2 || mode==4 {pos=text(&mut out[0..out.len()],pos," = & ");}
+            else {pos=text(&mut out[0..out.len()],pos," = ");}
+            if mode==2 || mode==3 {pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_view[");}
+            else {pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_source[");}
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_index]; ");
+            // Advance before the user body so continue cannot repeat an item.
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_index += 1; ");
+        } else {
+            pos=text(&mut out[0..out.len()],pos," = ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_item; ");
+        }
+        // A real nested body preserves per-iteration cleanup and shadowing.
+        pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[body].start,nodes[body].end);
+        if mode==0 {pos=text(&mut out[0..out.len()],pos," }, None => { break; }, } } }");}
+        else {pos=text(&mut out[0..out.len()],pos," } }");}
+    }
+    let generated_end=pos;
+    pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,end,source.len() as u64);
+    if pos>=out.len(){return (4,0);}
+    // Map the construct boundary separately from receiver/body spans.
+    offsets[start]=if start==0 {0}else{start};offsets[end]=generated_end as u64;
+    return (0,pos as u64);
+}

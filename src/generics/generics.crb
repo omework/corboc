@@ -141,6 +141,7 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         }
         return type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], graph[binding].initializer, depth + 1);
     }
+    if kind == 44 || kind == 45 { let inferred=ConcreteType{node:id,reference:0,slice:false,instance:0};return packed(&inferred); }
     if kind == 94 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 9 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     if kind == 37 { let inferred = ConcreteType { node: id, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
@@ -1603,4 +1604,31 @@ fn conversion_float_init(out: &mut [u8], at: usize) -> usize {
 fn conversion_float_bound(out: &mut [u8], at: usize) -> usize {
     let text: [u8; 84] = [105,102,40,105,115,102,105,110,105,116,101,40,36,123,118,97,108,117,101,125,41,32,38,38,32,36,123,118,97,108,117,101,125,32,62,61,32,45,48,120,49,46,102,102,102,102,102,101,112,49,50,55,32,38,38,32,36,123,118,97,108,117,101,125,32,60,61,32,48,120,49,46,102,102,102,102,102,101,112,49,50,55,41,123];
     put(out, at, &text[..])
+}
+
+/// Classify a for source using ordinary expression inference. Reference mode
+/// remains separate from the indexed layout; unknown sources use next().
+pub fn iteration_mode(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],expression:u64)->i64 {
+    let ty=decoded(type_code(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],expression,0));
+    let node=ty.node;
+    let mut indexed=ty.slice;
+    if node!=0 {
+        indexed=indexed || source[nodes[node].start]==91;
+        let name=&source[nodes[node].name_start..nodes[node].name_end];
+        let vector="Vector";
+        let vector_bytes=vector.as_bytes();
+        if name.content_eq(vector_bytes) {indexed=true;}
+    }
+    // Array literals do not need a declared type to identify their shape.
+    let mut root=expression;
+    while nodes[root].kind==13 || nodes[root].kind==19 {root=graph[root].first_child;}
+    indexed=indexed || nodes[root].kind==44 || nodes[root].kind==45;
+    if !indexed {return 0;}
+    let inner=graph[node].first_child;
+    let slice=ty.slice || (node!=0 && nodes[node].kind==4 && source[nodes[node].start]==91 && graph[inner].next_sibling==0);
+    if ty.reference==2 {return if slice {5}else{3};}
+    if ty.reference==1 {return if slice {4}else{2};}
+    // Borrowed unannotated array literals are still explicit references.
+    if nodes[expression].kind==13 {return if graph[expression].mutable {3}else{2};}
+    1
 }

@@ -14,7 +14,8 @@ fn control(op:i64,a:usize,b:usize,c:usize,d:usize,input:&[u8],path:&[u8],offsets
 #define DIAG_INDEX 0x7fffffffu
 static struct {
     bool enabled, stage, reported;
-    size_t original_len, current_len, files, parse_at, parse_root;
+    size_t original_len, current_len, files, parse_at, parse_root, parse_display;
+    int parse_code;
     uintptr_t stage_base;
     size_t stage_len;
     int last_kind, last_code;
@@ -39,7 +40,7 @@ do {
     ${result}=true;
     if(operation==1){
         state.original_len=state.current_len=state.files=state.parse_at=state.parse_root=0;
-        state.stage=state.reported=false;state.stage_base=0;
+        state.stage=state.reported=false;state.stage_base=0;state.parse_code=0;state.parse_display=0;
         state.last_kind=state.last_code=0;state.last_at=SIZE_MAX;break;
     }
     if(operation==2){
@@ -81,8 +82,13 @@ do {
         memcpy(state.current,state.next,b*sizeof(uint32_t));state.current_len=b;
         state.stage=false;state.stage_base=0;state.stage_len=0;break;
     }
-    if(operation==8){if(a>state.parse_at)state.parse_at=a;break;}
-    if(operation==9){state.parse_at=state.parse_root=0;break;}
+    if(operation==8){if(a>state.parse_at){state.parse_at=a;state.parse_code=0;state.parse_display=a;}break;}
+    if(operation==19){
+        if(a<state.parse_at)break;
+        state.parse_at=a;state.parse_display=a;state.parse_code=(int)b;
+        break;
+    }
+    if(operation==9){state.parse_at=state.parse_root=state.parse_display=0;state.parse_code=0;break;}
     if(operation==11){state.stage=false;state.stage_base=0;state.stage_len=0;break;}
     if(operation==16){state.parse_root=a;break;}
     if(operation==18){
@@ -104,7 +110,7 @@ do {
             state.reported=true;break;}
     }
     if(operation==10){
-        operation=7;a=2;b=7;c=state.parse_at;
+        operation=7;a=2;b=state.parse_code?state.parse_code:7;c=state.parse_code?state.parse_display:state.parse_at;
         uint32_t root_map=state.parse_root<state.current_len?state.current[state.parse_root]:0;
         uint32_t error_map=c<state.current_len?state.current[c]:0;
         if(root_map&&error_map){size_t root_point=(root_map&DIAG_INDEX)-1,error_point=(error_map&DIAG_INDEX)-1;
@@ -129,7 +135,16 @@ do {
     if(kind==1){
         const char *rules[]={"","value is undefined, uninitialized, or does not match the required type","cleanup responsibility is not unique","copy, move, or borrow does not match the required value form","cannot prove that the borrowed target or allocation source remains valid","access requires mutation permission or the required synchronization","value is unavailable on this path (for example, after a move or drop)","cleanup or storage reuse violates a live dependency","call, capture, or result does not satisfy its inferred contract"};
         if(code>=1&&code<=8)message=rules[code];
-    }else if(kind==2)message=code==17?"declaration is not closed before the end of this source file":"invalid syntax near this token";
+    }else if(kind==2){
+        if(code==17)message="declaration is not closed before the end of this source file";
+        else if(code==100)message="expected a binding name after let or let mut";
+        else if(code==101)message="expected '=' and an initializer for this binding";
+        else if(code==102)message="expected '{' to begin a block";
+        else if(code==104)message="expected 'in' after the for-loop binding";
+        else if(code==105)message="ref() and mut_ref() take no arguments";
+        else if(code==103)message="expected ';' after this expression, or '}' to return its value";
+        else message="invalid syntax near this token";
+    }
     else if(kind==3)message=(code==12||(code==3&&original<state.original_len&&(state.original[original]==10||state.original[original]==13)))?"unterminated string literal before end of line":"invalid token or string escape";
     else if(kind==4||code==9)message="this construct is not supported by the compiler yet";
     else if(code==13)message="cannot resolve this import or qualified name";
@@ -236,3 +251,9 @@ pub fn diagnostic_stage_idle() {drop(scalar(11,0,0,0,0));}
 pub fn diagnostic_reverse(start:u64,end:u64) {drop(scalar(18,start as usize,end as usize,0,0));}
 /// Retain the declaration owning a parser failure across original file boundaries.
 pub fn diagnostic_parse_root(offset:u64) {drop(scalar(16,offset as usize,0,0,0));}
+
+/// Record the expected syntax at a failed parser position, without emitting during speculation.
+/// statement identifies the enclosing expression for unsupported-form explanations.
+pub fn diagnostic_parse_expected(offset:u64, expected:usize, statement:u64) {
+    drop(scalar(19,offset as usize,expected,statement as usize,0));
+}

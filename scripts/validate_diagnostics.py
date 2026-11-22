@@ -16,8 +16,11 @@ def main():
         cases=[
             ('type','fn main() {\n    let value: i64 = true;\n}\n',8,'error[N1]','true',2),
             ('move','struct Item { value: i64 }\nfn main() {\n    let item = Item { value: 1 };\n    let moved = item;\n    print(item.value);\n}\n',8,'error[N6]','item.value',5),
-            ('syntax','fn main() {\n    let = 42;\n}\n',7,'invalid syntax','let = 42',2),
+            ('syntax','fn main() {\n    let = 42;\n}\n',7,'expected a binding name','let = 42',2),
             ('unclosed','fn main() {\n    let value = 42;\n',7,'not closed','fn main()',1),
+            ('for-loop','fn main() {\n    let buffer = [1, 2];\n    for slot buffer { print(slot); }\n}\n',7,"expected 'in'",'for slot buffer',3),
+            ('initializer','fn main() {\n    let value: i64;\n}\n',7,"expected '=' and an initializer",'let value',2),
+            ('separator','fn main() {\n    print(1) print(2);\n}\n',7,"expected ';'",'print(1) print(2)',2),
             ('lex','fn main() {\n    print("unterminated);\n}\n',3,'unterminated string','unterminated',2),
             ('generic','#(type: T)\nfn identity(value: T) -> T { value }\n\nfn main() {\n    let value: i64 = identity(true);\n}\n',8,'error[','identity(true)',5),
             ('closure','fn main() {\n    let read = || -> i64 { true };\n    print(read());\n}\n',8,'error[','true',2),

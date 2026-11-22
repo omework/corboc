@@ -1,0 +1,149 @@
+{
+  "host": "macOS ARM64",
+  "functional": [
+    {
+      "case": "arrays",
+      "status": "passed",
+      "stdout": "4\n11\n2\n13\n4\n8\n11\n100\n"
+    },
+    {
+      "case": "next",
+      "status": "passed",
+      "stdout": "0\n1\n2\n3\n77\n14\n15\n"
+    },
+    {
+      "case": "aggregate-fields",
+      "status": "passed",
+      "stdout": "2\n"
+    },
+    {
+      "case": "slices-nested",
+      "status": "passed",
+      "stdout": "27\n"
+    },
+    {
+      "case": "cleanup",
+      "status": "passed",
+      "stdout": "1\n2\n99\n"
+    },
+    {
+      "case": "immutable",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-qebelb_3/immutable.crb:1:23: error[N5]: access requires mutation permission or the required synchronization\n     1 | fn main(){let value=1;let r=value.mut_ref();*r=2;}\n       |                       ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "dangling",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-qebelb_3/dangling.crb:1:29: error[N4]: cannot prove that the borrowed target or allocation source remains valid\n     1 | fn bad()->&i64 {let value=1;value.ref()} fn main(){}\n       |                             ^~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "reference-level",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-qebelb_3/reference-level.crb:1:50: error[E0009]: this construct is not supported by the compiler yet\n     1 | fn read(value:&i64){} fn main(){let n=1;let r=&n;read(r.ref());}\n       |                                                  ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "arity",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-qebelb_3/arity.crb:1:29: error[E0105]: ref() and mut_ref() take no arguments\n     1 | fn main(){let value=1;value.ref(2);}\n       |                             ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "moved-iterator",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-qebelb_3/moved-iterator.crb:1:108: error[N6]: value is unavailable on this path (for example, after a move or drop)\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                                                            ^\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "diagnostics": [
+    {
+      "case": "type",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/type.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let value: i64 = true;\n       |                      ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "move",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/move.crb:5:11: error[N6]: value is unavailable on this path (for example, after a move or drop)\n     5 |     print(item.value);\n       |           ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "syntax",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/syntax.crb:2:9: error[E0100]: expected a binding name after let or let mut\n     2 |     let = 42;\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unclosed",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/unclosed.crb:1:1: error[E0017]: declaration is not closed before the end of this source file\n     1 | fn main() {\n       | ^~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "for-loop",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/for-loop.crb:3:14: error[E0104]: expected 'in' after the for-loop binding\n     3 |     for slot buffer { print(slot); }\n       |              ^~~~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "initializer",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/initializer.crb:2:19: error[E0101]: expected '=' and an initializer for this binding\n     2 |     let value: i64;\n       |                   ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "separator",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/separator.crb:2:14: error[E0103]: expected ';' after this expression, or '}' to return its value\n     2 |     print(1) print(2);\n       |              ^~~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "lex",
+      "exit": 3,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/lex.crb:2:26: error[E0003]: unterminated string literal before end of line\n     2 |     print(\"unterminated);\n       |                          ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "generic",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/generic.crb:5:21: error[N8]: call, capture, or result does not satisfy its inferred contract\n     5 |     let value: i64 = identity(true);\n       |                     ^~~~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "closure",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/closure.crb:2:28: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     let read = || -> i64 { true };\n       |                            ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unresolved import",
+      "exit": 13,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/missing_import.crb:1:1: error[E0013]: cannot resolve this import or qualified name\n     1 | use missing::answer;\n       | ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "watch refreshes source locations after recovery",
+      "status": "passed"
+    },
+    {
+      "case": "imported source",
+      "exit": 8,
+      "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "legacy machine protocol",
+      "exit": 8
+    },
+    {
+      "case": "normal build source diagnostic",
+      "exit": 8,
+      "stderr": "/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/project/src/helper/helper.crb:2:5: error[N1]: value is undefined, uninitialized, or does not match the required type\n     2 |     true\n       |     ^~~~\ncorboc: package compilation failed\n"
+    },
+    {
+      "case": "manifest path",
+      "exit": 12,
+      "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-z1mau4dr/project/package.toml: error[E0012]: invalid package manifest or dependency declaration\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "build": {
+    "corbo_revision": "37f3192ecf361d97f2818911123f2c99f84c0d10",
+    "seed": "/Users/jabarkarim/sources/corboc/build/iteration/final-install/bin/corboc",
+    "compiler": "/Users/jabarkarim/sources/corboc/build/iteration/current/bin/corboc",
+    "c_sha256": "d168c9656bdce9f70dca47dd4f00beaf9410be07e3f915fff3c1736a66cd88a1",
+    "self_verified": false
+  },
+  "installed_smoke": "mutable and shared for loops accepted",
+  "pin_refresh": {
+    "corbo_revision": "e0a6fc8b8d8c9996916cc10f45bc6c28e5bc7011",
+    "stdlib_runtime_unchanged": true,
+    "source_check": "passed",
+    "runtime_bridge_check": "passed"
+  }
+}
