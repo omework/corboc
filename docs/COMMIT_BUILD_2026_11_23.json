@@ -1,0 +1,15 @@
+{
+  "corbo_revision": "834c1d5e04d37eec0bfbd9fb8aecefc55fae7fbe",
+  "seed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "compiler": "/Users/jabarkarim/sources/corboc/build/release-2026-11-23/bin/corboc",
+  "c_sha256": "862e1ee8c94839687e7de35b62a549a325075cd8100a4bc63c287b6572e5da09",
+  "self_verified": false,
+  "date": "2026-11-23",
+  "source_commit": "a3ec17f",
+  "installed_binary": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "installed_sha256": "8b355d22e5033f42e9e7a6d1fdd14bbb4de64ef3bf20f8c05dac55ffb2d40e79",
+  "package_check": "passed",
+  "package_build": "passed",
+  "executed_output": "3\n7\n",
+  "platform": "macOS ARM64"
+}
