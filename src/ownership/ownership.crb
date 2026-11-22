@@ -1,3 +1,6 @@
+use bootstrap::verify::type_violation;
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::scalar::implicit_copy;
 use bootstrap::value_dependencies::owned_fields_survive;
 use bootstrap::value_dependencies::{live_owned_fields};
@@ -49,7 +52,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
     let pool = graph[receiver].binding;
     let pool_type = values[pool].ty;
     if (pool_type > 2000 && pool_type < 2020) || (pool_type >= 2200 && pool_type <= 2227) || (pool_type >= 8501 && pool_type <= 8509) || (pool_type >= 2601 && pool_type <= 2608) {
-        if values[pool].state != 1 || !values[pool].mutable { return 0 - violation(4, start); }
+        if values[pool].state != 1 || !values[pool].mutable { return 0 - violation_site(4, start, 251); }
         let argument = graph[receiver].next_sibling;
         if argument != 0 || nodes[initializer].name_end - nodes[initializer].name_start != 3 { return -9; }
         let method: [u8; 3] = [110,101,119];
@@ -57,13 +60,13 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
         let attempt:[u8;3]=[116,114,121];
         if !spelling.content_eq(&method[..]) && !spelling.content_eq(&attempt[..]) { return -9; }
         let ty = pool_type + 100;
-        values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: 0, writable: false };
+        values[destination] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],destination);
         return ty;
     }
     if pool_type < 93 || pool_type >= 200 { return -9; }
-    if values[pool].state != 1 { return 0 - violation(4, start); }
-    if !values[pool].mutable { return 0 - violation(5, start); }
+    if values[pool].state != 1 { return 0 - violation_site(4, start, 252); }
+    if !values[pool].mutable { return 0 - violation_site(5, start, 253); }
     let method_start = nodes[initializer].name_start;
     let method_end = nodes[initializer].name_end;
     let spelling=&source[method_start..method_end];let allocate:[u8;3]=[110,101,119];let attempt:[u8;3]=[116,114,121];
@@ -81,24 +84,24 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
         let shape = inline_vector_shape(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], vector);
         if shape == 0 { return -9; }
-        values[destination] = CheckedValue { ty: 294, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: shape, writable: false };
+        values[destination] = CheckedValue{ ty: 294, state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],destination);
         return 294;
     }
     if pool_type >= 94 && pool_type <= 98 {
         if argument != 0 { return -9; }
         let ty = pool_type + 201;
-        values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: 0, writable: false };
+        values[destination] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],destination);
         return ty;
     }
     if pool_type == 99 {
         let borrowed = values[pool].target;
         let root = if borrowed == 0 || borrowed == pool { copy(pool) } else { borrowed };
-        if values[root].state != 1 { return 0 - violation(4, start); }
+        if values[root].state != 1 { return 0 - violation_site(4, start, 254); }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
             &graph[0..graph.len()], copy(pool), copy(initializer), true);
-        if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+        if conflict != 0 { return if conflict > 0 { 0 - violation_site(5, start, 255) } else { -9 }; }
         let fields = nodes[argument].kind == 31;
         if argument != 0 && !fields && nodes[argument].kind != 37 && nodes[argument].kind != 74 && nodes[argument].kind != 7 && nodes[argument].kind != 17 { return -9; }
         if !fields && graph[argument].next_sibling != 0 { return -9; }
@@ -121,43 +124,43 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
             if (nodes[argument].kind != 37 && nodes[argument].kind != 17) || nodes[target].kind != 7 { return -9; }
             let actual_type = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(target));
-            if actual_type != declaration { return 0 - violation(1, start); }
+            if actual_type != declaration { return 0 - violation_site(1, start, 256); }
             let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], declaration, copy(argument));
-            if variant == 0 { return 0 - violation(1, start); }
+            if variant == 0 { return 0 - violation_site(1, start, 257); }
             let ty = check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(argument),
                 graph[target].next_sibling, copy(destination), variant, false);
             if ty < 0 { return ty; }
-            values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: argument, writable: false };
+            values[destination] = CheckedValue{ ty: 301, state: 1, mutable: false, target: root,
+                loan_parent: 0, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],destination);
             return 301;
         }
         if nodes[argument].kind == 7 {
             let origin = graph[argument].binding;
-            if values[origin].ty != 300 || values[origin].state != 1 { return 0 - violation(6, start); }
+            if values[origin].ty != 300 || values[origin].state != 1 { return 0 - violation_site(6, start, 258); }
             let constructor = values[origin].origin_call;
             let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constructor));
-            if actual != declaration { return 0 - violation(1, start); }
+            if actual != declaration { return 0 - violation_site(1, start, 259); }
             if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(origin)) {
-                return 0 - violation(4, start);
+                return 0 - violation_site(4, start, 260);
             }
             let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
                 copy(origin), copy(initializer), true);
-            if conflict > 0 { return 0 - violation(5, start); }
+            if conflict > 0 { return 0 - violation_site(5, start, 261); }
             if conflict < 0 { return -9; }
-            values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: copy(constructor), writable: false };
+            values[destination] = CheckedValue{ ty: 301, state: 1, mutable: false, target: root,
+                loan_parent: 0, origin_call: copy(constructor), writable: false }; record_checked(&values[0..values.len()],destination);
             let mutable = values[origin].mutable;
             let target = values[origin].target;
-            values[origin] = CheckedValue { ty: 300, state: 2, mutable: mutable, target: target,
-                loan_parent: 0, origin_call: constructor, writable: false };
+            values[origin] = CheckedValue{ ty: 300, state: 2, mutable: mutable, target: target,
+                loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],origin);
             return 301;
         }
         if nodes[argument].kind == 37 {
             let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(argument));
-            if actual != declaration { return 0 - violation(1, start); }
+            if actual != declaration { return 0 - violation_site(1, start, 262); }
         }
         if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
             return 0 - private_layout_violation(start);
@@ -167,7 +170,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
             let mut field = graph[declaration].first_child;
             while field != 0 {
                 if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) {
-                    return 0 - violation(1, start);
+                    return 0 - violation_site(1, start, 263);
                 }
                 let annotation = graph[field].first_child;
                 if !has_nominal_default(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -181,34 +184,34 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
                 if fields { argument } else { graph[argument].first_child }, copy(destination), declaration, true);
             if ty < 0 { return ty; }
         }
-        values[destination] = CheckedValue { ty: 301, state: 1, mutable: false, target: root,
-            loan_parent: 0, origin_call: constructor, writable: false };
+        values[destination] = CheckedValue{ ty: 301, state: 1, mutable: false, target: root,
+            loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],destination);
         return 301;
     }
     let element = pool_type - 100;
     if element < 1 || element > 7 { return -9; }
     let borrowed = values[pool].target;
     let root = if borrowed == 0 || borrowed == pool { copy(pool) } else { copy(borrowed) };
-    if values[root].state != 1 { return 0 - violation(4, start); }
+    if values[root].state != 1 { return 0 - violation_site(4, start, 264); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         pool, copy(initializer), true);
-    if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+    if conflict != 0 { return if conflict > 0 { 0 - violation_site(5, start, 265) } else { -9 }; }
     if argument != 0 {
-        if graph[argument].next_sibling != 0 { return (0 - violation(1, start)); }
+        if graph[argument].next_sibling != 0 { return (0 - violation_site(1, start, 266)); }
         let type_name = graph[argument].first_child;
         if (nodes[argument].kind == 17 || nodes[argument].kind == 37)
             && nodes[type_name].kind == 7 && graph[type_name].binding == 0 {
             let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], type_name);
-            if nodes[nominal].kind == 29 { return 0 - violation(1, nodes[argument].start); }
+            if nodes[nominal].kind == 29 { return 0 - violation_site(1, nodes[argument].start, 267); }
         }
         let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], argument, copy(element), 1);
         if ty < 0 { return ty; }
-        if ty != element { return (0 - violation(1, start)); }
+        if ty != element { return (0 - violation_site(1, start, 268)); }
     }
-    values[destination] = CheckedValue { ty: element + 200, state: 1, mutable: false,
-        target: root, loan_parent: 0, origin_call: 0, writable: false };
+    values[destination] = CheckedValue{ ty: element + 200, state: 1, mutable: false,
+        target: root, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],destination);
     return element + 200;
 }
 
@@ -251,18 +254,18 @@ pub fn check_owned_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         let base = graph[initializer].first_child;
         if nodes[base].kind != 7 { return -9; }
         let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(base));
-        if actual != declaration { return 0 - violation(1, nodes[initializer].start); }
+        if actual != declaration { return 0 - violation_site(1, nodes[initializer].start, 269); }
         let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(declaration), copy(initializer));
-        if variant == 0 { return 0 - violation(1, nodes[initializer].start); }
+        if variant == 0 { return 0 - violation_site(1, nodes[initializer].start, 270); }
         let ty = check_structure_fields(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], initializer,
             graph[base].next_sibling, copy(destination), variant, false);
         if ty < 0 { return ty; }
         let pool = values[destination].target;
         let constructor = values[destination].origin_call;
-        values[destination] = CheckedValue { ty: 310, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: constructor, writable: false };
+        values[destination] = CheckedValue{ ty: 310, state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],destination);
         return 310;
     }
     if declaration == 0 || nodes[declaration].kind != 28 { return -9; }
@@ -301,7 +304,7 @@ fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     while member != 0 {
         if nodes[member].kind != 37 { return -9; }
         if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            copy(member)) != nominal { return 0 - violation(1, nodes[member].start); }
+            copy(member)) != nominal { return 0 - violation_site(1, nodes[member].start, 271); }
         let checked = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(member), copy(member));
         if checked < 0 { return checked; }
@@ -309,9 +312,9 @@ fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         count = count + 1;
         member = graph[member].next_sibling;
     }
-    if count != expected { return 0 - violation(1, nodes[literal].start); }
-    values[destination] = CheckedValue { ty: 470, state: 1, mutable: false, target: count,
-        loan_parent: 0, origin_call: literal, writable: false };
+    if count != expected { return 0 - violation_site(1, nodes[literal].start, 272); }
+    values[destination] = CheckedValue{ ty: 470, state: 1, mutable: false, target: count,
+        loan_parent: 0, origin_call: literal, writable: false }; record_checked(&values[0..values.len()],destination);
     return 470;
 }
 
@@ -327,13 +330,13 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         let mut prior = copy(first_field);
         while prior != given {
             if same_field(&source[0..source.len()], &nodes[0..nodes.len()], copy(prior), copy(given)) {
-                return 0 - violation(1, nodes[given].start);
+                return 0 - violation_site(1, nodes[given].start, 273);
             }
             prior = graph[prior].next_sibling;
         }
         field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(declaration), copy(given));
-        if field == 0 { return 0 - violation(1, nodes[given].start); }
+        if field == 0 { return 0 - violation_site(1, nodes[given].start, 274); }
         let annotation = graph[field].first_child;
         let expression = graph[given].first_child;
         let element = graph[annotation].first_child;
@@ -343,7 +346,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(expression), copy(handle), 1);
             if ty < 0 { return ty; }
-            if ty != handle { return 0 - violation(1, nodes[given].start); }
+            if ty != handle { return 0 - violation_site(1, nodes[given].start, 275); }
             copy_task_summary(&mut values[0..values.len()], expression, copy(given), ty, false);
         } else if nodes[expression].kind == 44 || nodes[expression].kind == 45 {
             let nominal = check_nominal_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -356,8 +359,8 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let (ty, length) = check_array_literal(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(annotation));
             if ty < 0 { return ty; }
-            values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: length, writable: false };
+            values[given] = CheckedValue{ ty: ty, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: length, writable: false }; record_checked(&values[0..values.len()],given);
         } else if source[nodes[annotation].start] == 38 {
             let ty = record_loan_field(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(given),
@@ -371,18 +374,18 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             if task_vector != 0 {
                 let owner = graph[expression].binding;
                 if nodes[expression].kind != 7 || values[owner].ty != task_vector {
-                    return 0 - violation(1, nodes[given].start);
+                    return 0 - violation_site(1, nodes[given].start, 276);
                 }
                 if values[owner].state != 1 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
-                    return 0 - violation(4, nodes[given].start);
+                    return 0 - violation_site(4, nodes[given].start, 277);
                 }
                 let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
                     copy(owner), copy(expression), true);
-                if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[expression].start) }; }
+                if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation_site(5, nodes[expression].start, 278) }; }
                 copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), copy(task_vector), false);
                 let pool = values[owner].target;
-                values[owner] = CheckedValue { ty: task_vector, state: 2, mutable: false, target: copy(pool),
-                    loan_parent: 0, origin_call: 0, writable: false };
+                values[owner] = CheckedValue{ ty: task_vector, state: 2, mutable: false, target: copy(pool),
+                    loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],owner);
                 if first_pool == 0 { first_pool = pool; }
                 given = graph[given].next_sibling;
                 continue;
@@ -397,18 +400,18 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 let pool = values[owner].target;
                 let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], item);
                 if nominal == 0 || nominal != vector_pool_nominal(&source[0..source.len()],
-                    &nodes[0..nodes.len()], &graph[0..graph.len()], copy(pool)) { return 0 - violation(1, nodes[given].start); }
+                    &nodes[0..nodes.len()], &graph[0..graph.len()], copy(pool)) { return 0 - violation_site(1, nodes[given].start, 279); }
                 if values[owner].state != 1 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
-                    return 0 - violation(4, nodes[given].start);
+                    return 0 - violation_site(4, nodes[given].start, 280);
                 }
                 let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
                     copy(owner), copy(expression), true);
-                if conflict > 0 { return 0 - violation(5, nodes[expression].start); }
+                if conflict > 0 { return 0 - violation_site(5, nodes[expression].start, 281); }
                 if conflict < 0 { return -9; }
                 copy_task_summary(&mut values[0..values.len()], copy(owner), copy(given), 296, false);
                 let chain = values[owner].origin_call;
-                values[owner] = CheckedValue { ty: 296, state: 2, mutable: false, target: copy(pool),
-                    loan_parent: 0, origin_call: chain, writable: false };
+                values[owner] = CheckedValue{ ty: 296, state: 2, mutable: false, target: copy(pool),
+                    loan_parent: 0, origin_call: chain, writable: false }; record_checked(&values[0..values.len()],owner);
                 if first_pool == 0 { first_pool = pool; }
                 given = graph[given].next_sibling;
                 continue;
@@ -421,29 +424,29 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             if nodes[expression].kind == 7 {
                 let owner = graph[expression].binding;
                 if owner == 0 || values[owner].state != 1 {
-                    return 0 - violation(6, nodes[expression].start);
+                    return 0 - violation_site(6, nodes[expression].start, 282);
                 }
-                if values[owner].ty != expected { return 0 - violation(1, nodes[given].start); }
+                if values[owner].ty != expected { return 0 - type_violation(nodes[given].start,expected,values[owner].ty,283); }
                 if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
-                    return 0 - violation(4, nodes[expression].start);
+                    return 0 - violation_site(4, nodes[expression].start, 284);
                 }
                 let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
                     &graph[0..graph.len()], copy(owner), copy(expression), true);
-                if conflict > 0 { return 0 - violation(5, nodes[expression].start); }
+                if conflict > 0 { return 0 - violation_site(5, nodes[expression].start, 285); }
                 if conflict < 0 { return -9; }
                 let ty = values[owner].ty;
                 let pool = values[owner].target;
                 let constructor = values[owner].origin_call;
                 let mutable = values[owner].mutable;
-                values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-                    target: copy(pool), loan_parent: 0, origin_call: copy(constructor), writable: false };
-                values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
-                    target: pool, loan_parent: 0, origin_call: constructor, writable: false };
+                values[given] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
+                    target: copy(pool), loan_parent: 0, origin_call: copy(constructor), writable: false }; record_checked(&values[0..values.len()],given);
+                values[owner] = CheckedValue{ ty: ty, state: 2, mutable: mutable,
+                    target: pool, loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],owner);
             } else if nodes[expression].kind == 16 {
                 let ty = check_pool_new(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     &mut values[0..values.len()], expression, copy(given));
                 if ty < 0 { return ty; }
-                if ty != expected { return 0 - violation(1, nodes[given].start); }
+                if ty != expected { return 0 - type_violation(nodes[given].start,expected,ty,286); }
             } else {
                 return -9;
             }
@@ -454,12 +457,12 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 let parameter = graph[graph[pool_node].first_child].first_child;
                 let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], parameter);
-                if actual != expected_nominal { return 0 - violation(1, nodes[given].start); }
+                if actual != expected_nominal { return 0 - violation_site(1, nodes[given].start, 287); }
             }
         } else if nodes[expression].kind == 37 {
             let declared=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
             let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
-            if declared==0 || declared!=actual{return 0-violation(1,nodes[given].start);}
+            if declared==0 || declared!=actual{return 0-violation_site(1, nodes[given].start, 288);}
             let ty = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(given));
             if ty < 0 { return ty; }
@@ -475,22 +478,22 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             if checked < 0 { return checked; }
             if checked != expected || nominal_declaration(&source[0..source.len()],
                 &nodes[0..nodes.len()], &graph[0..graph.len()], values[expression].origin_call) != nominal {
-                return 0 - violation(1, nodes[expression].start);
+                return 0 - violation_site(1, nodes[expression].start, 289);
             }
             if !owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()],
-                copy(expression), graph[destination].scope) { return 0 - violation(4, nodes[expression].start); }
+                copy(expression), graph[destination].scope) { return 0 - violation_site(4, nodes[expression].start, 290); }
             copy_task_summary(&mut values[0..values.len()], expression, copy(given), expected, false);
         } else if nodes[expression].kind == 7 && (values[graph[expression].binding].ty == 300
             || values[graph[expression].binding].ty == 310) {
             let owner = graph[expression].binding;
-            if values[owner].state != 1 { return 0 - violation(6, nodes[expression].start); }
+            if values[owner].state != 1 { return 0 - violation_site(6, nodes[expression].start, 291); }
             if !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(owner)) {
-                return 0 - violation(4, nodes[expression].start);
+                return 0 - violation_site(4, nodes[expression].start, 292);
             }
             let constructor = values[owner].origin_call;
             let declared=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
             let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(constructor));
-            if declared==0 || declared!=actual{return 0-violation(1,nodes[given].start);}
+            if declared==0 || declared!=actual{return 0-violation_site(1, nodes[given].start, 293);}
             let ty = values[owner].ty;
             if implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], owner) {
                 let copied = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -503,19 +506,19 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let pool = values[owner].target;
             let mutable = values[owner].mutable;
             let dependency = values[owner].loan_parent;
-            values[given] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-                target: copy(pool), loan_parent: dependency, origin_call: copy(constructor), writable: false };
-            values[owner] = CheckedValue { ty: ty, state: 2, mutable: mutable,
-                target: pool, loan_parent: 0, origin_call: constructor, writable: false };
+            values[given] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
+                target: copy(pool), loan_parent: dependency, origin_call: copy(constructor), writable: false }; record_checked(&values[0..values.len()],given);
+            values[owner] = CheckedValue{ ty: ty, state: 2, mutable: mutable,
+                target: pool, loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],owner);
         } else {
             let expected = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
             if expected == 0 { return -9; }
             let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], expression, expected, 1);
             if ty < 0 { return ty; }
-            if ty == 0 { return 0 - violation(1, nodes[given].start); }
-            values[given] = CheckedValue { ty: ty, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: 0, writable: false };
+            if ty == 0 { return 0 - violation_site(1, nodes[given].start, 294); }
+            values[given] = CheckedValue{ ty: ty, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],given);
         }
         if first_pool == 0 && values[given].ty >= 200 && values[given].ty != 734 && values[given].ty != 752
             && !task_value(values[given].ty) && !stored_loan_array(values[given].ty) { first_pool = values[given].target; }
@@ -529,9 +532,9 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             given = graph[given].next_sibling;
         }
         if given == 0 {
-            if !defaults { return 0 - violation(1, nodes[initializer].start); }
+            if !defaults { return 0 - violation_site(1, nodes[initializer].start, 295); }
             if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) {
-                return 0 - violation(1, nodes[initializer].start);
+                return 0 - violation_site(1, nodes[initializer].start, 296);
             }
             let annotation = graph[field].first_child;
             if !has_nominal_default(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -539,7 +542,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         }
         field = graph[field].next_sibling;
     }
-    values[destination] = CheckedValue { ty: 300, state: 1, mutable: false,
-        target: first_pool, loan_parent: 0, origin_call: initializer, writable: false };
+    values[destination] = CheckedValue{ ty: 300, state: 1, mutable: false,
+        target: first_pool, loan_parent: 0, origin_call: initializer, writable: false }; record_checked(&values[0..values.len()],destination);
     300
 }

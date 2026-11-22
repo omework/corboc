@@ -1,3 +1,4 @@
+use bootstrap::semantic_diagnostics::{site as semantic_site,mismatch as semantic_mismatch};
 use bootstrap::diagnostics::diagnostic_emit;
 use bootstrap::model::{AstNode, StaticNode, Token, token_at};
 use bootstrap::scalar::verify_primitive;
@@ -117,5 +118,22 @@ pub fn unsupported_value_receiver() {
 pub fn private_layout_violation(offset: u64) -> i64 {
     let message: [u8; 29] = [99, 111, 114, 98, 111, 99, 58, 32, 112, 114, 105, 118, 97, 116, 101, 32, 102, 105, 101, 108, 100, 32, 108, 97, 121, 111, 117, 116, 10];
     diagnostic_detail(&message[..]);
-    violation(1, offset)
+    violation_site(1, offset, 1006)
+}
+
+/// A stable refusal-site identity supplies the precise constraint, not only N1..N8.
+pub fn violation_site(rule:i64,offset:u64,site:u64)->i64 {
+    semantic_site(site);
+    violation(rule,offset)
+}
+/// Mirror report_violation's status type without changing machine protocols.
+pub fn report_violation_site(rule:i64,offset:u64,site:u64)->i32 {
+    let result=violation_site(rule,offset,site);
+    drop(result);
+    8
+}
+/// Preserve expected/actual checker types at the point they would be discarded.
+pub fn type_violation(offset:u64,expected:i64,actual:i64,site:u64)->i64 {
+    if expected>0 && actual>0 && expected!=actual {semantic_mismatch(offset,expected,actual);}
+    violation_site(1,offset,site)
 }

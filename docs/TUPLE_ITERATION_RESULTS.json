@@ -1,0 +1,151 @@
+{
+  "date": "2026-11-22",
+  "platform": "macOS ARM64",
+  "tuple_observations": [
+    {
+      "case": "wal-fields",
+      "status": "passed",
+      "stdout": "1\nfalse\n2\ntrue\n",
+      "ubsan": true
+    },
+    {
+      "case": "borrow-pattern",
+      "status": "passed",
+      "stdout": "3\n2\n7\n4\n",
+      "ubsan": true
+    },
+    {
+      "case": "triple",
+      "status": "passed",
+      "stdout": "3\n9\n",
+      "ubsan": true
+    },
+    {
+      "case": "owned",
+      "status": "passed",
+      "stdout": "3\n7\n",
+      "ubsan": true
+    },
+    {
+      "case": "fields",
+      "status": "passed",
+      "stdout": "1\n7\ntrue\n",
+      "ubsan": true
+    },
+    {
+      "case": "enum-pattern",
+      "status": "passed",
+      "stdout": "true\n",
+      "ubsan": true
+    },
+    {
+      "case": "bad-arity",
+      "status": "refused",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-arity.crb:1:35: error[N1]: tuple pattern binding count does not match the tuple arity\n     1 | fn main(){let rows=[(1,2,3)];for (a,b) in rows.ref(){print(*a);}}\n       |                                   ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-arity.crb:1:46: note: value declared here (generated-source anchor)\n     1 | fn main(){let rows=[(1,2,3)];for (a,b) in rows.ref(){print(*a);}}\n       |                                              ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "bad-index",
+      "status": "refused",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-index.crb:1:29: error[N1]: tuple index is outside this tuple's field range 't'\n     1 | fn main(){let t=(1,2);print(t.3);}\n       |                             ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-index.crb:1:15: note: value declared here\n     1 | fn main(){let t=(1,2);print(t.3);}\n       |               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "shared-write",
+      "status": "refused",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/shared-write.crb:1:52: error[N5]: cannot mutate through a shared reference\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows.ref(){*a=3;}}\n       |                                                    ^~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/shared-write.crb:1:44: note: borrow created here (generated-source anchor)\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows.ref(){*a=3;}}\n       |                                            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/shared-write.crb:1:15: note: borrowed target declared here\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows.ref(){*a=3;}}\n       |               ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/shared-write.crb:1:33: note: value declared here\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows.ref(){*a=3;}}\n       |                                 ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "move-source",
+      "status": "refused",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/move-source.crb:1:64: error[N6]: use of a value after its ownership was moved 'rows'\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows{print(a+b);}print(rows[0].0);}\n       |                                                                ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/move-source.crb:1:28: note: ownership moved here (generated-source anchor)\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows{print(a+b);}print(rows[0].0);}\n       |                            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/move-source.crb:1:15: note: value declared here\n     1 | fn main(){let rows=[(1,2)];for (a,b) in rows{print(a+b);}print(rows[0].0);}\n       |               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "bad-comma",
+      "status": "refused",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-comma.crb:1:18: error[E0107]: expected ',' or ')' after this tuple-pattern binding\n     1 | fn main(){for (a b) in [(1,2)] {}}\n       |                  ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "bad-one",
+      "status": "refused",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/bad-one.crb:1:17: error[E0108]: a tuple pattern requires at least two bindings\n     1 | fn main(){for (a) in [(1,2)] {}}\n       |                 ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "borrow-escape",
+      "status": "refused",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/borrow-escape.crb:1:93: error[N4]: value would outlive a borrowed target or its allocation source 'n'\n     1 | fn bad()->&mut i64 {let mut rows=[(1,2)];for (a,b) in rows.mut_ref(){return a;} let mut n=1;&mut n} fn main(){}\n       |                                                                                             ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-tuple-for-x55z2uly/borrow-escape.crb:1:89: note: value declared here\n     1 | fn bad()->&mut i64 {let mut rows=[(1,2)];for (a,b) in rows.mut_ref(){return a;} let mut n=1;&mut n} fn main(){}\n       |                                                                                         ^\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "iteration_regressions": [
+    {
+      "case": "arrays",
+      "status": "passed",
+      "stdout": "4\n11\n2\n13\n4\n8\n11\n100\n"
+    },
+    {
+      "case": "next",
+      "status": "passed",
+      "stdout": "0\n1\n2\n3\n77\n14\n15\n"
+    },
+    {
+      "case": "aggregate-fields",
+      "status": "passed",
+      "stdout": "2\n"
+    },
+    {
+      "case": "slices-nested",
+      "status": "passed",
+      "stdout": "27\n"
+    },
+    {
+      "case": "cleanup",
+      "status": "passed",
+      "stdout": "1\n2\n99\n"
+    },
+    {
+      "case": "immutable",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/immutable.crb:1:23: error[N5]: cannot mutate an immutable binding 'value'\n     1 | fn main(){let value=1;let r=value.mut_ref();*r=2;}\n       |                       ^~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/immutable.crb:1:15: note: value declared here\n     1 | fn main(){let value=1;let r=value.mut_ref();*r=2;}\n       |               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "dangling",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/dangling.crb:1:29: error[N4]: value would outlive a borrowed target or its allocation source 'value'\n     1 | fn bad()->&i64 {let value=1;value.ref()} fn main(){}\n       |                             ^~~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/dangling.crb:1:21: note: value declared here\n     1 | fn bad()->&i64 {let value=1;value.ref()} fn main(){}\n       |                     ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "reference-level",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/reference-level.crb:1:50: error[E0009]: this construct is not supported by the compiler yet\n     1 | fn read(value:&i64){} fn main(){let n=1;let r=&n;read(r.ref());}\n       |                                                  ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "arity",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/arity.crb:1:29: error[E0105]: ref() and mut_ref() take no arguments\n     1 | fn main(){let value=1;value.ref(2);}\n       |                             ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "moved-iterator",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/moved-iterator.crb:1:108: error[N6]: use of a value after its ownership was moved 's'\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                                                            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/moved-iterator.crb:1:88: note: ownership moved here (generated-source anchor)\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                                        ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-_yk0blb4/moved-iterator.crb:1:79: note: value declared here\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "build": {
+    "corbo_revision": "e0a6fc8b8d8c9996916cc10f45bc6c28e5bc7011",
+    "seed": "/Users/jabarkarim/sources/corboc/build/tuple-for/complete/bin/corboc",
+    "compiler": "/Users/jabarkarim/sources/corboc/build/tuple-for/install-final/bin/corboc",
+    "c_sha256": "862e1ee8c94839687e7de35b62a549a325075cd8100a4bc63c287b6572e5da09",
+    "self_verified": false
+  },
+  "installed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "installed_sha256": "8b355d22e5033f42e9e7a6d1fdd14bbb4de64ef3bf20f8c05dac55ffb2d40e79",
+  "installed_smokes": 2,
+  "diagnostic_audit": {
+    "failure_sites": 1011,
+    "observed_state_writes": 351,
+    "status": "passed"
+  }
+}

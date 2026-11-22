@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::calls::{bootstrap_callee};
 use bootstrap::check_flow::pattern_variant;
 use bootstrap::tasks::{scalar_handle_type, complete_task, task_method, dependent_handle, copy_task_summary, match_payload};
@@ -99,7 +101,7 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     let first = graph[graph[call].first_child].next_sibling;
     let second = graph[first].next_sibling;
     if first == 0 || second == 0 || graph[second].next_sibling != 0 {
-        return 0 - violation(8, nodes[call].start);
+        return 0 - violation_site(8, nodes[call].start, 608);
     }
     if nodes[nominal].kind == 4 {
         let (tag, length) = handle_array(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal);
@@ -110,17 +112,17 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(element), copy(tag), 1);
             if ty < 0 { return ty; }
-            if ty != tag { return 0 - violation(1, nodes[element].start); }
+            if ty != tag { return 0 - violation_site(1, nodes[element].start, 609); }
             count = count + 1;
             element = graph[element].next_sibling;
         }
-        if length != count { return 0 - violation(1, nodes[first].start); }
+        if length != count { return 0 - violation_site(1, nodes[first].start, 610); }
         let count_type = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], second, 2, 1);
         if count_type < 0 { return count_type; }
-        if count_type != 2 { return 0 - violation(1, nodes[call].start); }
-        values[call] = CheckedValue { ty: 476, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: first, writable: false };
+        if count_type != 2 { return 0 - violation_site(1, nodes[call].start, 611); }
+        values[call] = CheckedValue{ ty: 476, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: first, writable: false }; record_checked(&values[0..values.len()],call);
         return 476;
     }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -133,11 +135,11 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     let count = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], second, 2, 1);
     if count < 0 { return count; }
-    if count != 2 { return 0 - violation(1, nodes[call].start); }
+    if count != 2 { return 0 - violation_site(1, nodes[call].start, 612); }
     let member = values[first].loan_parent;
     let conditional = values[first].writable;
-    values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: member, origin_call: shape, writable: conditional };
+    values[call] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
+        loan_parent: member, origin_call: shape, writable: conditional }; record_checked(&values[0..values.len()],call);
     return 310;
 }
 
@@ -247,7 +249,7 @@ pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     let first = graph[callee].next_sibling;
     let counter = graph[first].next_sibling;
     if first == 0 || counter == 0 || graph[counter].next_sibling != 0 {
-        return 0 - violation(8, nodes[call].start);
+        return 0 - violation_site(8, nodes[call].start, 613);
     }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(first), 310, 1);
@@ -261,11 +263,11 @@ pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     let result = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], counter, 2, 1);
     if result < 0 { return result; }
-    if result != 2 { return 0 - violation(1, nodes[call].start); }
+    if result != 2 { return 0 - violation_site(1, nodes[call].start, 614); }
     let captures = values[handle].origin_call;
     if asynchronous {
-        values[call] = CheckedValue { ty: 610, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: captures, writable: false };
+        values[call] = CheckedValue{ ty: 610, state: 1, mutable: false, target: 0,
+            loan_parent: 0, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],call);
         return 610;
     }
     complete_task(&mut values[0..values.len()], captures, callee);
@@ -372,20 +374,20 @@ pub fn apply_conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     let first = graph[graph[call].first_child].next_sibling;
     let second = graph[first].next_sibling;
     let third = graph[second].next_sibling;
-    if third == 0 || graph[third].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if third == 0 || graph[third].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 615); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(first), 0, 1);
     if ty < 0 { return ty; }
     let declared = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], graph[graph[function].first_child].first_child);
-    if ty != declared { return 0 - violation(1, nodes[first].start); }
+    if ty != declared { return 0 - violation_site(1, nodes[first].start, 616); }
     let count = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(second), 2, 1);
     if count < 0 { return count; }
-    if count != 2 { return 0 - violation(1, nodes[second].start); }
+    if count != 2 { return 0 - violation_site(1, nodes[second].start, 617); }
     let wait = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut values[0..values.len()], copy(third), 3, 1);
     if wait < 0 { return wait; }
-    if wait != 3 { return 0 - violation(1, nodes[third].start); }
-    values[call] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: first, origin_call: constructor, writable: true };
+    if wait != 3 { return 0 - violation_site(1, nodes[third].start, 618); }
+    values[call] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
+        loan_parent: first, origin_call: constructor, writable: true }; record_checked(&values[0..values.len()],call);
     310
 }
 
@@ -456,7 +458,7 @@ pub fn nominal_relay_declaration(source: &[u8], nodes: &[AstNode], graph: &[Stat
 pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], call: u64, nominal: u64, waits: bool, mode: i64) -> i64 {
     let argument = graph[graph[call].first_child].next_sibling;
-    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 619); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(argument), 0, 1);
     if ty < 0 { return ty; }
@@ -465,20 +467,20 @@ pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let shape = values[record].origin_call;
     let actual = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], shape);
-    if nominal != actual { return 0 - violation(1, nodes[argument].start); }
+    if nominal != actual { return 0 - violation_site(1, nodes[argument].start, 620); }
     if !waits {
         if mode != 1 { return -9; }
         copy_task_summary(&mut values[0..values.len()], argument, call, 3300, false);
         return 3300;
     }
     if mode == 3 && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(record)) {
-        return 0 - violation(8, nodes[call].start);
+        return 0 - violation_site(8, nodes[call].start, 621);
     }
     let captures = values[argument].origin_call;
     let operation = graph[call].first_child;
     complete_task(&mut values[0..values.len()], captures, operation);
-    values[call] = CheckedValue { ty: 3500, state: 1, mutable: false, target: 0,
-        loan_parent: record, origin_call: 0, writable: false };
+    values[call] = CheckedValue{ ty: 3500, state: 1, mutable: false, target: 0,
+        loan_parent: record, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
     3500
 }
 
@@ -550,7 +552,7 @@ pub fn awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], call: u64, nominal: u64, scalar: i64) -> i64 {
     let argument = graph[graph[call].first_child].next_sibling;
-    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 622); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(argument), 0, 1);
     if ty < 0 { return ty; }
@@ -558,12 +560,12 @@ pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[Sta
     let record = values[argument].loan_parent;
     let shape = values[record].origin_call;
     if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], shape) != nominal { return 0 - violation(1, nodes[argument].start); }
+        &graph[0..graph.len()], shape) != nominal { return 0 - violation_site(1, nodes[argument].start, 623); }
     if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], record) { return -9; }
     let captures = values[argument].origin_call;
     let ty = 610 + scalar;
-    values[call] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: captures, writable: false };
+    values[call] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: 0,
+        loan_parent: 0, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],call);
     ty
 }
 

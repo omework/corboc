@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::places::writable_reference_projection;
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
 use bootstrap::loans::{loan_conflict_after, live_roots};
@@ -34,26 +35,26 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         while nodes[name].kind == 14 { name = graph[name].first_child; }
         if nodes[name].kind != 7 { return -9; }
         binding = graph[name].binding;
-        if binding == 0 { return 0 - violation(1, start); }
-        if values[binding].state != 1 { return 0 - violation(6, start); }
+        if binding == 0 { return 0 - violation_site(1, start, 746); }
+        if values[binding].state != 1 { return 0 - violation_site(6, start, 747); }
         let writable = if kind == 7 { values[binding].mutable }
             else if nested_loan(values[binding].ty) { values[binding].ty >= 1930 }
             else { values[binding].writable };
-        if !writable { return 0 - violation(5, start); }
+        if !writable { return 0 - violation_site(5, start, 748); }
         ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(place), 0, 0);
         if ty < 0 { return ty; }
-    } else { return 0 - violation(1, start); }
+    } else { return 0 - violation_site(1, start, 749); }
     if ty < 1 || ty > 9 || ty == 3 || ((shift || bitwise) && !is_integer(copy(ty))) {
-        return 0 - violation(1, start);
+        return 0 - violation_site(1, start, 750);
     }
 
     // A reservation on the statement permits reads of the prepared place.
     // Mutations and moves consult it through the ordinary loan checks.
     let selector = if values[place].state == 6 { values[place].origin_call } else { 0 };
     let selector_kind = if values[place].state == 6 { values[place].loan_parent } else { 0 };
-    values[statement] = CheckedValue { ty: 0, state: 5, mutable: false,
-        target: copy(binding), loan_parent: selector_kind, origin_call: selector, writable: false };
+    values[statement] = CheckedValue{ ty: 0, state: 5, mutable: false,
+        target: copy(binding), loan_parent: selector_kind, origin_call: selector, writable: false }; record_checked(&values[0..values.len()],statement);
     let expected = if shift { 0 } else { copy(ty) };
     let mut operand: i64 = 0;
     if nodes[right].kind == 2 {
@@ -65,28 +66,28 @@ fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         operand = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(right), expected, 0);
     }
-    values[statement] = CheckedValue { ty: 0, state: 0, mutable: false,
-        target: 0, loan_parent: 0, origin_call: 0, writable: false };
+    values[statement] = CheckedValue{ ty: 0, state: 0, mutable: false,
+        target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],statement);
     if operand < 0 { return operand; }
-    if values[binding].state != 1 { return 0 - violation(6, start); }
+    if values[binding].state != 1 { return 0 - violation_site(6, start, 751); }
     if values[binding].target != 0 && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
-        return 0 - violation(4, start);
+        return 0 - violation_site(4, start, 752);
     }
     let conflict = loan_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         binding, copy(statement), true, nodes[statement].end);
-    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict > 0 { return 0 - violation_site(5, start, 753); }
     if conflict < 0 { return -9; }
 
     let count = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(right));
     if shift {
         if !is_integer(operand) || (count.known && (count.negative || count.magnitude >= integer_width(copy(ty)))) {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 754);
         }
-    } else if operand != ty { return 0 - violation(1, start); }
+    } else if operand != ty { return 0 - violation_site(1, start, 755); }
     if operator == 47 || operator == 37 {
         if (count.known && count.magnitude == 0) || (is_float(copy(ty))
             && float_zero(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], right)) {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 756);
         }
     }
     0

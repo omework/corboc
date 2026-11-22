@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
 use bootstrap::verify::check_type;
 
@@ -143,8 +144,8 @@ pub fn infer_loan_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                                 && (recursive || returned_origin(&source[0..source.len()], &nodes[0..nodes.len()],
                                     &graph[0..graph.len()], copy(function), copy(body), copy(parameter),
                                     &values[0..values.len()])) {
-                                values[annotation] = CheckedValue { ty: 0, state: 1, mutable: false,
-                                    target: 0, loan_parent: 0, origin_call: 0, writable: false };
+                                values[annotation] = CheckedValue{ ty: 0, state: 1, mutable: false,
+                                    target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],annotation);
                                 changed = true;
                             }
                             parameter = graph[parameter].next_sibling;

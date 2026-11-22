@@ -171,6 +171,7 @@ pub fn annotation_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a
             let referent = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(inner));
             return scalar_reference(referent, mutable);
         }
+        if source[nodes[inner].start]==40{return scalar_reference(annotation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner),mutable);}
         if graph[inner].first_child != 0 { return -1; }
         let scalar = verify_primitive(&source[0..source.len()], nodes[inner].name_start, nodes[inner].name_end);
         if scalar == 0 {

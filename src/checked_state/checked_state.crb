@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Read-only provenance observation immediately after checked-value writes.
+use bootstrap::model::CheckedValue;
+use bootstrap::semantic_diagnostics::transition;
+
+/// Observe state without replacing, moving or mutating a checked value.
+pub fn record(values:&[CheckedValue],index:u64){
+    transition(values,index,0,0);
+}

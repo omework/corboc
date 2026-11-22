@@ -1,5 +1,6 @@
+use bootstrap::semantic_diagnostics::begin as semantic_begin;
 use bootstrap::iteration::{has_iteration_syntax, expand_iteration_syntax};
-use bootstrap::diagnostics::{diagnostic_enable,diagnostic_begin,diagnostic_stage,diagnostic_stage_idle,diagnostic_linked,diagnostic_rewritten,diagnostic_parse_point,diagnostic_parse_expected,diagnostic_parse_root,diagnostic_parse_reset,diagnostic_parse_error,diagnostic_emit,diagnostic_finish};
+use bootstrap::diagnostics::{diagnostic_enable,diagnostic_enabled,diagnostic_begin,diagnostic_stage,diagnostic_stage_idle,diagnostic_linked,diagnostic_rewritten,diagnostic_parse_point,diagnostic_parse_expected,diagnostic_parse_root,diagnostic_parse_reset,diagnostic_parse_error,diagnostic_emit,diagnostic_finish};
 use bootstrap::loans::prepare_accesses;
 use bootstrap::lowering_annotations::same_bytes;
 use bootstrap::scalar::verify_primitive;
@@ -18,7 +19,7 @@ use bootstrap::generics::{specialize_structs, deferred_iterator};
 
 use bootstrap::lowering_program::lower_program;
 use bootstrap::codegen::emit_pool_c;
-use bootstrap::model::{Token, AstNode, StaticNode, LayoutVisibility, hex_digit, token_at};
+use bootstrap::model::{Token, AstNode, StaticNode, LayoutVisibility, CheckedValue, hex_digit, token_at};
 use bootstrap::verify_tree::check_tree;
 use bootstrap::package_io::read_source;
 use bootstrap::packages::PackageFile;
@@ -369,6 +370,14 @@ fn declaration_name(token: &Token) -> bool {
     let kind = (*token).kind;
     (*token).annotation >= 0 && (kind == 1 || kind == 50 || kind == 56 || kind == 57
         || kind == 60 || kind == 61 || kind == 70 || kind == 72 || kind == 73 || kind == 76)
+}
+
+// A leading-dot float is allowed only where a new operand can begin.
+// After a value, the same dot starts a tuple/member projection.
+fn ends_operand(kind: i64) -> bool {
+    kind == 1 || kind == 3 || kind == 5 || kind == 8 || kind == 9
+        || kind == 18 || kind == 40 || kind == 61 || kind == 64
+        || kind == 66 || kind == 84
 }
 
 fn whitespace(byte: u8) -> bool {
@@ -757,6 +766,8 @@ fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) 
         let mut kind: i64 = 0;
         let mut annotation: i64 = 0;
         let mut nominal = false;
+        let after_value = count != 0 && ends_operand(tokens[count - 1].kind);
+        let tuple_index = count != 0 && tokens[count - 1].kind == 38;
         if name_start(copy(byte)) {
             while cursor < source.len() {
                 let next = source[cursor];
@@ -771,7 +782,7 @@ fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) 
                 let spelling = &source[start..cursor];
                 annotation = if spelling.content_eq(&addr_name[..]) { -2 } else { -1 };
             }
-        } else if digit(copy(byte)) || (byte == 46 && cursor < source.len() && digit(source[cursor])) {
+        } else if digit(copy(byte)) || (byte == 46 && !after_value && cursor < source.len() && digit(source[cursor])) {
             if byte == 48 && cursor < source.len() && (source[cursor] == 120 || source[cursor] == 88) {
                 cursor = cursor + 1;
                 let first = copy(cursor);
@@ -789,7 +800,7 @@ fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) 
                     digit_index = digit_index + 1;
                 }
                 if byte == 46 { kind = 64; }
-                if byte != 46 && cursor < source.len() && source[cursor] == 46
+                if byte != 46 && !tuple_index && cursor < source.len() && source[cursor] == 46
                     && !(cursor + 1 < source.len() && source[cursor + 1] == 46) {
                     kind = 64;
                     cursor = cursor + 1;
@@ -1521,7 +1532,7 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
         let member_token = index + 1;
         index = index + 1;
         if mark == 38 {
-            if !lexical_name(tokens[index].kind) { diagnostic_parse_point(tokens[index].start); return (0, 0, 0); }
+            if !lexical_name(tokens[index].kind) && tokens[index].kind != 8 { diagnostic_parse_expected(tokens[index].start,109,tokens[member_token - 1].start); return (0, 0, 0); }
             method = tokens[index].annotation;
             let awaiting = tokens[index].kind == 61;
             name_start = tokens[index].start;
@@ -1982,15 +1993,32 @@ fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
         if mark == 85 {
             index += 1;
             if tokens[index].kind == 16 { index += 1; }
-            if !declaration_name(&tokens[index]) { diagnostic_parse_expected(tokens[index].start,100,start); return (0,0); }
             let binding = index;
-            index += 1;
+            let mut binding_end = tokens[index].end;
+            if tokens[index].kind == 2 {
+                if tokens[binding-1].kind==16{diagnostic_parse_expected(tokens[index].start,110,start);return (0,0);}
+                index += 1;
+                let mut arity:u64 = 0;
+                while tokens[index].kind != 3 {
+                    if tokens[index].kind == 16 { index += 1; }
+                    if !declaration_name(&tokens[index]) { diagnostic_parse_expected(tokens[index].start,106,start); return (0,0); }
+                    arity += 1; index += 1;
+                    if tokens[index].kind == 3 { break; }
+                    if tokens[index].kind != 11 { diagnostic_parse_expected(tokens[index].start,107,start); return (0,0); }
+                    index += 1;
+                }
+                if arity < 2 { diagnostic_parse_expected(tokens[index].start,108,start); return (0,0); }
+                binding_end = tokens[index].end; index += 1;
+            } else {
+                if !declaration_name(&tokens[index]) { diagnostic_parse_expected(tokens[index].start,106,start); return (0,0); }
+                index += 1;
+            }
             if tokens[index].kind != 86 { diagnostic_parse_expected(tokens[index].start,104,start); return (0,0); }
             let (next, used) = parse_test_and_block(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                 index + 1, count, statement);
             if next == 0 { return (0,0); }
             nodes[statement] = AstNode { kind:95, parent:free, start:start, end:tokens[next-1].end,
-                name_start:tokens[binding].start, name_end:tokens[binding].end, public:false };
+                name_start:tokens[binding].start, name_end:binding_end, public:false };
             index=next; count=used; continue;
         }
         if mark == 67 {
@@ -2965,6 +2993,8 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             reset = reset + 1;
         }
         build_graph(&current[..length], &syntax[..used], &tokens[..selected], &mut graph[..], true);
+        let empty_values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};1];
+        semantic_begin(&current[..length],&syntax[..used],&graph[..used],&empty_values[0..0],diagnostic_enabled());
         let generic = generic_recipes(&current[..length], &syntax[..used]);
         let factory = iterator_factory(&current[..length], &syntax[..used]);
         impl_origins[0] = 0;

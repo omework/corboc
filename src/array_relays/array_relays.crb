@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::calls::{bootstrap_callee};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::scalar::{verify_primitive, folded_integer};
@@ -102,7 +104,7 @@ pub fn apply_array_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut member = graph[input].first_child;
     while member != 0 {
         if !scope_contains(&graph[0..graph.len()], graph[values[member].target].scope, graph[destination].scope) {
-            return 0 - violation(4, nodes[call].start);
+            return 0 - violation_site(4, nodes[call].start, 1);
         }
         member = graph[member].next_sibling;
     }
@@ -117,7 +119,7 @@ pub fn apply_array_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let body = graph[graph[parameter].next_sibling].next_sibling;
         shape = graph[graph[body].first_child].first_child;
     }
-    values[destination] = CheckedValue { ty: scalar + 490, state: 1, mutable: graph[destination].mutable,
-        target: 0, loan_parent: shape, origin_call: input, writable: false };
+    values[destination] = CheckedValue{ ty: scalar + 490, state: 1, mutable: graph[destination].mutable,
+        target: 0, loan_parent: shape, origin_call: input, writable: false }; record_checked(&values[0..values.len()],destination);
     scalar + 490
 }

@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{report_violation_site};
 use bootstrap::diagnostics::diagnostic_copy;
 use bootstrap::lowering_annotations::same_bytes;
 use bootstrap::generics::{expression_layout, deferred_iterator};
@@ -352,9 +354,9 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
     let parameter_type = if borrowed_record { 734 } else if shape == 0 { copy(input) }
         else if nodes[shape].kind == 29 { 310 } else { 300 };
     let reference = borrowed_record || (parameter_type > 20 && parameter_type < 60);
-    values[parameter] = CheckedValue { ty: copy(parameter_type), state: 1, mutable: graph[parameter].mutable,
+    values[parameter] = CheckedValue{ ty: copy(parameter_type), state: 1, mutable: graph[parameter].mutable,
         target: if reference { copy(parameter) } else { 0 }, loan_parent: 0, origin_call: shape,
-        writable: reference && borrow_exclusive(input) };
+        writable: reference && borrow_exclusive(input) }; record_checked(&values[..],parameter);
     let mut capture = copy(first_capture);
     while capture != 0 {
         let binding = captures[capture].binding;
@@ -362,13 +364,13 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
         let record = captured_ty >= 3000000 && captured_ty < 4000000;
         let reference = captured_ty > 20 && captured_ty < 60;
         if reference {
-            values[capture] = CheckedValue { ty: copy(captured_ty) % 20, state: 1, mutable: false,
-                target: 0, loan_parent: 0, origin_call: 0, writable: false };
+            values[capture] = CheckedValue{ ty: copy(captured_ty) % 20, state: 1, mutable: false,
+                target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[..],capture);
         }
         let origin = if record { unsigned(copy(captured_ty) - 3000000) } else { 0 };
-        values[binding] = CheckedValue { ty: if record { 300 } else { copy(captured_ty) },
+        values[binding] = CheckedValue{ ty: if record { 300 } else { copy(captured_ty) },
             state: 1, mutable: graph[binding].mutable, target: if reference { copy(capture) } else { 0 },
-            loan_parent: 0, origin_call: origin, writable: reference && captured_ty > 40 };
+            loan_parent: 0, origin_call: origin, writable: reference && captured_ty > 40 }; record_checked(&values[..],binding);
         capture = captures[capture].next;
     }
     let mut edges = [LoopEdge { breaks: 0, continues: 0 }; 524289];
@@ -378,7 +380,7 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
     capture = first_capture;
     while capture != 0 {
         let binding = captures[capture].binding;
-        if values[binding].state != 1 { return (0 - (report_violation(6, nodes[capture].start) as i64), 0); }
+        if values[binding].state != 1 { return (0 - (report_violation_site(6, nodes[capture].start, 301) as i64), 0); }
         capture = captures[capture].next;
     }
     if declared != 0 { return (declared, annotation); }
@@ -431,7 +433,7 @@ fn plan_captures(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], capture
                     }
                 }
                 if (ty < 1 || ty > 9) && !(ty > 20 && ty < 60) && (ty <= 3000000 || ty >= 4000000) {
-                    return (report_violation(1, nodes[name].start), 0);
+                    return (report_violation_site(1, nodes[name].start, 302), 0);
                 }
                 captures[name] = Capture { binding: binding, annotation: annotation, ty: ty, next: first, copied: copied };
                 first = copy(name);
@@ -458,25 +460,25 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
         let callee = graph[node].first_child;
         if named.len() >= prefix.len()
             && prefix.content_eq(&named[0..prefix.len()]) {
-            return report_violation(1, nodes[node].start);
+            return report_violation_site(1, nodes[node].start, 303);
         }
         let first = copy(callee);
         let argument = graph[first].next_sibling;
         if new_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], copy(node)) {
             if argument == 0 || graph[argument].next_sibling != 0 {
-                return report_violation(1, nodes[node].start);
+                return report_violation_site(1, nodes[node].start, 304);
             }
             let place = graph[argument].first_child;
             let origin = if nodes[argument].kind == 13 {
                 if !borrow_mutable(&source[nodes[argument].start..nodes[place].start]) {
-                    return report_violation(5, nodes[argument].start);
+                    return report_violation_site(5, nodes[argument].start, 305);
                 }
                 if nodes[place].kind == 14 { graph[graph[place].first_child].binding }
                 else { graph[place].binding }
             } else { graph[argument].binding };
             if origin == 0 || (nodes[argument].kind != 13 && !mutable_reference(&source[0..source.len()],
                 &nodes[0..nodes.len()], &graph[0..graph.len()], copy(origin), 0)) {
-                return report_violation(1, nodes[argument].start);
+                return report_violation_site(1, nodes[argument].start, 306);
             }
             let concrete_layout = expression_layout(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &tokens[0..tokens.len()], copy(node));
@@ -488,7 +490,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                 && !record_with_shared_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout))
                 && !record_with_handle_vector(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout))
                 && record_pool_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout)) == 0 {
-                return report_violation(1, nodes[argument].start);
+                return report_violation_site(1, nodes[argument].start, 307);
             }
             let owner = &source[nodes[layout].name_start..nodes[layout].name_end];
             let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -498,10 +500,10 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
             let item = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(result));
             if nodes[method].kind != 1 || !borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], method)
                 || nodes[result].kind != 4 || item == 0 {
-                return report_violation(1, nodes[argument].start);
+                return report_violation_site(1, nodes[argument].start, 308);
             }
             if !borrow_mutable(&source[nodes[parameter].start..nodes[parameter].name_start]) {
-                return report_violation(5, nodes[argument].start);
+                return report_violation_site(5, nodes[argument].start, 309);
             }
             stages[node] = Stage { action: 1, source: layout, root: origin, item: checked_option_payload(item), annotation: graph[result].first_child, previous: 0, mapper: 0, state: 0, captures: 0, owned: owned };
         } else if nodes[node].kind == 16 {
@@ -523,7 +525,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                         || nodes[parameter].kind != 3 || nodes[annotation].kind != 4
                         || (action == 5 && (value_annotation == annotation || borrow_mutable(&source[nodes[annotation].start..nodes[value_annotation].start])))
                         || item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(value_annotation)) != input {
-                        return report_violation(1, nodes[node].start);
+                        return report_violation_site(1, nodes[node].start, 310);
                     }
                     let (status, captured) = plan_captures(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], &mut captures[0..captures.len()], copy(argument), copy(parameter));
@@ -531,11 +533,11 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                     let second = graph[parameter].next_sibling;
                     if (action != 6 && nodes[second].kind == 3)
                         || (action == 6 && nodes[graph[second].next_sibling].kind == 3) {
-                        return report_violation(1, nodes[node].start);
+                        return report_violation_site(1, nodes[node].start, 311);
                     }
                     if action == 6 && (nodes[second].kind != 3 || item_type(&source[0..source.len()],
                         &nodes[0..nodes.len()], &graph[0..graph.len()], graph[second].first_child) != input) {
-                        return report_violation(1, nodes[node].start);
+                        return report_violation_site(1, nodes[node].start, 312);
                     }
                     let callback_input = if action == 5 { item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) } else { copy(input) };
                     let expected_item = if action == 5 { 3 } else { copy(input) };
@@ -549,9 +551,9 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                     }
                     let item = if action == 5 { copy(input) } else { copy(mapped_item) };
                     let annotation = if action == 5 { copy(value_annotation) } else { copy(mapped_annotation) };
-                    if action == 5 && mapped_item != 3 { return report_violation(1, nodes[node].start); }
+                    if action == 5 && mapped_item != 3 { return report_violation_site(1, nodes[node].start, 313); }
                     if item < 0 { return if item == -8 { 8 } else { 9 }; }
-                    if item == 0 { return report_violation(1, nodes[argument].start); }
+                    if item == 0 { return report_violation_site(1, nodes[argument].start, 314); }
                     let other = graph[parameter].next_sibling;
                     let body = if nodes[other].kind == 4 { graph[other].next_sibling } else { other };
                     let value = simple_result(&nodes[0..nodes.len()], &graph[0..graph.len()], body);
@@ -560,9 +562,9 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                         previous: previous, mapper: if identity { 0 } else { argument }, state: if captured != 0 || action == 6 { copy(node) } else { copy(previous_state) }, captures: captured, owned: prior_owned };
                 } else if named.content_eq(&next_name[..]) {
                     let place = group(&nodes[0..nodes.len()], &graph[0..graph.len()], first);
-                    if argument != 0 { return report_violation(1, nodes[node].start); }
+                    if argument != 0 { return report_violation_site(1, nodes[node].start, 315); }
                     if nodes[place].kind == 7 && !graph[graph[place].binding].mutable {
-                        return report_violation(5, nodes[place].start);
+                        return report_violation_site(5, nodes[place].start, 316);
                     }
                     stages[node] = Stage { action: 3, source: layout, root: root, item: input, annotation: 0, previous: previous, mapper: 0, state: previous_state, captures: 0, owned: prior_owned };
                 } else if named.content_eq(&collect_name[..]) {
@@ -570,18 +572,18 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
                     let destination = if nodes[operand].kind == 14 { graph[operand].first_child } else { copy(operand) };
                     if nodes[argument].kind != 13 || graph[argument].next_sibling != 0
                         || nodes[destination].kind != 7 || nodes[nodes[node].parent].kind != 8 {
-                        return report_violation(1, nodes[node].start);
+                        return report_violation_site(1, nodes[node].start, 317);
                     }
                     if !borrow_mutable(&source[nodes[argument].start..nodes[operand].start]) {
-                        return report_violation(5, nodes[argument].start);
+                        return report_violation_site(5, nodes[argument].start, 318);
                     }
                     let element = destination_item(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], graph[destination].binding, 0);
                     if element != 0 && element != input {
-                        return report_violation(1, nodes[argument].start);
+                        return report_violation_site(1, nodes[argument].start, 319);
                     }
                     stages[node] = Stage { action: 4, source: layout, root: root, item: input, annotation: 0, previous: previous, mapper: destination, state: previous_state, captures: 0, owned: prior_owned };
-                } else { return report_violation(1, nodes[node].start); }
+                } else { return report_violation_site(1, nodes[node].start, 320); }
             }
         }
         if stages[node].action != 0 {
@@ -614,7 +616,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
         if exiting != 0 {
             let root = stages[exiting].root;
             if nodes[node].kind == 6 || graph[root].scope == graph[node].scope {
-                return report_violation(4, nodes[node].start);
+                return report_violation_site(4, nodes[node].start, 321);
             }
         }
         let stage = stage_at(&nodes[0..nodes.len()], &graph[0..graph.len()], &stages[0..stages.len()], copy(node));
@@ -629,7 +631,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
             if kind != 19 && kind != 10 && !(kind == 5 && graph[parent].type_node == 0)
                 && !(kind == 16 && stages[parent].action >= 2 && graph[parent].first_child == node)
                 && !drop_stage {
-                return report_violation(1, nodes[node].start);
+                return report_violation_site(1, nodes[node].start, 322);
             }
         }
         node = node + 1;

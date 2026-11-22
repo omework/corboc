@@ -1,0 +1,1374 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Diagnostic-only views, operation frames and provenance. Never changes verdicts.
+use bootstrap::model::{AstNode,StaticNode,CheckedValue};
+
+/// Native formatting/history boundary. Views are read-only and are retained only
+/// while check_tree's wrapper owns their storage; nested frames restore views.
+fn control(op:i64,source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],
+    a:u64,b:i64,c:i64,out:&mut [u8],related:&mut [u64])->usize {
+    let mut written:usize=0;
+    @unchecked { @c(includes={"stdint.h","stdio.h","string.h","stddef.h"}) {
+typedef struct {int64_t kind;uint64_t parent,start,end,name_start,name_end;bool public;} SDNode;
+typedef struct {uint64_t first_child,next_sibling,scope,scope_parent;bool scope_entry,declaration,mutable;
+    uint64_t type_node,initializer;int64_t fact;uint64_t visible,binding,destination,field_name,
+    private_start,private_end,private_origin;int64_t access_mode;uint64_t protection;} SDGraph;
+typedef struct {int64_t ty,state;bool mutable;uint64_t target,loan_parent,origin_call;bool writable;} SDValue;
+_Static_assert(sizeof(SDNode)==sizeof(*(${nodes}).data),"diagnostic AST ABI drift");
+_Static_assert(sizeof(SDGraph)==sizeof(*(${graph}).data),"diagnostic graph ABI drift");
+_Static_assert(sizeof(SDValue)==sizeof(*(${values}).data),"diagnostic value ABI drift");
+_Static_assert(_Alignof(SDNode)==_Alignof(__typeof__(*(${nodes}).data)),"diagnostic AST alignment drift");
+_Static_assert(_Alignof(SDGraph)==_Alignof(__typeof__(*(${graph}).data)),"diagnostic graph alignment drift");
+_Static_assert(_Alignof(SDValue)==_Alignof(__typeof__(*(${values}).data)),"diagnostic value alignment drift");
+#define SD_LIMIT 524289u
+#define SD_DEPTH 512u
+static struct {
+    bool enabled;const uint8_t *source;size_t length,count,vcount;
+    const SDNode *nodes;const SDGraph *graph;const SDValue *values;
+    struct {uint64_t node;int64_t expected,mode;const SDValue *previous;size_t count;} frames[SD_DEPTH];
+    size_t depth,overflow;uint64_t statement,site,override_at,conflict,invalid_root;
+    int64_t expected,actual;
+    struct {uint64_t move,drop,borrow,prior_move;int64_t state;uint64_t target;bool moved,dropped,borrowed,explicit_drop;} history[SD_LIMIT];
+} sd;
+int op=(int)${op};uint64_t a=${a};int64_t b=${b},c=${c};
+uint8_t *output=(${out}).data;size_t capacity=(${out}).len,pos=0;
+uint64_t *labels=(${related}).data;size_t label_capacity=(${related}).len,label_count=0;
+#define SD_VALID(n) ((uint64_t)(n)<sd.count)
+#define SD_VALUE(n) ((uint64_t)(n)<sd.vcount)
+#define SD_APPEND(s) do{const char *part=(s);size_t size=strlen(part);if(pos<capacity){size_t room=capacity-pos;if(size>=room)size=room-1;memcpy(output+pos,part,size);pos+=size;output[pos]=0;}}while(0)
+#define SD_NUMBER(n) do{char number[32];snprintf(number,sizeof number,"%llu",(unsigned long long)(n));SD_APPEND(number);}while(0)
+#define SD_NAME(start,end) do{SD_APPEND("\037");SD_NUMBER(start);SD_APPEND(":");SD_NUMBER(end);SD_APPEND("\037");}while(0)
+#define SD_LABEL(point,kind) do{if(label_count+2<=label_capacity){labels[label_count++]=(point);labels[label_count++]=(kind);}}while(0)
+#define SD_PRIMITIVE(t) ((t)==1?"i32":(t)==2?"i64":(t)==3?"bool":(t)==4?"u8":(t)==5?"u16":(t)==6?"u32":(t)==7?"u64":(t)==8?"f32":(t)==9?"f64":(t)==10?"()":NULL)
+// BEGIN FAILURE SITES
+static const char *const reasons[]={
+"",
+"value would outlive a borrowed target or its allocation source",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required callables type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required callables type or value constraint",
+"type mismatch for this expression or binding",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required check flow type or value constraint",
+"expression does not satisfy the required check flow type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"pattern does not match the enum variant or its payload shape",
+"call does not satisfy the required check flow contract",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"field is absent from the selected type",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"call does not satisfy the required check flow contract",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"call does not satisfy the required check flow contract",
+"call does not satisfy the required check flow contract",
+"required lifetime relationship cannot be established for this check flow operation",
+"call does not satisfy the required check flow contract",
+"required lifetime relationship cannot be established for this check flow operation",
+"access does not satisfy its mutation-permission or same-lock contract",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"call does not satisfy the required check flow contract",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"pattern does not match the enum variant or its payload shape",
+"expression does not satisfy the required collections type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required collections type or value constraint",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required collections type or value constraint",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required collections type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"arguments do not match the callable parameter contract",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required configuration type or value constraint",
+"expression does not satisfy the required configuration type or value constraint",
+"expression does not satisfy the required configuration type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required configuration type or value constraint",
+"expression does not satisfy the required configuration type or value constraint",
+"expression does not satisfy the required constants type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required constants type or value constraint",
+"expression does not satisfy the required constants type or value constraint",
+"expression does not satisfy the required constants type or value constraint",
+"expression does not satisfy the required declarations type or value constraint",
+"expression does not satisfy the required declarations type or value constraint",
+"type mismatch for this expression or binding",
+"type name cannot be resolved in this declaration",
+"type name cannot be resolved in this declaration",
+"type name cannot be resolved in this declaration",
+"value is read before it has been initialized",
+"expression does not satisfy the required declarations type or value constraint",
+"expression does not satisfy the required declarations type or value constraint",
+"destructor signature does not match the required destruction contract",
+"destructor signature does not match the required destruction contract",
+"capacity must satisfy the declared positive size and storage limit",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"call does not satisfy the required declarations contract",
+"call does not satisfy the required declarations contract",
+"call does not satisfy the required declarations contract",
+"expression does not satisfy the required declaration shape",
+"access does not satisfy its mutation-permission or same-lock contract",
+"call does not satisfy the required declarations contract",
+"call does not satisfy the required declarations contract",
+"expression does not satisfy the required declaration shape",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"call does not satisfy the required declarations contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"expression does not satisfy the required declaration shape",
+"value would outlive a borrowed target or its allocation source",
+"call does not satisfy the required declarations contract",
+"expression does not satisfy the required declaration shape",
+"expression does not satisfy the required declaration shape",
+"binding is immutable and cannot be modified",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required declaration shape",
+"receiver or method contract is incompatible with this call",
+"receiver or method contract is incompatible with this call",
+"call does not satisfy the required declarations contract",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this declarations operation",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"element or argument count does not match the required shape",
+"expression does not satisfy the required generics type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required generics type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required generics type or value constraint",
+"expression does not satisfy the required generics type or value constraint",
+"value name is not declared in this scope",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"return value does not match the function result contract",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"value name is not declared in this scope",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"value would outlive a borrowed target or its allocation source",
+"operation requires mutation permission on the referenced place",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value name is not declared in this scope",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value name is not declared in this scope",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"arguments do not match the callable parameter contract",
+"value name is not declared in this scope",
+"operation requires mutation permission on the referenced place",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"operation requires mutation permission on the referenced place",
+"arguments do not match the callable parameter contract",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"lock contract is inconsistent with this declaration or access",
+"same-object lock re-entry would occur while exclusivity is still active",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"operation requires mutation permission on the referenced place",
+"required lifetime relationship cannot be established for this map entries operation",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this map entries operation",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"call does not satisfy the required map entries contract",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"raw address use or escape is not permitted outside its unchecked lifetime",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"binding is immutable and cannot be modified",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"required lifetime relationship cannot be established for this ownership operation",
+"required lifetime relationship cannot be established for this ownership operation",
+"binding is immutable and cannot be modified",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required ownership type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"member is private outside its declaring module",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required ownership type or value constraint",
+"expression does not satisfy the required ownership type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required ownership type or value constraint",
+"expression does not satisfy the required ownership type or value constraint",
+"element or argument count does not match the required shape",
+"expression does not satisfy the required ownership type or value constraint",
+"field is absent from the selected type",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required ownership type or value constraint",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required ownership type or value constraint",
+"member is private outside its declaring module",
+"expression does not satisfy the required package link type or value constraint",
+"expression does not satisfy the required package link type or value constraint",
+"expression does not satisfy the required package link type or value constraint",
+"expression does not satisfy the required package link type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"expression does not satisfy the required pipelines type or value constraint",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required pipelines type or value constraint",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required places type or value constraint",
+"literal cannot be represented by the required type",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"expression does not satisfy the required places type or value constraint",
+"expression does not satisfy the required places type or value constraint",
+"expression does not satisfy the required places type or value constraint",
+"element or argument count does not match the required shape",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required places type or value constraint",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"array or slice index is outside its permitted integer bounds",
+"array or slice index is outside its permitted integer bounds",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"required lifetime relationship cannot be established for this places operation",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"borrow or contained dependency no longer has a live storage root",
+"expression does not satisfy the required places type or value constraint",
+"borrow or contained dependency no longer has a live storage root",
+"field is absent from the selected type",
+"expression does not satisfy the required places type or value constraint",
+"binding is immutable and cannot be modified",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access does not satisfy its mutation-permission or same-lock contract",
+"borrow or contained dependency no longer has a live storage root",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"slice bounds must be ordered and within the source length",
+"slice bounds must be ordered and within the source length",
+"expression does not satisfy the required places type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"expression does not satisfy the required places type or value constraint",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required places type or value constraint",
+"expression does not satisfy the required places type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"required lifetime relationship cannot be established for this places operation",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access does not satisfy its mutation-permission or same-lock contract",
+"expression does not satisfy the required places type or value constraint",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"borrow or contained dependency no longer has a live storage root",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"borrow or contained dependency no longer has a live storage root",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required pool results type or value constraint",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access does not satisfy its mutation-permission or same-lock contract",
+"borrow or contained dependency no longer has a live storage root",
+"access does not satisfy its mutation-permission or same-lock contract",
+"required lifetime relationship cannot be established for this process arguments operation",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this process arguments operation",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"callable cannot be resolved for these arguments",
+"type mismatch for this expression or binding",
+"call does not satisfy the required propagation contract",
+"expression does not satisfy the required propagation type or value constraint",
+"expression does not satisfy the required propagation type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"arguments do not match the callable parameter contract",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"binding is immutable and cannot be modified",
+"arguments do not match the callable parameter contract",
+"expression does not satisfy the required regional calls type or value constraint",
+"arguments do not match the callable parameter contract",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"arguments do not match the callable parameter contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"expression does not satisfy the required results type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required results type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required results type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"literal cannot be represented by the required type",
+"literal cannot be represented by the required type",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"literal cannot be represented by the required type",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"expression does not satisfy the required scalar options type or value constraint",
+"type mismatch for this expression or binding",
+"access does not satisfy its mutation-permission or same-lock contract",
+"expression does not satisfy the required scalar options type or value constraint",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"field is absent from the selected type",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required scalar options type or value constraint",
+"expression does not satisfy the required scalar options type or value constraint",
+"operation requires mutation permission on the referenced place",
+"expression does not satisfy the required scalar options type or value constraint",
+"required lifetime relationship cannot be established for this scalar options operation",
+"type mismatch for this expression or binding",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is read before it has been initialized",
+"expression does not satisfy the required scalar options type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"call does not satisfy the required signatures contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"required lifetime relationship cannot be established for this signatures operation",
+"declaration does not have the required parameter or return signature",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"declaration does not have the required parameter or return signature",
+"declaration does not have the required parameter or return signature",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"declaration does not have the required parameter or return signature",
+"element or argument count does not match the required shape",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"declaration does not have the required parameter or return signature",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"call does not satisfy the required signatures contract",
+"borrow or contained dependency no longer has a live storage root",
+"operation requires mutation permission on the referenced place",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"call does not satisfy the required signatures contract",
+"required lifetime relationship cannot be established for this signatures operation",
+"required lifetime relationship cannot be established for this signatures operation",
+"required lifetime relationship cannot be established for this signatures operation",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"required lifetime relationship cannot be established for this stored operation",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"expression does not satisfy the required stored type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"required lifetime relationship cannot be established for this stored operation",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access does not satisfy its mutation-permission or same-lock contract",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required stored type or value constraint",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value would outlive a borrowed target or its allocation source",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required stored type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required stored type or value constraint",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"operation requires mutation permission on the referenced place",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"required lifetime relationship cannot be established for this stored operation",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"type mismatch for this expression or binding",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access does not satisfy its mutation-permission or same-lock contract",
+"operation requires mutation permission on the referenced place",
+"required lifetime relationship cannot be established for this stored operation",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"required lifetime relationship cannot be established for this stored operation",
+"binding is immutable and cannot be modified",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"required lifetime relationship cannot be established for this stored operation",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"return value does not match the function result contract",
+"return value does not match the function result contract",
+"value would outlive a borrowed target or its allocation source",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"value would outlive a borrowed target or its allocation source",
+"return value does not match the function result contract",
+"return value does not match the function result contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"arguments do not match the callable parameter contract",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"element or argument count does not match the required shape",
+"element or argument count does not match the required shape",
+"arguments do not match the callable parameter contract",
+"expression does not satisfy the required task relay type or value constraint",
+"arguments do not match the callable parameter contract",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"expression does not satisfy the required task relay type or value constraint",
+"arguments do not match the callable parameter contract",
+"type mismatch for this expression or binding",
+"call does not satisfy the required task relay contract",
+"arguments do not match the callable parameter contract",
+"expression does not satisfy the required task relay type or value constraint",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"arguments do not match the callable parameter contract",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"receiver or method contract is incompatible with this call",
+"call does not satisfy the required task vectors contract",
+"receiver or method contract is incompatible with this call",
+"required lifetime relationship cannot be established for this task vectors operation",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"call does not satisfy the required task vectors contract",
+"arguments do not match the callable parameter contract",
+"required lifetime relationship cannot be established for this task vectors operation",
+"binding is immutable and cannot be modified",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"arguments do not match the callable parameter contract",
+"required lifetime relationship cannot be established for this task vectors operation",
+"binding is immutable and cannot be modified",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this tasks operation",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"borrow or contained dependency no longer has a live storage root",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"value name is not declared in this scope",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"arguments do not match the callable parameter contract",
+"expression does not satisfy the required tasks type or value constraint",
+"arguments do not match the callable parameter contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"operation requires mutation permission on the referenced place",
+"arguments do not match the callable parameter contract",
+"arguments do not match the callable parameter contract",
+"arguments do not match the callable parameter contract",
+"type mismatch for this expression or binding",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"call does not satisfy the required tasks contract",
+"call does not satisfy the required tasks contract",
+"arguments do not match the callable parameter contract",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"arguments do not match the callable parameter contract",
+"access does not satisfy its mutation-permission or same-lock contract",
+"call does not satisfy the required tasks contract",
+"arguments do not match the callable parameter contract",
+"call does not satisfy the required tasks contract",
+"arguments do not match the callable parameter contract",
+"call does not satisfy the required tasks contract",
+"call does not satisfy the required tasks contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"access does not satisfy its mutation-permission or same-lock contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"required lifetime relationship cannot be established for this tasks operation",
+"borrow or contained dependency no longer has a live storage root",
+"call does not satisfy the required tasks contract",
+"call does not satisfy the required tasks contract",
+"expression does not satisfy the required tasks type or value constraint",
+"arguments do not match the callable parameter contract",
+"arguments do not match the callable parameter contract",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value or an owned field cannot be transferred to another thread",
+"value or an owned field cannot be transferred to another thread",
+"value or an owned field cannot be transferred to another thread",
+"field is absent from the selected type",
+"expression does not satisfy the required tuples type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required tuples type or value constraint",
+"expression does not satisfy the required tuples type or value constraint",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required tuples type or value constraint",
+"tuple pattern binding count does not match the tuple arity",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"expression does not satisfy the required tuples type or value constraint",
+"field is absent from the selected type",
+"expression does not satisfy the required tuples type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required tuples type or value constraint",
+"required lifetime relationship cannot be established for this vector storage operation",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required vector storage type or value constraint",
+"value would outlive a borrowed target or its allocation source",
+"access does not satisfy its mutation-permission or same-lock contract",
+"required lifetime relationship cannot be established for this vector storage operation",
+"binding is immutable and cannot be modified",
+"expression does not satisfy the required vector storage type or value constraint",
+"access does not satisfy its mutation-permission or same-lock contract",
+"expression does not satisfy the required vector storage type or value constraint",
+"expression does not satisfy the required vector storage type or value constraint",
+"required lifetime relationship cannot be established for this vector storage operation",
+"binding is immutable and cannot be modified",
+"access does not satisfy its mutation-permission or same-lock contract",
+"type mismatch for this expression or binding",
+"value name is not declared in this scope",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"operation requires mutation permission on the referenced place",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"division or remainder by zero is not permitted",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"value is read before it has been initialized",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"call does not satisfy the required verify contract",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value is read before it has been initialized",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"value availability or dependency contract is not satisfied by this operation",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"call does not satisfy the required verify contract",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"type mismatch for this expression or binding",
+"cleanup or storage reuse would invalidate a live dependent value, borrow or branch",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"borrow or contained dependency no longer has a live storage root",
+"call does not satisfy the required verify contract",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"capacity must satisfy the declared positive size and storage limit",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value name is not declared in this scope",
+"type mismatch for this expression or binding",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"type mismatch for this expression or binding",
+"field is absent from the selected type",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"arguments do not match the callable parameter contract",
+"required lifetime relationship cannot be established for this verify operation",
+"binding is immutable and cannot be modified",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"element or argument count does not match the required shape",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"division or remainder by zero is not permitted",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"value ownership form is incompatible with this operation; copying requires an eligible type",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"call does not satisfy the required verify contract",
+"call does not satisfy the required verify contract",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"call does not satisfy the required verify contract",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"call does not satisfy the required verify contract",
+"value name is not declared in this scope",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"call does not satisfy the required verify contract",
+"call does not satisfy the required verify contract",
+"value would outlive a borrowed target or its allocation source",
+"call does not satisfy the required verify contract",
+"required lifetime relationship cannot be established for this verify operation",
+"call does not satisfy the required verify contract",
+"call does not satisfy the required verify contract",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"element or argument count does not match the required shape",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"operation requires mutation permission on the referenced place",
+"required lifetime relationship cannot be established for this verify operation",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"element or argument count does not match the required shape",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"borrow or contained dependency no longer has a live storage root",
+"operation requires mutation permission on the referenced place",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value name is not declared in this scope",
+"binding is immutable and cannot be modified",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"type mismatch for this expression or binding",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"call does not satisfy the required verify contract",
+"required lifetime relationship cannot be established for this verify operation",
+"binding is immutable and cannot be modified",
+"element or argument count does not match the required shape",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"access does not satisfy its mutation-permission or same-lock contract",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"type mismatch for this expression or binding",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"borrow or contained dependency no longer has a live storage root",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"value would outlive a borrowed target or its allocation source",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"expression does not satisfy the required verify type or value constraint",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"expression does not satisfy the required verify type or value constraint",
+"required lifetime relationship cannot be established for this verify operation",
+"type mismatch for this expression or binding",
+"borrow or contained dependency no longer has a live storage root",
+"type mismatch for this expression or binding",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"required lifetime relationship cannot be established for this verify operation",
+"expression does not satisfy the required verify type or value constraint",
+"call does not satisfy the required verify contract",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"expression does not satisfy the required verify type or value constraint",
+"value would outlive a borrowed target or its allocation source",
+"type mismatch for this expression or binding",
+"expression does not satisfy the required verify type or value constraint",
+"value name is not declared in this scope",
+"value is unavailable on this path after a move, destruction or conditional transition",
+"access conflicts with a live borrow or outstanding synchronized branch",
+"expression does not satisfy the required verify tree type or value constraint",
+"expression does not satisfy the required verify tree type or value constraint",
+"expression does not satisfy the required verify tree type or value constraint",
+"expression does not satisfy the required verify tree type or value constraint",
+"expression does not satisfy the required verify tree type or value constraint",
+"expression does not satisfy the required verify tree type or value constraint",
+"member is private outside its declaring module",
+"tuple index is outside this tuple's field range",
+"tuple fields require a decimal integer index after the dot",
+"cannot destructure a tuple reference that is no longer available",
+"cannot destructure a tuple reference whose target is no longer valid",
+"cannot move a tuple item out of borrowed storage; borrow its fields instead"
+};
+// END FAILURE SITES
+if(op==0){
+    sd.enabled=b!=0;sd.depth=sd.overflow=0;sd.statement=sd.site=sd.conflict=sd.invalid_root=0;sd.expected=sd.actual=0;sd.override_at=UINT64_MAX;
+    sd.source=(${source}).data;sd.length=(${source}).len;sd.nodes=(const SDNode*)(${nodes}).data;
+    sd.graph=(const SDGraph*)(${graph}).data;sd.values=(const SDValue*)(${values}).data;
+    sd.count=(${nodes}).len;sd.vcount=(${values}).len;
+    if(sd.enabled)memset(sd.history,0,sizeof sd.history);
+}else if(op==1){
+    sd.enabled=false;sd.source=NULL;sd.nodes=NULL;sd.graph=NULL;sd.values=NULL;sd.count=sd.vcount=sd.depth=0;
+}else if(op==6){sd.site=a;
+}else if(op==7){sd.override_at=a;sd.expected=b;sd.actual=c;
+}else if(op==9&&!sd.enabled&&capacity){
+    const char *reason=sd.site<sizeof reasons/sizeof *reasons?reasons[sd.site]:"semantic constraint is not satisfied by this operation";
+    SD_APPEND(reason);if(sd.override_at==a&&sd.expected>=1&&sd.expected<=10&&sd.actual>=1&&sd.actual<=10){SD_APPEND("\n       = expected: ");SD_APPEND(SD_PRIMITIVE(sd.expected));SD_APPEND("\n       = actual: ");SD_APPEND(SD_PRIMITIVE(sd.actual));}
+    if(label_capacity)labels[0]=UINT64_MAX;sd.site=0;sd.override_at=UINT64_MAX;${written}=pos;
+}else if(sd.enabled){
+    if(op==2){
+        sd.invalid_root=0;
+        if(sd.depth<SD_DEPTH){size_t n=sd.depth++;sd.frames[n].node=a;sd.frames[n].expected=b;sd.frames[n].mode=c;
+            sd.frames[n].previous=sd.values;sd.frames[n].count=sd.vcount;
+            if((${values}).len){sd.values=(const SDValue*)(${values}).data;sd.vcount=(${values}).len;}
+        }else ++sd.overflow;
+    }else if(op==3){
+        if(sd.overflow)--sd.overflow;else if(sd.depth){--sd.depth;sd.values=sd.frames[sd.depth].previous;sd.vcount=sd.frames[sd.depth].count;}
+    }else if(op==4){sd.invalid_root=0;if(sd.depth){sd.frames[sd.depth-1].node=a;sd.frames[sd.depth-1].expected=b;sd.frames[sd.depth-1].mode=c;}}
+    else if(op==5){
+        if(a<SD_LIMIT&&SD_VALUE(a)&&sd.values==(const SDValue*)(${values}).data){
+            int64_t before=sd.history[a].state;uint64_t previous_target=sd.history[a].target;
+            b=sd.values[a].state;c=sd.values[a].target!=0;sd.history[a].state=b;sd.history[a].target=sd.values[a].target;
+            uint64_t node=sd.depth?sd.frames[sd.depth-1].node:0;
+            uint64_t point=node&&SD_VALID(node)?sd.nodes[node].start:(SD_VALID(a)?sd.nodes[a].start:0);
+            // Branch merges/restores are not moves. Keep a real origin already
+            // recorded by an expression/statement, rather than inventing one.
+            int64_t kind=SD_VALID(node)?sd.nodes[node].kind:0;
+            uint64_t child=SD_VALID(node)?sd.graph[node].first_child:0;
+            if((kind==8||kind==10)&&SD_VALID(child))kind=sd.nodes[child].kind;
+            bool flow=kind==26||kind==39||kind==22||kind==27;
+            if(b==2&&before==1&&!flow){
+                if(sd.history[a].moved)sd.history[a].prior_move=sd.history[a].move+1;
+                sd.history[a].move=point;sd.history[a].moved=true;
+            }
+            if(b==3&&before==1&&!flow){
+                sd.history[a].drop=point;sd.history[a].dropped=true;sd.history[a].explicit_drop=false;
+                uint64_t call=node;size_t hops=0;while(call&&SD_VALID(call)&&sd.nodes[call].kind!=15&&sd.nodes[call].kind!=16&&hops++<16)call=sd.nodes[call].parent;
+                if(call&&SD_VALID(call)){
+                    uint64_t callee=sd.nodes[call].kind==16?call:sd.graph[call].first_child;
+                    if(SD_VALID(callee)&&sd.nodes[callee].name_end-sd.nodes[callee].name_start==4&&sd.nodes[callee].name_end<=sd.length&&!memcmp(sd.source+sd.nodes[callee].name_start,"drop",4))sd.history[a].explicit_drop=true;
+                }
+            }
+            int64_t type=sd.values[a].ty;
+            bool reference=type==0||(type>20&&type<100)||type==734||(type>=711&&type<=749)||type==2000138;
+            if(b==1&&c!=0&&reference&&!flow&&(!sd.history[a].borrowed||before!=1||previous_target!=sd.values[a].target||kind==13)){
+                sd.history[a].borrow=point;sd.history[a].borrowed=true;
+            }
+        }
+    }else if(op==6){sd.site=a;}
+    else if(op==7){sd.override_at=a;sd.expected=b;sd.actual=c;}
+    else if(op==8){sd.conflict=a;}
+    else if(op==10){if(!sd.invalid_root)sd.invalid_root=a;}
+    else if(op==9&&capacity){
+        uint64_t point=a,node=0;int rule=(int)b;
+        // Prefer the active expression, then the smallest source span. This
+        // resolves failure sites in declaration checks that have no frame.
+        if(sd.depth&&SD_VALID(sd.frames[sd.depth-1].node))node=sd.frames[sd.depth-1].node;
+        if(!node||point<sd.nodes[node].start||point>=sd.nodes[node].end){
+            uint64_t width=UINT64_MAX;
+            for(uint64_t i=1;i<sd.count;++i)if(sd.nodes[i].start<=point&&point<sd.nodes[i].end&&sd.nodes[i].end-sd.nodes[i].start<width){node=i;width=sd.nodes[i].end-sd.nodes[i].start;}
+        }
+        uint64_t binding=SD_VALID(node)?sd.graph[node].binding:0;
+        uint64_t expression=node;
+        if(SD_VALID(node)&&(sd.nodes[node].kind==8||sd.nodes[node].kind==10||sd.nodes[node].kind==6))expression=sd.graph[node].first_child;
+        if(SD_VALID(node)&&sd.nodes[node].kind==5){expression=sd.graph[node].initializer;if(expression&&SD_VALID(expression)&&!binding)binding=sd.graph[expression].binding;}
+        uint64_t probe=node;size_t steps=0;
+        while(!binding&&probe&&SD_VALID(probe)&&steps++<32){binding=sd.graph[probe].binding;probe=sd.graph[probe].first_child;}
+        uint64_t child=SD_VALID(node)?sd.graph[node].first_child:0;
+        if(!binding&&SD_VALID(child))binding=sd.graph[child].binding;
+        const char *reason=sd.site<sizeof reasons/sizeof *reasons?reasons[sd.site]:"semantic constraint is not satisfied by this operation";
+        int64_t expected=sd.override_at==point?sd.expected:(sd.depth?sd.frames[sd.depth-1].expected:0);
+        int64_t actual=sd.override_at==point?sd.actual:(SD_VALUE(binding)?sd.values[binding].ty:0);
+        if(!actual&&SD_VALUE(expression))actual=sd.values[expression].ty;
+        uint64_t expected_syntax=0;
+        if(SD_VALID(node)&&sd.nodes[node].kind==5)expected_syntax=sd.graph[node].type_node;
+        // Recover the concrete parameter at the failing argument. Calls that
+        // have already returned to their statement frame still retain this AST.
+        uint64_t call=expression;
+        while(call&&SD_VALID(call)&&sd.nodes[call].kind!=15&&sd.nodes[call].kind!=16)call=sd.nodes[call].parent;
+        if(call&&SD_VALID(call)){
+            uint64_t callee=sd.graph[call].first_child,function=SD_VALID(callee)?sd.graph[callee].binding:0;
+            if(!function&&SD_VALID(callee))for(uint64_t i=1;i<sd.count;++i){
+                if((sd.nodes[i].kind==1||sd.nodes[i].kind==35)&&sd.nodes[i].name_end>sd.nodes[i].name_start&&
+                    sd.nodes[i].name_end-sd.nodes[i].name_start==sd.nodes[callee].name_end-sd.nodes[callee].name_start&&
+                    !memcmp(sd.source+sd.nodes[i].name_start,sd.source+sd.nodes[callee].name_start,sd.nodes[i].name_end-sd.nodes[i].name_start)){function=i;break;}
+            }
+            if(function&&SD_VALID(function)){
+                uint64_t parameter=sd.graph[function].first_child,argument=sd.graph[callee].next_sibling;
+                while(parameter&&SD_VALID(parameter)&&sd.nodes[parameter].kind!=3)parameter=sd.graph[parameter].next_sibling;
+                if(sd.nodes[call].kind==16&&parameter)parameter=sd.graph[parameter].next_sibling;
+                while(parameter&&argument&&SD_VALID(parameter)&&SD_VALID(argument)){
+                    if(sd.nodes[argument].start<=point&&point<sd.nodes[argument].end){
+                        expected_syntax=sd.graph[parameter].type_node;
+                        if(sd.nodes[argument].kind==7)binding=sd.graph[argument].binding;
+                        expression=argument;
+                        if(sd.override_at!=point){actual=SD_VALUE(binding)&&binding?sd.values[binding].ty:(SD_VALUE(argument)?sd.values[argument].ty:0);}
+                        SD_LABEL(sd.nodes[parameter].start,8);break;
+                    }
+                    parameter=sd.graph[parameter].next_sibling;argument=sd.graph[argument].next_sibling;
+                }
+            }
+        }
+        if(SD_VALID(expression)&&sd.nodes[expression].kind==9&&sd.nodes[expression].start<sd.length){
+            uint8_t first=sd.source[sd.nodes[expression].start];
+            if(first=='t'||first=='f')actual=3;
+            else if(first>='0'&&first<='9'){
+                bool floating=false;for(uint64_t i=sd.nodes[expression].start;i<sd.nodes[expression].end&&i<sd.length;++i)if(sd.source[i]=='.')floating=true;
+                if(!actual)actual=floating?9:2;
+            }
+        }
+        // A rejected constructor may not have a checked value yet. Its name
+        // is nevertheless explicit in the AST and is the actual nominal type.
+        uint64_t actual_constructor=0;
+        if(!actual&&SD_VALID(expression)&&sd.nodes[expression].kind==37){
+            actual_constructor=expression;
+            if(SD_VALID(actual_constructor))actual=300;
+        }
+        if((rule==4||rule==7)&&sd.invalid_root&&SD_VALUE(sd.invalid_root)&&SD_VALID(sd.invalid_root))binding=sd.invalid_root;
+        if(rule==1&&SD_VALID(node)&&sd.nodes[node].kind==7&&!binding)reason="cannot find this value in the current scope";
+        else if(rule==1&&binding&&SD_VALUE(binding)&&sd.values[binding].state==0)reason="use of a value that has not been initialized";
+        else if(rule==6&&binding&&SD_VALUE(binding)){
+            if(sd.values[binding].state==3)reason=sd.history[binding].explicit_drop?"use of a value after it was explicitly destroyed":"use of a value after it was consumed";
+            else if(sd.values[binding].state==2)reason="use of a value after its ownership was moved";
+            else if(sd.values[binding].state==4)reason="value is not available on every control-flow path";
+        }else if(rule==5&&binding&&SD_VALUE(binding)){
+            bool mutation=strstr(reason,"mutation permission")||strstr(reason,"immutable")||
+                (SD_VALID(node)&&(sd.nodes[node].kind==21||(sd.nodes[node].kind==13&&sd.graph[node].mutable)));
+            int64_t type=sd.values[binding].ty;
+            bool reference=type==0||(type>20&&type<60)||type==734||(type>=711&&type<=749);
+            if(mutation&&reference&&sd.values[binding].target&&!sd.values[binding].writable)reason="cannot mutate through a shared reference";
+            else if(mutation&&!reference&&!sd.values[binding].mutable)reason="cannot mutate an immutable binding";
+            else if(mutation&&!sd.values[binding].target&&!sd.values[binding].mutable)reason="cannot mutate an immutable binding";
+        }
+        uint64_t target=binding&&SD_VALUE(binding)?sd.values[binding].target:0;
+        if(rule==4&&target&&SD_VALUE(target)){
+            if(sd.values[target].state==3)reason="borrowed target has already been destroyed";
+            else if(sd.values[target].state==2||sd.values[target].state==4)reason="borrowed target is no longer available on this path";
+            else {uint64_t parent=node;while(parent&&SD_VALID(parent)&&sd.nodes[parent].kind!=6)parent=sd.nodes[parent].parent;
+                if(parent)reason=(sd.values[binding].ty>=201&&sd.values[binding].ty<=301)?"returned allocation would outlive its allocation source":"returned reference would outlive its target";}
+
+        }
+        if(rule==7&&binding&&SD_VALUE(binding)&&sd.values[binding].state==3)reason="this value was already destroyed";
+        if(!reason||!reason[0])reason="semantic constraint is not satisfied by this operation";
+        SD_APPEND(reason);
+        uint64_t named=sd.site==722?0:(binding?binding:node);
+        if(SD_VALID(named)&&sd.nodes[named].name_end>sd.nodes[named].name_start&&
+            (sd.nodes[named].kind==7||sd.nodes[named].kind==5||sd.nodes[named].kind==3||sd.nodes[named].kind==17)){
+            SD_APPEND(" '");SD_NAME(sd.nodes[named].name_start,sd.nodes[named].name_end);SD_APPEND("'");
+        }
+        if(rule==1&&sd.site!=722&&sd.site!=1007&&sd.site!=1008&&(expected>0||expected_syntax)&&(actual>0||sd.override_at==point)){
+            SD_APPEND("\n       = expected: ");
+            // Prefer signature/annotation spelling over compact checker codes.
+            // A bounded work stack handles nested references and containers.
+            for(int which=0;which<2;++which){
+                if(which)SD_APPEND("\n       = actual: ");
+                int64_t code=which?actual:expected;uint64_t syntax=which?0:expected_syntax,holder=which?(binding?binding:expression):0;
+                if(which&&SD_VALID(binding))syntax=sd.graph[binding].type_node;
+                if(which&&actual_constructor)syntax=actual_constructor;
+                if(!which&&!syntax){
+                    uint64_t parent=node;
+                    while(parent&&SD_VALID(parent)){
+                        if(sd.nodes[parent].kind==5&&sd.graph[parent].type_node){syntax=sd.graph[parent].type_node;break;}
+                        if(sd.nodes[parent].kind==1||sd.nodes[parent].kind==35){
+                            uint64_t part=sd.graph[parent].first_child;while(part&&SD_VALID(part)){if(sd.nodes[part].kind==4){syntax=part;break;}part=sd.graph[part].next_sibling;}break;
+                        }
+                        parent=sd.nodes[parent].parent;
+                    }
+                }
+                // Only reuse an annotation if it describes the requested code;
+                // an enclosing function's return type is not an operand type.
+                if(syntax&&SD_VALID(syntax)){
+                    const SDNode *type=&sd.nodes[syntax];
+                    if(type->end>type->start&&type->end<=sd.length){
+                        // Code mismatch overrides use an exact primitive code;
+                        // aggregates use the available source-level annotation.
+                        if(code>=1&&code<=10)syntax=0;
+                    }else syntax=0;
+                }
+                if(which&&actual_constructor){
+                    SD_NAME(sd.nodes[actual_constructor].name_start,sd.nodes[actual_constructor].name_end);
+                }else if(syntax){
+                    uint64_t i=sd.nodes[syntax].start,end=sd.nodes[syntax].end;
+                    while(i<end&&i<sd.length){uint8_t ch=sd.source[i];
+                        if((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||ch=='_'){
+                            uint64_t start=i++;while(i<end&&i<sd.length){ch=sd.source[i];if(!((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='_'))break;++i;}SD_NAME(start,i);
+                        }else{char one[2]={(char)ch,0};SD_APPEND(one);++i;}
+                    }
+                }else{
+                    struct {int64_t code;uint64_t shape;const char *text;} work[32];size_t count=1;
+                    work[0].code=code;work[0].shape=SD_VALUE(holder)?sd.values[holder].origin_call:0;work[0].text=NULL;
+                    while(count){--count;int64_t ty=work[count].code;uint64_t shape=work[count].shape;const char *text=work[count].text;
+                        if(text){SD_APPEND(text);continue;}
+                        const char *primitive=SD_PRIMITIVE(ty);
+                        if(primitive){SD_APPEND(primitive);continue;}
+                        if(count>27){SD_APPEND("...");continue;}
+                        if(ty>=21&&ty<60){SD_APPEND(ty>=40?"&mut ":"&");work[count].code=ty%20;work[count].shape=0;work[count++].text=NULL;continue;}
+                        if(ty>=201&&ty<=209){SD_APPEND("A<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){ty-200,0,NULL};continue;}
+                        if(ty>=101&&ty<=109){SD_APPEND("Pool<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){ty-100,0,NULL};continue;}
+                        if(ty>=10001&&ty<=419609&&ty%100>=1&&ty%100<=9){
+                            SD_APPEND("[");const char *element=SD_PRIMITIVE(ty%100);SD_APPEND(element?element:"unresolved type");SD_APPEND("; ");SD_NUMBER((ty-10000)/100);SD_APPEND("]");continue;
+                        }
+                        if(ty>=401&&ty<=409){SD_APPEND("[");SD_APPEND(SD_PRIMITIVE(ty-400));SD_APPEND("; ");if(SD_VALUE(holder))SD_NUMBER(sd.values[holder].origin_call);else SD_APPEND("unknown length");SD_APPEND("]");continue;}
+                        if(ty>=711&&ty<=729&&ty%10>=1&&ty%10<=9){SD_APPEND(ty>=720?"&mut [":"&[");SD_APPEND(SD_PRIMITIVE(ty%10));SD_APPEND("; ");if(SD_VALUE(holder))SD_NUMBER(sd.values[holder].origin_call);else SD_APPEND("unknown length");SD_APPEND("]");continue;}
+                        if(ty>9000000000000000000LL&&ty<9000256000000000000LL){
+                            int64_t packed=ty-9000000000000000000LL,flags=packed/64000000000000LL,pair=packed%64000000000000LL;
+                            int64_t ok=pair/8000000,err=pair%8000000;if(flags%2)ok+=5000000000000000000LL;if(flags/2)err+=5000000000000000000LL;
+                            SD_APPEND("Result<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){err,0,NULL};work[count++]=(__typeof__(work[0])){0,0,", "};work[count++]=(__typeof__(work[0])){ok,0,NULL};continue;
+                        }
+                        if(ty>=5000000000000000000LL&&ty<6000000000000000000LL){
+                            int64_t payload=ty-5000000000000000000LL;
+                            if(ty>=5002000000000000000LL)payload=ty-1000000000000000LL;else if(ty>=5001000000000000000LL)payload=5000000000000000000LL+ty%1000000000000000LL;
+                            SD_APPEND("Option<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){payload,0,NULL};continue;
+                        }
+                        if(ty>=3000000&&ty<5000000){
+                            uint64_t declaration=(uint64_t)(ty%1000000);
+                            if(ty>=4000000)SD_APPEND("&");
+                            if(SD_VALID(declaration)&&sd.nodes[declaration].name_end>sd.nodes[declaration].name_start)SD_NAME(sd.nodes[declaration].name_start,sd.nodes[declaration].name_end);else SD_APPEND("aggregate value");continue;
+                        }
+                        if(ty>=741&&ty<=749){SD_APPEND(SD_VALUE(holder)&&sd.values[holder].writable?"&mut [":"&[");work[count++]=(__typeof__(work[0])){0,0,"]"};work[count++]=(__typeof__(work[0])){ty<=747?ty-740:300,shape,NULL};continue;}
+                        if(ty>910&&ty<920){SD_APPEND("Option<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){ty-910,0,NULL};continue;}
+                        if(ty==734){SD_APPEND(SD_VALUE(holder)&&sd.values[holder].writable?"&mut ":"&");ty=300;}
+                        if(ty==300||ty==310||ty==301){
+                            if(ty==301)SD_APPEND("A<");
+                            uint64_t name=shape;size_t hops=0;
+                            while(name&&SD_VALID(name)&&!sd.nodes[name].name_end&&hops++<32)name=sd.graph[name].first_child;
+                            if(name&&SD_VALID(name)&&sd.nodes[name].name_end>sd.nodes[name].name_start)SD_NAME(sd.nodes[name].name_start,sd.nodes[name].name_end);
+                            else SD_APPEND(ty==310?"enum value":"aggregate value");
+                            if(ty==301)SD_APPEND(">");continue;
+                        }
+                        if(ty==297||ty==298){SD_APPEND(ty==298?"A<String>":"String");continue;}
+                        if(ty>=620&&ty<650){SD_APPEND("Handle<");work[count++]=(__typeof__(work[0])){0,0,">"};work[count++]=(__typeof__(work[0])){ty-620,0,NULL};continue;}
+                        if(ty==475||ty==476){SD_APPEND("tuple");continue;}
+                        SD_APPEND(ty==0?"unresolved type":"inferred value type");
+                    }
+                }
+            }
+        }
+        if(binding&&binding<SD_LIMIT&&SD_VALID(binding)){
+            if((rule==6||rule==7)&&sd.history[binding].dropped)SD_LABEL(sd.history[binding].drop,sd.history[binding].explicit_drop?2:12);
+            else if((rule==6||rule==7)&&sd.history[binding].moved){SD_LABEL(sd.history[binding].move,1);if(sd.history[binding].prior_move)SD_LABEL(sd.history[binding].prior_move-1,7);}
+            if(rule==4||rule==5||rule==7){
+                if(sd.history[binding].borrowed)SD_LABEL(sd.history[binding].borrow,3);
+                if(target&&SD_VALID(target)){
+                    if(target<SD_LIMIT&&sd.history[target].dropped)SD_LABEL(sd.history[target].drop,sd.history[target].explicit_drop?2:12);
+                    else if(target<SD_LIMIT&&sd.history[target].moved)SD_LABEL(sd.history[target].move,1);
+                    SD_LABEL(sd.nodes[target].name_end?sd.nodes[target].name_start:sd.nodes[target].start,4);
+                }
+            }
+            SD_LABEL(sd.nodes[binding].name_end?sd.nodes[binding].name_start:sd.nodes[binding].start,5);
+        }
+        if((rule==5||rule==7)&&sd.conflict&&SD_VALID(sd.conflict)){
+            uint64_t reference=sd.conflict;
+            if(reference<SD_LIMIT&&sd.history[reference].borrowed)SD_LABEL(sd.history[reference].borrow,3);
+            else SD_LABEL(sd.nodes[reference].start,6);
+        }
+        if(label_count<label_capacity)labels[label_count]=UINT64_MAX;
+        sd.site=sd.conflict=sd.invalid_root=0;sd.override_at=UINT64_MAX;sd.expected=sd.actual=0;
+        ${written}=pos;
+    }
+}
+#undef SD_LIMIT
+#undef SD_DEPTH
+#undef SD_VALID
+#undef SD_VALUE
+#undef SD_APPEND
+#undef SD_NUMBER
+#undef SD_NAME
+#undef SD_LABEL
+#undef SD_PRIMITIVE
+    } }
+    written
+}
+
+fn empty(op:i64,a:u64,b:i64,c:i64)->usize {
+    let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];
+    let values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};1];let mut output:[u8;0]=[];let mut related:[u64;0]=[];
+    control(op,&bytes[..],&nodes[0..0],&graph[0..0],&values[0..0],a,b,c,&mut output[..],&mut related[..])
+}
+
+/// Register live verifier views; only check_tree's owning wrapper calls this.
+pub fn begin(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],enabled:bool) {
+    let mut output:[u8;0]=[];let mut related:[u64;0]=[];
+    drop(control(0,source,nodes,graph,values,0,if enabled {1}else{0},0,&mut output[..],&mut related[..]));
+}
+/// Invalidate borrowed native views before their owning verifier scope returns.
+pub fn end(){drop(empty(1,0,0,0));}
+/// Frames isolate nested expression/block checks and alternate worker value views.
+pub fn enter(values:&[CheckedValue],node:u64,expected:i64,mode:i64){
+    let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];
+    let mut output:[u8;0]=[];let mut related:[u64;0]=[];
+    drop(control(2,&bytes[..],&nodes[0..0],&graph[0..0],values,node,expected,mode,&mut output[..],&mut related[..]));
+}
+pub fn leave(){drop(empty(3,0,0,0));}
+pub fn statement(node:u64){drop(empty(4,node,0,0));}
+pub fn site(id:u64){drop(empty(6,id,0,0));}
+pub fn mismatch(offset:u64,expected:i64,actual:i64){drop(empty(7,offset,expected,actual));}
+pub fn conflict(reference:u64){drop(empty(8,reference,0,0));}
+/// Observe transitions after mutation; never writes through registered views.
+pub fn transition(values:&[CheckedValue],id:u64,state:i64,target:u64){
+    let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];
+    let mut output:[u8;0]=[];let mut related:[u64;0]=[];
+    drop(control(5,&bytes[..],&nodes[0..0],&graph[0..0],values,id,state,if target!=0 {1}else{0},&mut output[..],&mut related[..]));
+}
+/// Format one failure and bounded related locations into caller-owned buffers.
+pub fn describe(offset:u64,rule:i64,out:&mut [u8],related:&mut [u64])->usize {
+    let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];let values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};1];
+    control(9,&bytes[..],&nodes[0..0],&graph[0..0],&values[0..0],offset,rule,0,out,related)
+}
+
+/// Retain the leaf of a failed dependency walk for a secondary source label.
+pub fn invalid_root(reference:u64){drop(empty(10,reference,0,0));}

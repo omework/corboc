@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Fallible pool operations retain the same value graph as successful new().
 use bootstrap::model::{AstNode,StaticNode,CheckedValue,result_code,result_payload,reserve_summary};
@@ -39,12 +41,12 @@ pub fn allocation_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],pool:u6
 /// Validate the supplied value once, then wrap its successful graph without discarding dependencies.
 pub fn check_pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
     if mode!=1{return -9;}
-    let error=pool_error(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()]);if error==0{return 0-violation(1,nodes[node].start);}
+    let error=pool_error(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()]);if error==0{return 0-violation_site(1, nodes[node].start, 397);}
     let pool=graph[graph[node].first_child].binding;
     let payload=allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(pool));if payload<6000000{return -9;}
-    let wrapped=result_code(copy(payload),3000000+signed(error));if expected!=0 && wrapped!=expected{return 0-violation(1,nodes[node].start);}
+    let wrapped=result_code(copy(payload),3000000+signed(error));if expected!=0 && wrapped!=expected{return 0-violation_site(1, nodes[node].start, 398);}
     let actual=check_pool_new(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(node));if actual<0{return actual;}
     let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
     copy_task_summary(&mut values[0..values.len()],copy(node),copy(slot),actual,false);
-    values[node]=CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:pool,loan_parent:slot,origin_call:0,writable:false};wrapped
+    values[node] = CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:pool,loan_parent:slot,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);wrapped
 }

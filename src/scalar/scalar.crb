@@ -1,3 +1,4 @@
+use bootstrap::verify::{violation_site};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::model::{result_type, result_payload};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, hex_digit};
@@ -82,7 +83,7 @@ pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bo
     let first = (*node).start;
     let end = (*node).end;
     if source[first] == 116 || source[first] == 102 {
-        if negative || (expected != 0 && expected != 3) { return 0 - violation(1, first); }
+        if negative || (expected != 0 && expected != 3) { return 0 - violation_site(1, first, 445); }
         return 3;
     }
     if source[first] == 34 { return -9; }
@@ -98,7 +99,7 @@ pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bo
             cursor = cursor + 1;
         }
         if dot != end {
-            if expected != 0 && expected != 8 && expected != 9 { return 0 - violation(1, first); }
+            if expected != 0 && expected != 8 && expected != 9 { return 0 - violation_site(1, first, 446); }
             let ty: i64 = if expected == 8 { 8 } else { 9 };
             if significant == end { return ty; }
             // Only the decimal orders which can straddle a rounding
@@ -107,19 +108,19 @@ pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bo
             let lower: u64 = if ty == 8 { 46 } else { 324 };
             if significant < dot {
                 let order = dot - significant - 1;
-                if order > upper { return 0 - violation(1, first); }
+                if order > upper { return 0 - violation_site(1, first, 447); }
                 if order == upper { return -9; }
             } else {
                 let order = significant - dot;
-                if order > lower { return 0 - violation(1, first); }
+                if order > lower { return 0 - violation_site(1, first, 448); }
                 if order == lower { return -9; }
             }
             return ty;
         }
     }
-    if expected == 8 || expected == 9 { return 0 - violation(1, first); }
+    if expected == 8 || expected == 9 { return 0 - violation_site(1, first, 449); }
     let ty = if expected == 0 { 2 } else { copy(expected) };
-    if ty == 3 || (negative && ty >= 4) { return 0 - violation(1, first); }
+    if ty == 3 || (negative && ty >= 4) { return 0 - violation_site(1, first, 450); }
     let mut number: u64 = 0;
     let mut cursor = copy(first);
     let mut base: u64 = 10;
@@ -138,7 +139,7 @@ pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bo
         if source[cursor] == 46 { return -9; }
         let value = hex_digit(source[cursor]) as u64;
         if value >= base || number > (limit - value) / base {
-            return 0 - violation(1, first);
+            return 0 - violation_site(1, first, 451);
         }
         number = number * base + value;
         cursor = cursor + 1;

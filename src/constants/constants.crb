@@ -1,3 +1,4 @@
+use bootstrap::verify::{report_violation_site};
 use bootstrap::model::{AstNode, StaticNode};
 use bootstrap::scalar::{verify_primitive, verify_literal};
 use bootstrap::declarations::nominal_declaration;
@@ -87,14 +88,14 @@ pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         let start = nodes[constant].start;
         let name = &source[nodes[constant].name_start..nodes[constant].name_end];
         let parent = nodes[constant].parent;
-        if constant_name_reserved(&name[0..name.len()], parent != 0) { return report_violation(1, start); }
+        if constant_name_reserved(&name[0..name.len()], parent != 0) { return report_violation_site(1, start, 68); }
         let ty = constant_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(constant));
-        if ty == 0 { return report_violation(1, start); }
+        if ty == 0 { return report_violation_site(1, start, 69); }
         let expression = graph[graph[constant].first_child].next_sibling;
         let negative = nodes[expression].kind == 12;
         let literal = if negative { graph[expression].first_child } else { expression };
         if verify_literal(&source[0..source.len()], &nodes[literal], ty, negative) < 0 {
-            return report_violation(1, nodes[literal].start);
+            return report_violation_site(1, nodes[literal].start, 70);
         }
         if parent == 0 {
             let mut item = graph[0].first_child;
@@ -102,7 +103,7 @@ pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                 let kind = nodes[item].kind;
                 if item != constant && (kind == 76 || kind == 1 || kind == 35 || kind == 64) {
                     let other = &source[nodes[item].name_start..nodes[item].name_end];
-                    if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                    if name.content_eq(&other[0..other.len()]) { return report_violation_site(1, start, 71); }
                 }
                 item = graph[item].next_sibling;
             }
@@ -113,7 +114,7 @@ pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
             let mut field = graph[nominal].first_child;
             while nodes[field].kind == 31 {
                 let other = &source[nodes[field].name_start..nodes[field].name_end];
-                if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                if name.content_eq(&other[0..other.len()]) { return report_violation_site(1, start, 72); }
                 field = graph[field].next_sibling;
             }
             let mut item = graph[0].first_child;
@@ -125,7 +126,7 @@ pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
                         while entry != 0 {
                             if entry != constant {
                                 let other = &source[nodes[entry].name_start..nodes[entry].name_end];
-                                if name.content_eq(&other[0..other.len()]) { return report_violation(1, start); }
+                                if name.content_eq(&other[0..other.len()]) { return report_violation_site(1, start, 73); }
                             }
                             entry = graph[entry].next_sibling;
                         }

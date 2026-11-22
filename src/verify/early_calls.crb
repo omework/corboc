@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::process_arguments::{split_callee,split_receiver};
 use bootstrap::declarations::nominal_declaration;
@@ -22,23 +23,23 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let kind = nodes[node].kind;
     if is_utf8_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node)) {
         if !result_type(copy(expected)) || result_payload(copy(expected), true) != argument_text_type() || mode == 2 {
-            return 0 - violation(1, nodes[node].start);
+            return 0 - violation_site(1, nodes[node].start, 757);
         }
         let error_type = result_payload(copy(expected), false);
-        if error_type < 3000000 || error_type >= 4000000 { return 0 - violation(1, nodes[node].start); }
+        if error_type < 3000000 || error_type >= 4000000 { return 0 - violation_site(1, nodes[node].start, 758); }
         let error = node_index(error_type - 3000000);
         let variant = graph[error].first_child;
         if nodes[error].kind != 29 || variant == 0 || graph[variant].next_sibling != 0 || graph[variant].first_child != 0 {
-            return 0 - violation(1, nodes[node].start);
+            return 0 - violation_site(1, nodes[node].start, 759);
         }
         let argument = graph[child].next_sibling;
-        if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(1, nodes[node].start); }
+        if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(1, nodes[node].start, 760); }
         let checked = check_slice_argument(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(argument), 744, 0, false);
         if checked < 0 { return checked; }
-        values[node] = CheckedValue { ty: copy(expected), state: 1, mutable: false,
+        values[node] = CheckedValue{ ty: copy(expected), state: 1, mutable: false,
             target: values[argument].target, loan_parent: values[argument].loan_parent,
-            origin_call: argument, writable: false };
+            origin_call: argument, writable: false }; record_checked(&values[0..values.len()],node);
         return expected;
     }
     if kind == 15 && nodes[child].kind == 36 {

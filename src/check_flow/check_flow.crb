@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::tuples::{tuple_conditional,tuple_value};
 use bootstrap::scalar_options::{scalar_option, checked_option_payload, option_borrow, copy_option_borrow, option_allocation, option_handle, record_borrow, slice_borrow, slice_borrow_type};
 use bootstrap::places::inline_array;
@@ -72,7 +74,7 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
     let yes = graph[test].next_sibling;
     let no = graph[yes].next_sibling;
     if nodes[yes].kind != 2 || (no != 0 && nodes[no].kind != 2 && nodes[no].kind != 26) { return (9, 0); }
-    if value_context && no == 0 { return (violation(1, nodes[branch].start), 0); }
+    if value_context && no == 0 { return (violation_site(1, nodes[branch].start, 9), 0); }
     let arm_result = if value_context { 0 - result - 1 } else { copy(result) };
     let test_type = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], test, 3, 0);
@@ -102,7 +104,7 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
         let exclusive = values[binding].writable;
         let loan_parent = values[binding].loan_parent;
         let origin_call = values[binding].origin_call;
-        values[binding] = CheckedValue { ty: ty, state: before, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
+        values[binding] = CheckedValue{ ty: ty, state: before, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
         binding = binding + 1;
     }
     let mut no_exit: i64 = 0;
@@ -135,7 +137,7 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
         } else if !left_returns && !right_returns {
             // A scalar result is encoded as its type plus four in the block outcome.
             if yes_exit < 5 || no_exit < 5 { return (9, 0); }
-            if yes_exit != no_exit { return (violation(1, nodes[branch].start), 0); }
+            if yes_exit != no_exit { return (violation_site(1, nodes[branch].start, 10), 0); }
         }
     }
     if !value_context && yes_exit != 0 && no_exit != 0 {
@@ -156,7 +158,7 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
             let exclusive = values[binding].writable;
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
-            values[binding] = CheckedValue { ty: ty, state: joined, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
+            values[binding] = CheckedValue{ ty: ty, state: joined, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
         }
         binding = binding + 1;
     }
@@ -200,7 +202,7 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
                     let hint = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], &values[0..values.len()], expression);
                     if hint > 0 && hint <= 7 {
-                        if expected > 0 && expected != hint { return (violation(1, nodes[cursor].start), 0); }
+                        if expected > 0 && expected != hint { return (violation_site(1, nodes[cursor].start, 11), 0); }
                         expected = hint;
                     }
                 }
@@ -241,8 +243,8 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
             let exclusive = values[binding].writable;
-            values[binding] = CheckedValue { ty: ty, state: joined, mutable: mutable,
-                target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
+            values[binding] = CheckedValue{ ty: ty, state: joined, mutable: mutable,
+                target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
             binding = graph[binding].visible;
         }
         if !changed {
@@ -257,12 +259,12 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
                 let loan_parent = values[binding].loan_parent;
                 let origin_call = values[binding].origin_call;
                 let exclusive = values[binding].writable;
-                values[binding] = CheckedValue { ty: ty, state: state, mutable: mutable,
-                    target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
+                values[binding] = CheckedValue{ ty: ty, state: state, mutable: mutable,
+                    target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
                 binding = graph[binding].visible;
             }
             let ty = loop_edges[0].breaks;
-            if receiver != 0 && ty == 0 { return (violation(1, nodes[node].start), 0); }
+            if receiver != 0 && ty == 0 { return (violation_site(1, nodes[node].start, 12), 0); }
             return (0, ty);
         }
     }
@@ -286,7 +288,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
     let mut nominal: u64 = 0;
     let owner = values[base].ty;
     if owner == 70 && nodes[subject].kind == 7 {
-        if values[base].state != 1 { return (violation(6, nodes[subject].start), 0); }
+        if values[base].state != 1 { return (violation_site(6, nodes[subject].start, 13), 0); }
         let arm = graph[subject].next_sibling;
         let pattern = graph[arm].first_child;
         let body = graph[pattern].next_sibling;
@@ -302,7 +304,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
 
     if nodes[which].kind == 7 && (owner == 310 || owner == 301 || (owner == 734 && borrowed)) {
         if values[base].state != 1 || !live_owned_fields(&graph[0..graph.len()], &values[0..values.len()], copy(base)) {
-            return (violation(4, nodes[which].start), 0);
+            return (violation_site(4, nodes[which].start, 14), 0);
         }
         let constructor = values[base].origin_call;
         let name = if nodes[constructor].kind == 4 || nodes[constructor].kind == 29 { copy(constructor) } else { graph[constructor].first_child };
@@ -329,9 +331,9 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
             copy(base), copy(subject), (!borrowed && !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], base)) || graph[subject].mutable);
-        if conflict > 0 { return (violation(5, nodes[subject].start), 0); }
+        if conflict > 0 { return (violation_site(5, nodes[subject].start, 15), 0); }
         if conflict < 0 { return (9, 0); }
-        if borrowed && graph[subject].mutable && !(if owner==734{values[base].writable}else{values[base].mutable}) { return (violation(5, nodes[subject].start), 0); }
+        if borrowed && graph[subject].mutable && !(if owner==734{values[base].writable}else{values[base].mutable}) { return (violation_site(5, nodes[subject].start, 16), 0); }
         if !borrowed {
             if owner == 301 { return (9, 0); }
             if !implicit_copy(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], base) {
@@ -377,17 +379,17 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         if nodes[body].kind != 2 { return (9, 0); }
         let mut absent = false;
         if wildcard_pattern(&source[0..source.len()], &nodes[0..nodes.len()], pattern) {
-            if wildcard_seen || graph[arm].next_sibling != 0 { return (violation(1, nodes[pattern].start), 0); }
-            if !borrowed && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], base) { return (violation(8, nodes[pattern].start), 0); }
+            if wildcard_seen || graph[arm].next_sibling != 0 { return (violation_site(1, nodes[pattern].start, 17), 0); }
+            if !borrowed && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], base) { return (violation_site(8, nodes[pattern].start, 18), 0); }
             wildcard_seen = true;
         } else if nominal != 0 {
             if nodes[pattern].kind != 53 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(pattern)) != nominal {
-                return (violation(1, nodes[pattern].start), 0);
+                return (violation_site(1, nodes[pattern].start, 19), 0);
             }
             let variant = pattern_variant(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(pattern), copy(nominal));
-            if variant == 0 || seen[variant] { return (violation(1, nodes[pattern].start), 0); }
+            if variant == 0 || seen[variant] { return (violation_site(1, nodes[pattern].start, 20), 0); }
             seen[variant] = true;
             let mut field = graph[pattern].first_child;
             let first = graph[variant].first_child;
@@ -398,7 +400,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     declared = graph[declared].next_sibling;
                     supplied = graph[supplied].next_sibling;
                 }
-                if declared != 0 || supplied != 0 { return (violation(1, nodes[pattern].start), 0); }
+                if declared != 0 || supplied != 0 { return (violation_site(1, nodes[pattern].start, 21), 0); }
             }
             let completed = !borrowed && values[base].writable && graph[variant].first_child == 0;
             if completed {
@@ -406,16 +408,16 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 let captures = values[member].origin_call;
                 complete_task(&mut values[0..values.len()], captures, copy(pattern));
             } else if !borrowed && field == 0 && dependent_handle(&graph[0..graph.len()],
-                &values[0..values.len()], copy(base)) { return (violation(8, nodes[pattern].start), 0); }
+                &values[0..values.len()], copy(base)) { return (violation_site(8, nodes[pattern].start, 22), 0); }
             while field != 0 {
                 let declared = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], copy(variant), copy(field));
-                if declared == 0 { return (violation(1, nodes[field].start), 0); }
+                if declared == 0 { return (violation_site(1, nodes[field].start, 23), 0); }
                 let mut prior = graph[pattern].first_child;
                 while prior != field {
                     let same = verification_field(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(variant), copy(prior));
-                    if same == declared { return (violation(1, nodes[field].start), 0); }
+                    if same == declared { return (violation_site(1, nodes[field].start, 24), 0); }
                     prior = graph[prior].next_sibling;
                 }
                 let annotation = graph[declared].first_child;
@@ -433,17 +435,17 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         if graph[binder].declaration {
                             let result = graph[annotation].first_child;
                             if handle == 3301 {
-                                values[result] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-                                    loan_parent: 0, origin_call: copy(result), writable: false };
+                                values[result] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
+                                    loan_parent: 0, origin_call: copy(result), writable: false }; record_checked(&values[0..values.len()],result);
                             }
-                            values[binder] = CheckedValue { ty: copy(handle), state: 1, mutable: false, target: 0,
-                                loan_parent: if handle == 3301 { result } else { 0 }, origin_call: 0, writable: false };
+                            values[binder] = CheckedValue{ ty: copy(handle), state: 1, mutable: false, target: 0,
+                                loan_parent: if handle == 3301 { result } else { 0 }, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binder);
                         }
                     } else if member == 0 || values[member].ty != handle { return (9, 0); }
                     else if graph[binder].declaration {
                         copy_task_summary(&mut values[0..values.len()], member, binder, handle, false);
                     } else if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], member) {
-                        return (violation(8, nodes[field].start), 0);
+                        return (violation_site(8, nodes[field].start, 25), 0);
                     }
                     field = graph[field].next_sibling;
                     continue;
@@ -484,8 +486,8 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     }
                     let edge = if bound == 734 && values[values[base].loan_parent].ty >= 201
                         && values[values[base].loan_parent].ty <= 207 { values[base].loan_parent } else { 0 };
-                    values[binder] = CheckedValue { ty: bound, state: 1, mutable: false, target: root,
-                        loan_parent: edge, origin_call: shape, writable: mutable };
+                    values[binder] = CheckedValue{ ty: bound, state: 1, mutable: false, target: root,
+                        loan_parent: edge, origin_call: shape, writable: mutable }; record_checked(&values[0..values.len()],binder);
                 }
                 field = graph[field].next_sibling;
             }
@@ -494,7 +496,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             let binder = graph[pattern].first_child;
             if nodes[pattern].kind != 42 || binder == 0 || graph[binder].next_sibling != 0
                 || (variant == 1 && ok_seen) || (variant == 2 && err_seen) || variant == 0 {
-                return (violation(1, nodes[pattern].start), 0);
+                return (violation_site(1, nodes[pattern].start, 26), 0);
             }
             if variant == 1 { ok_seen = true; } else { err_seen = true; }
             let payload = result_payload(copy(ty), variant == 1);
@@ -519,10 +521,10 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 let retained = bound == 300 || bound == 2000138 || (bound >= 5000000000000000000 && bound < 6000000000000000000);
                 let constructor=values[holder].origin_call;
                 if bound==300 && constructor<nodes.len() as u64 && nodes[constructor].kind==37{shape=copy(constructor);}
-                values[binder] = CheckedValue { ty: bound, state: 1, mutable: false,
+                values[binder] = CheckedValue{ ty: bound, state: 1, mutable: false,
                     target: if retained { values[holder].target } else { 0 },
                     loan_parent: if retained { values[holder].loan_parent } else { 0 },
-                    origin_call: if shape != 0 { shape } else if retained { constructor } else { 0 }, writable: false };
+                    origin_call: if shape != 0 { shape } else if retained { constructor } else { 0 }, writable: false }; record_checked(&values[0..values.len()],binder);
                 }
             } else if graph[binder].first_child != 0
                 || (nodes[binder].kind != 41 && !(unit_result_payload(payload) && nodes[binder].kind == 43)) {
@@ -535,7 +537,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             let binder = graph[pattern].first_child;
             if spelling.content_eq(&some[..]) && nodes[pattern].kind == 42 && binder != 0
                 && graph[binder].next_sibling == 0 {
-                if ok_seen { return (violation(1, nodes[pattern].start), 0); }
+                if ok_seen { return (violation_site(1, nodes[pattern].start, 27), 0); }
                 ok_seen = true;
                 let option = if nodes[subject].kind == 7 { copy(base) } else { copy(subject) };
                 if ty == 951 {
@@ -545,14 +547,14 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     if graph[binder].declaration {
                         copy_task_summary(&mut values[0..values.len()], payload, copy(binder), handle, false);
                     } else if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], payload) {
-                        return (violation(8, nodes[pattern].start), 0);
+                        return (violation_site(8, nodes[pattern].start, 28), 0);
                     }
                 } else if ty >= 2801 && ty <= 2807 {
                     let pool = values[option].target;
                     absent = pool == 0;
                     if graph[binder].declaration && pool != 0 {
-                        values[binder] = CheckedValue { ty: 200 + ty % 10, state: 1, mutable: false,
-                            target: pool, loan_parent: 0, origin_call: 0, writable: false };
+                        values[binder] = CheckedValue{ ty: 200 + ty % 10, state: 1, mutable: false,
+                            target: pool, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binder);
                     }
                 } else if dependent_option(copy(ty)) {
                     if values[option].origin_call == 0 { return (9, 0); }
@@ -563,12 +565,12 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     if graph[binder].declaration {
                         copy_task_summary(&mut values[0..values.len()], option, binder, nested_checked_option(copy(ty)), false);
                     } else if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], option) {
-                        return (violation(8, nodes[pattern].start), 0);
+                        return (violation_site(8, nodes[pattern].start, 29), 0);
                     }
                 } else if option_allocation(copy(ty)) != 0 {
                     let pool = values[option].target;
                     absent = pool == 0;
-                    if !absent && values[pool].state != 1 { return (violation(4, nodes[subject].start), 0); }
+                    if !absent && values[pool].state != 1 { return (violation_site(4, nodes[subject].start, 30), 0); }
                     if graph[binder].declaration && !absent {
                         let resource = option_allocation(copy(ty));
                         copy_task_summary(&mut values[0..values.len()], option, binder, allocation_kind(resource), false);
@@ -579,7 +581,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     if graph[binder].declaration {
                         copy_task_summary(&mut values[0..values.len()], payload, binder, handle, false);
                     } else if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], payload) {
-                        return (violation(8, nodes[pattern].start), 0);
+                        return (violation_site(8, nodes[pattern].start, 31), 0);
                     }
                 } else if option_borrow(copy(ty)) != 0 {
                     let reference = option_borrow(copy(ty));
@@ -604,9 +606,9 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         }
                         let constructor=values[option].origin_call;
                         if bound==300 && constructor<nodes.len() as u64 && nodes[constructor].kind==37 { shape=constructor; }
-                        values[binder] = CheckedValue { ty: bound,
+                        values[binder] = CheckedValue{ ty: bound,
                             state: 1, mutable: false, target: values[option].target,
-                            loan_parent: values[option].loan_parent, origin_call: shape, writable: false };
+                            loan_parent: values[option].loan_parent, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],binder);
                     }
                 } else if graph[binder].declaration {
                     let option = if nodes[subject].kind == 7 { copy(base) } else { copy(subject) };
@@ -615,35 +617,35 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let exclusive = ty >= 940;
                     if ty >= 920 {
                         target = values[option].target;
-                        if target == 0 || values[target].state != 1 { return (violation(4, nodes[subject].start), 0); }
+                        if target == 0 || values[target].state != 1 { return (violation_site(4, nodes[subject].start, 32), 0); }
                         let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
                             &graph[0..graph.len()], copy(target), copy(subject), copy(exclusive));
-                        if access > 0 { return (violation(5, nodes[subject].start), 0); }
+                        if access > 0 { return (violation_site(5, nodes[subject].start, 33), 0); }
                         if access < 0 { return (9, 0); }
                         binder_ty = binder_ty + (if exclusive { 40 } else { 20 });
                     }
-                    values[binder] = CheckedValue { ty: binder_ty, state: 1, mutable: false,
-                        target: target, loan_parent: 0, origin_call: 0, writable: exclusive };
+                    values[binder] = CheckedValue{ ty: binder_ty, state: 1, mutable: false,
+                        target: target, loan_parent: 0, origin_call: 0, writable: exclusive }; record_checked(&values[0..values.len()],binder);
                 }
             } else if spelling.content_eq(&none[..]) && binder == 0 {
-                if err_seen { return (violation(1, nodes[pattern].start), 0); }
+                if err_seen { return (violation_site(1, nodes[pattern].start, 34), 0); }
                 err_seen = true;
-            } else { return (violation(1, nodes[pattern].start), 0); }
+            } else { return (violation_site(1, nodes[pattern].start, 35), 0); }
         } else {
             let payload = match_payload(copy(pattern), &nodes[0..nodes.len()], &graph[0..graph.len()], &source[0..source.len()], task_output(copy(ty)));
-            if payload < 0 { return (violation(1, nodes[pattern].start), 0); }
+            if payload < 0 { return (violation_site(1, nodes[pattern].start, 36), 0); }
             if payload == 70 {
-                if err_seen { return (violation(1, nodes[pattern].start), 0); }
+                if err_seen { return (violation_site(1, nodes[pattern].start, 37), 0); }
                 err_seen = true;
             } else {
-                if ok_seen { return (violation(1, nodes[pattern].start), 0); }
+                if ok_seen { return (violation_site(1, nodes[pattern].start, 38), 0); }
                 ok_seen = true;
             }
             let binder = graph[pattern].first_child;
             let option = if nodes[subject].kind == 7 { copy(base) } else { copy(subject) };
             if payload == 310 && !graph[binder].declaration
                 && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], values[option].loan_parent) {
-                return (violation(8, nodes[pattern].start), 0);
+                return (violation_site(8, nodes[pattern].start, 39), 0);
             }
             if payload != 0 && graph[binder].declaration {
                 let pool = if payload >= 297 && payload <= 299 { values[option].target } else { 0 };
@@ -653,11 +655,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let constructor = values[record].origin_call;
                     let field = values[record].loan_parent;
                     if nodes[constructor].kind != 37 && !(payload == 310 && nodes[constructor].kind == 4) { return (9, 0); }
-                    values[binder] = CheckedValue { ty: copy(payload), state: 1, mutable: false, target: target,
-                        loan_parent: field, origin_call: constructor, writable: false };
+                    values[binder] = CheckedValue{ ty: copy(payload), state: 1, mutable: false, target: target,
+                        loan_parent: field, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],binder);
                 } else {
-                    values[binder] = CheckedValue { ty: payload, state: 1, mutable: false, target: pool,
-                        loan_parent: 0, origin_call: 0, writable: false };
+                    values[binder] = CheckedValue{ ty: payload, state: 1, mutable: false, target: pool,
+                        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binder);
                 }
             }
         }
@@ -682,7 +684,7 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     return (9, 0);
                 }
             }
-            if output != 0 && output != outcome { return (violation(1, nodes[arm].start), 0); }
+            if output != 0 && output != outcome { return (violation_site(1, nodes[arm].start, 40), 0); }
             output = copy(outcome);
         }
         if reaches_join { continues = true; }
@@ -702,11 +704,11 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         arm = graph[arm].next_sibling;
     }
     if nominal == 0 {
-        if !wildcard_seen && (!ok_seen || !err_seen) { return (violation(1, nodes[expression].start), 0); }
+        if !wildcard_seen && (!ok_seen || !err_seen) { return (violation_site(1, nodes[expression].start, 41), 0); }
     } else {
         let mut variant = graph[nominal].first_child;
         while variant != 0 {
-            if !wildcard_seen && !seen[variant] { return (violation(1, nodes[expression].start), 0); }
+            if !wildcard_seen && !seen[variant] { return (violation_site(1, nodes[expression].start, 42), 0); }
             variant = graph[variant].next_sibling;
         }
     }
@@ -726,8 +728,8 @@ fn set_state(values: &mut [CheckedValue], binding: u64, state: i64) {
     let loan_parent = values[binding].loan_parent;
     let origin_call = values[binding].origin_call;
     let exclusive = values[binding].writable;
-    values[binding] = CheckedValue { ty: ty, state: state, mutable: mutable, target: target,
-        loan_parent: loan_parent, origin_call: origin_call, writable: exclusive };
+    values[binding] = CheckedValue{ ty: ty, state: state, mutable: mutable, target: target,
+        loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
 }
 
 

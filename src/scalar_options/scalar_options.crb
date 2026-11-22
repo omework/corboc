@@ -1,3 +1,6 @@
+use bootstrap::verify::type_violation;
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::process_arguments::{argument_text_type, shared_text_annotation, check_text};
 use bootstrap::results::payload_type;
 use bootstrap::places::inline_array;
@@ -145,12 +148,12 @@ fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let mut shape: u64 = 0;
     let binding = if kind == 7 {
         let binding = graph[expression].binding;
-        if values[binding].state != 1 { return 0 - violation(6, start); }
+        if values[binding].state != 1 { return 0 - violation_site(6, start, 452); }
         if values[binding].ty != 734 || values[binding].writable != exclusive {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 453);
         }
         if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
-            return 0 - violation(4, start);
+            return 0 - violation_site(4, start, 454);
         }
         target = values[binding].target;
         shape = values[binding].origin_call;
@@ -158,16 +161,16 @@ fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         binding
     } else if kind == 13 {
         let place = graph[expression].first_child;
-        if graph[expression].mutable != exclusive { return 0 - violation(1, start); }
+        if graph[expression].mutable != exclusive { return 0 - violation_site(1, start, 455); }
         let (actual, root, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], &mut values[0..values.len()], place);
         if actual < 0 { return actual; }
         if (actual != 300 && actual != 310) || (values[root].ty != 300 && values[root].ty != 310 && values[root].ty != 734) {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 456);
         }
         let reborrow = values[root].ty == 734;
         if exclusive && !(if reborrow { values[root].writable } else { values[root].mutable }) {
-            return 0 - violation(5, start);
+            return 0 - violation_site(5, start, 457);
         }
         target = if reborrow { values[root].target } else { copy(root) };
         parent = if reborrow { copy(root) } else { 0 };
@@ -175,18 +178,18 @@ fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         root
     } else { return -9; };
     if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(shape)) != nominal {
-        return 0 - violation(1, start);
+        return 0 - violation_site(1, start, 458);
     }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(binding), expression, copy(exclusive) || kind == 7);
-    if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
+    if conflict != 0 { return if conflict > 0 { 0 - violation_site(5, start, 459) } else { -9 }; }
     if kind == 7 {
         let mutable = values[binding].mutable;
-        values[binding] = CheckedValue { ty: 734, state: 2, mutable: mutable, target: copy(target),
-            loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive) };
+        values[binding] = CheckedValue{ ty: 734, state: 2, mutable: mutable, target: copy(target),
+            loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive) }; record_checked(&values[0..values.len()],binding);
     }
-    values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: shape, writable: exclusive };
+    values[result] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],result);
     return ty;
 }
 
@@ -381,10 +384,10 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             let field=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nominal,copy(projection));if field==0{return -9;}
             let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],graph[field].first_child);
             let mutable=borrow_exclusive(copy(reference));
-            if slice!=expected || graph[expression].mutable!=mutable || (mutable && (!exclusive || !values[binding].writable)){return 0-violation(1,start);}
-            let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(expression),copy(mutable));if conflict!=0{return if conflict>0{0-violation(5,start)}else{-9};}
+            if slice!=expected || graph[expression].mutable!=mutable || (mutable && (!exclusive || !values[binding].writable)){return 0-violation_site(1, start, 460);}
+            let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(binding),copy(expression),copy(mutable));if conflict!=0{return if conflict>0{0-violation_site(5, start, 461)}else{-9};}
             let root=if values[binding].ty==734{values[binding].target}else{copy(binding)};
-            values[result]=CheckedValue{ty:copy(ty),state:1,mutable:false,target:root,loan_parent:0,origin_call:shape,writable:mutable};return ty;
+            values[result] = CheckedValue{ty:copy(ty),state:1,mutable:false,target:root,loan_parent:0,origin_call:shape,writable:mutable}; record_checked(&values[0..values.len()],result);return ty;
         }
         let checked = if kind == 7 {
             move_slice_argument(&nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -395,14 +398,14 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         } else { return -9; };
         if checked < 0 { return checked; }
         if checked == 0 || values[expression].ty != expected
-            || values[expression].writable != borrow_exclusive(copy(reference)) { return 0 - violation(1, start); }
+            || values[expression].writable != borrow_exclusive(copy(reference)) { return 0 - type_violation(start,expected,values[expression].ty,462); }
         if expected == 748 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], values[expression].origin_call) != borrow_shape(copy(reference)) {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 463);
         }
         if expected == 749 && inline_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], values[expression].origin_call) != (reference - 33000000) / 2 {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 464);
         }
         copy_option_borrow(&mut values[0..values.len()], expression, result, copy(ty), false);
         return ty;
@@ -423,12 +426,12 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             &graph[0..graph.len()], values[binding].origin_call);
         let field = shared_field_place(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(expression), binding, layout, reference);
-        if field == 0 { return 0 - violation(1, start); }
+        if field == 0 { return 0 - violation_site(1, start, 465); }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
             &graph[0..graph.len()], copy(formal), expression, false);
-        if conflict != 0 { return if conflict > 0 { 0 - violation(5, start) } else { -9 }; }
-        values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false,
-            target: formal, loan_parent: 0, origin_call: field, writable: false };
+        if conflict != 0 { return if conflict > 0 { 0 - violation_site(5, start, 466) } else { -9 }; }
+        values[result] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
+            target: formal, loan_parent: 0, origin_call: field, writable: false }; record_checked(&values[0..values.len()],result);
         return ty;
     }
     let mut parent: u64 = 0;
@@ -438,33 +441,33 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         let operand = if kind == 7 { copy(expression) } else { graph[child].first_child };
         if nodes[operand].kind != 7 { return -9; }
         binding = graph[operand].binding;
-        if values[binding].state != 1 { return 0 - violation(6, start); }
+        if values[binding].state != 1 { return 0 - violation_site(6, start, 467); }
         if values[binding].ty >= 60 || loan_element(&values[0..values.len()], copy(binding)) != element
             || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
-            return 0 - violation(1, start);
+            return 0 - violation_site(1, start, 468);
         }
         target = values[binding].target;
         if kind == 7 {
-            if values[binding].writable != mutable { return 0 - violation(1, start); }
+            if values[binding].writable != mutable { return 0 - violation_site(1, start, 469); }
             parent = values[binding].loan_parent;
         } else {
-            if graph[expression].mutable != mutable { return 0 - violation(1, start); }
-            if mutable && !values[binding].writable { return 0 - violation(5, start); }
+            if graph[expression].mutable != mutable { return 0 - violation_site(1, start, 470); }
+            if mutable && !values[binding].writable { return 0 - violation_site(5, start, 471); }
             parent = copy(binding);
         }
     } else if kind == 13 {
-        if graph[expression].mutable != mutable { return 0 - violation(1, start); }
+        if graph[expression].mutable != mutable { return 0 - violation_site(1, start, 472); }
         if nodes[child].kind == 7 {
             binding = graph[child].binding;
-            if values[binding].state != 1 || values[binding].target != 0 { return 0 - violation(4, start); }
-            if values[binding].ty != element { return 0 - violation(1, start); }
-            if mutable && !values[binding].mutable { return 0 - violation(5, start); }
+            if values[binding].state != 1 || values[binding].target != 0 { return 0 - violation_site(4, start, 473); }
+            if values[binding].ty != element { return 0 - violation_site(1, start, 474); }
+            if mutable && !values[binding].mutable { return 0 - violation_site(5, start, 475); }
             target = copy(binding);
         } else {
             let (actual, root) = check_scalar_projection(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], child, copy(mutable), true);
             if actual < 0 { return actual; }
-            if actual != element { return 0 - violation(1, start); }
+            if actual != element { return 0 - violation_site(1, start, 476); }
             binding = root;
             target = if values[binding].target == 0 { copy(binding) } else { values[binding].target };
             if target != binding || values[binding].target == binding { parent = copy(binding); }
@@ -472,7 +475,7 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     } else { return -9; }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(binding), expression, kind == 7 || copy(mutable));
-    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict > 0 { return 0 - violation_site(5, start, 477); }
     if conflict < 0 { return -9; }
     if kind == 7 {
         let old_ty = values[binding].ty;
@@ -480,11 +483,11 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         let old_parent = values[binding].loan_parent;
         let old_origin = values[binding].origin_call;
         let old_mutable = values[binding].mutable;
-        values[binding] = CheckedValue { ty: old_ty, state: 2, mutable: old_mutable,
-            target: old_target, loan_parent: old_parent, origin_call: old_origin, writable: copy(mutable) };
+        values[binding] = CheckedValue{ ty: old_ty, state: 2, mutable: old_mutable,
+            target: old_target, loan_parent: old_parent, origin_call: old_origin, writable: copy(mutable) }; record_checked(&values[0..values.len()],binding);
     }
-    values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: 0, writable: mutable };
+    values[result] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: target,
+        loan_parent: parent, origin_call: 0, writable: mutable }; record_checked(&values[0..values.len()],result);
     return ty;
 }
 
@@ -498,8 +501,8 @@ pub fn copy_option_borrow(values: &mut [CheckedValue], from: u64, to: u64, ty: i
     let parent = values[from].loan_parent;
     let exclusive = values[from].writable;
     let origin = values[from].origin_call;
-    values[to] = CheckedValue { ty: ty, state: 1, mutable: mutable, target: target,
-        loan_parent: parent, origin_call: origin, writable: exclusive };
+    values[to] = CheckedValue{ ty: ty, state: 1, mutable: mutable, target: target,
+        loan_parent: parent, origin_call: origin, writable: exclusive }; record_checked(&values[0..values.len()],to);
 }
 
 pub fn resource_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
@@ -555,18 +558,18 @@ pub fn check_option_resource(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     };
     if actual < 0 { return actual; }
     if actual != allocation_kind(copy(payload)) || values[expression].state != 1 {
-        return 0 - violation(1, nodes[expression].start);
+        return 0 - violation_site(1, nodes[expression].start, 478);
     }
     if nominal_allocation(copy(payload)) {
         let shape = values[expression].origin_call;
         if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], shape)
-            != allocation_shape(payload) { return 0 - violation(1, nodes[expression].start); }
+            != allocation_shape(payload) { return 0 - violation_site(1, nodes[expression].start, 479); }
     }
     if allocation {
         copy_task_summary(&mut values[0..values.len()], expression, result, copy(ty), false);
     } else {
-        values[result] = CheckedValue { ty: copy(ty), state: 1, mutable: false, target: expression,
-            loan_parent: 0, origin_call: 0, writable: false };
+        values[result] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: expression,
+            loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],result);
     }
     return ty;
 }

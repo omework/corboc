@@ -1,3 +1,4 @@
+use bootstrap::lowering_types::{is_tuple,tuple_count,tuple_part,tuple_emitted};
 use bootstrap::lowering_c::c_identifier;
 use bootstrap::model::{AstNode, StaticNode};
 use bootstrap::lowering_types::{c_type, number, signed, nominal_type, handle_type, unsigned, wide_array, array_item, array_length, array_name, array_has_owners};
@@ -12,7 +13,8 @@ pub fn record_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], t
         let mut field = graph[group].first_child;
         while field != 0 {
             let ty = types[field];
-            if wide_array(copy(ty)) {
+            if is_tuple(copy(ty)){tuple_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],&mut seen[0..seen.len()],ty);}
+            else if wide_array(copy(ty)) {
                 array_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
                     &mut seen[0..seen.len()], copy(ty));
             } else if ty >= 3000000 && ty < 4000000 {
@@ -82,7 +84,8 @@ pub fn array_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], ty
     if index == nodes.len() as u64 || seen[index] { return; }
     seen[index] = true;
     let item = array_item(copy(ty));
-    if item >= 3000000 && item < 4000000 {
+    if is_tuple(copy(item)){tuple_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],&mut seen[0..seen.len()],copy(item));}
+    else if item >= 3000000 && item < 4000000 {
         record_definition(&source[0..source.len()],&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
             &mut seen[0..seen.len()], nominal_type(copy(item)));
     }
@@ -90,4 +93,17 @@ pub fn array_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], ty
     let count = array_length(copy(ty));
     number(if count == 0 { 1 } else { count });
     { let code: [u8;4] = [93,59,125,32]; byte_text(&code[..]); } array_name(ty); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+}
+
+/// Emit a structural tuple only after every owned field layout is available.
+pub fn tuple_definition(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&[i64],seen:&mut [bool],ty:i64){
+    if !is_tuple(copy(ty)) || tuple_emitted(copy(ty)){return;}
+    let count=tuple_count(copy(ty));let mut i:u64=0;
+    while i<count{let field=tuple_part(copy(ty),copy(i),copy(count));
+        if field>=3000000 && field<4000000{record_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],&mut seen[0..seen.len()],nominal_type(field));}
+        i+=1;
+    }
+    let begin="typedef struct{";let bytes=begin.as_bytes();byte_text(bytes);
+    i=0;while i<count{c_type(tuple_part(copy(ty),copy(i),copy(count)));character(32);character(109);number(copy(i));character(59);i+=1;}
+    character(125);character(32);c_type(ty);character(59);character(10);
 }

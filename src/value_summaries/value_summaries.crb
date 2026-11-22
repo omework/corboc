@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::places::{inline_array_type, inline_array, value_record};
 use bootstrap::ownership::plain_structure;
 use bootstrap::results::plain_data_type;
@@ -92,7 +93,7 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
         if actual==0{return 0;}
         let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return 0;}
         let ty=values[actual].ty;let target=values[actual].target;let parent=values[actual].loan_parent;let origin=values[actual].origin_call;let exclusive=values[actual].writable;
-        values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,writable:exclusive};return slot;
+        values[slot] = CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,writable:exclusive}; record_checked(&values[0..values.len()],slot);return slot;
     }
     let layout=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
     let leaf=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
@@ -101,7 +102,7 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
         let array=inline_array(copy(leaf));
         let ty=if array{leaf % 100 + 400}else{copy(leaf)};
         let shape=if array{bootstrap::lowering_types::unsigned((leaf-10000)/100)}else{copy(annotation)};
-        values[point]=CheckedValue{ty:ty,state:1,mutable:false,target:0,loan_parent:0,origin_call:shape,writable:false};return point;
+        values[point] = CheckedValue{ty:ty,state:1,mutable:false,target:0,loan_parent:0,origin_call:shape,writable:false}; record_checked(&values[0..values.len()],point);return point;
     }
     if (kind==15 || kind==16) && leaf==300 {
         let callee=summary_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(expression));if callee==0{return 0;}
@@ -118,12 +119,12 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
             let declared=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(nominal),copy(field));if declared==0{return 0;}
             let member=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),graph[field].first_child,graph[declared].first_child,depth+1);if member==0{return 0;}
             let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return 0;}
-            values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(member),loan_parent:0,origin_call:copy(field),writable:false};
-            if first==0{first=copy(entry);}else{let value=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:copy(entry),origin_call:template,writable:false};}
+            values[entry] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(member),loan_parent:0,origin_call:copy(field),writable:false}; record_checked(&values[0..values.len()],entry);
+            if first==0{first=copy(entry);}else{let value=values[last].target;let template=values[last].origin_call;values[last] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:copy(entry),origin_call:template,writable:false}; record_checked(&values[0..values.len()],last);}
             last=entry;field=graph[field].next_sibling;
         }
-        values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false};
-        values[slot]=CheckedValue{ty:300,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(expression),writable:false};return slot;
+        values[marker] = CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false}; record_checked(&values[0..values.len()],marker);
+        values[slot] = CheckedValue{ty:300,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(expression),writable:false}; record_checked(&values[0..values.len()],slot);return slot;
     }
     let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
     let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return 0;}
@@ -132,9 +133,9 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
         let target=if values[actual].target==0{copy(actual)}else{values[actual].target};let parent=if values[actual].ty==734{values[actual].loan_parent}else{0};
         let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
         let origin=if ty==734{record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),false)}else if ty>=741 && ty<=749{shape}else{copy(expression)};
-        values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,writable:if kind==13{graph[expression].mutable}else{exclusive}};return slot;
+        values[slot] = CheckedValue{ty:ty,state:1,mutable:false,target:target,loan_parent:parent,origin_call:origin,writable:if kind==13{graph[expression].mutable}else{exclusive}}; record_checked(&values[0..values.len()],slot);return slot;
     }
-    if ty>=1 && ty<=9 {values[slot]=CheckedValue{ty:ty,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};return slot;}
+    if ty>=1 && ty<=9 {values[slot] = CheckedValue{ty:ty,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],slot);return slot;}
     0
 }
 
@@ -159,7 +160,7 @@ fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
         let status=instantiate_tuple_inner(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(callee),copy(environment),output,depth+1);
         if status<0{return status;}
         let shape=values[environment].origin_call;let fields=values[environment].loan_parent;
-        values[call]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:fields,origin_call:shape,writable:false};return 475;
+        values[call] = CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:fields,origin_call:shape,writable:false}; record_checked(&values[0..values.len()],call);return 475;
     }
     if nodes[tuple].kind!=20{return -9;}
     let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return -9;}
@@ -167,13 +168,13 @@ fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
     while field!=0 && component!=0 {
         let value=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(component),copy(field),0);if value==0{return -9;}
         let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return -9;}
-        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),writable:false};
-        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false};}
+        values[entry] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),writable:false}; record_checked(&values[0..values.len()],entry);
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last] = CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false}; record_checked(&values[0..values.len()],last);}
         last=entry;field=graph[field].next_sibling;component=graph[component].next_sibling;
     }
     if field!=0 || component!=0{return -9;}
-    values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false};
-    values[call]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(annotation),writable:false};475
+    values[marker] = CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false}; record_checked(&values[0..values.len()],marker);
+    values[call] = CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(annotation),writable:false}; record_checked(&values[0..values.len()],call);475
 }
 
 fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)->u64 {
@@ -196,12 +197,12 @@ fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
     while nodes[formal].kind==3 && argument!=0 {
         let value=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(outer),copy(argument),graph[formal].first_child,depth+1);if value==0{return 0;}
         let entry=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if entry==0{return 0;}
-        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(formal),writable:false};
-        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false};}
+        values[entry] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(formal),writable:false}; record_checked(&values[0..values.len()],entry);
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last] = CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false}; record_checked(&values[0..values.len()],last);}
         last=entry;formal=graph[formal].next_sibling;argument=graph[argument].next_sibling;
     }
     if argument!=0 || nodes[formal].kind==3{return 0;}
-    values[marker]=CheckedValue{ty:5015,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false};marker
+    values[marker] = CheckedValue{ty:5015,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false}; record_checked(&values[0..values.len()],marker);marker
 }
 
 /// Instantiates return dependencies with one independent caller environment per activation.
@@ -248,15 +249,15 @@ pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:
             let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
             let origin=if ty==734{graph[annotation].first_child}else{shape};
             let exclusive=exclusive || (ty>40 && ty<60) || (ty==734 && source[nodes[annotation].start+1]==109);
-            values[root]=CheckedValue{ty:5018,state:1,mutable:copy(exclusive),target:copy(formal),loan_parent:0,origin_call:annotation,writable:false};
-            values[value]=CheckedValue{ty:ty,state:1,mutable:false,target:if borrowed{root}else{0},loan_parent:0,origin_call:origin,writable:exclusive};
+            values[root] = CheckedValue{ty:5018,state:1,mutable:copy(exclusive),target:copy(formal),loan_parent:0,origin_call:annotation,writable:false}; record_checked(&values[0..values.len()],root);
+            values[value] = CheckedValue{ty:ty,state:1,mutable:false,target:if borrowed{root}else{0},loan_parent:0,origin_call:origin,writable:exclusive}; record_checked(&values[0..values.len()],value);
         }
-        values[entry]=CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),writable:false};
-        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last]=CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false};}
+        values[entry] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),writable:false}; record_checked(&values[0..values.len()],entry);
+        if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last] = CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false}; record_checked(&values[0..values.len()],last);}
         last=entry;field=graph[field].next_sibling;
     }
-    values[marker]=CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false};
-    values[point]=CheckedValue{ty:300,state:1,mutable:graph[formal].mutable,target:0,loan_parent:copy(marker),origin_call:copy(nominal),writable:false};true
+    values[marker] = CheckedValue{ty:5012,state:1,mutable:false,target:0,loan_parent:0,origin_call:first,writable:false}; record_checked(&values[0..values.len()],marker);
+    values[point] = CheckedValue{ty:300,state:1,mutable:graph[formal].mutable,target:0,loan_parent:copy(marker),origin_call:copy(nominal),writable:false}; record_checked(&values[0..values.len()],point);true
 }
 
 /// Instantiate a returned record using the same per-field graph as tuple components.
@@ -279,8 +280,8 @@ pub fn instantiate_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     if instance == 0 || values[instance].ty != 300 { return -9; }
     let members = values[instance].loan_parent;
     let shape = values[instance].origin_call;
-    values[call] = CheckedValue { ty: 300, state: 1, mutable: false, target: 0,
-        loan_parent: members, origin_call: shape, writable: false };
+    values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
+        loan_parent: members, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
     300
 }
 
@@ -304,5 +305,5 @@ pub fn instantiate_envelope_record(source:&[u8],nodes:&[AstNode],graph:&[StaticN
     }
     let value=instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],function,copy(call),expression,inner,0);if value==0{return -9;}
     let members=values[value].loan_parent;let shape=values[value].origin_call;
-    values[call]=CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:0,loan_parent:members,origin_call:shape,writable:false};wrapped
+    values[call] = CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:0,loan_parent:members,origin_call:shape,writable:false}; record_checked(&values[0..values.len()],call);wrapped
 }

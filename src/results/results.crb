@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::lowering_annotations::annotation_type;
 use bootstrap::lowering_types::{wrap_pool,pool_type};
 use bootstrap::model::reserve_summary;
@@ -154,7 +156,7 @@ pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], node: u64, expected: i64, variant: i64) -> i64 {
     if !result_type(copy(expected)) { return -9; }
     let argument = graph[graph[node].first_child].next_sibling;
-    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(1, nodes[node].start); }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(1, nodes[node].start, 437); }
     let payload = result_payload(copy(expected), variant == 1);
     let status = check_envelope_payload(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), copy(payload));
@@ -162,7 +164,7 @@ pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if payload>=6000000 && payload<7000000 {
         let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
         copy_task_summary(&mut values[0..values.len()],copy(argument),copy(slot),values[argument].ty,false);
-        values[node]=CheckedValue{ty:copy(expected),state:1,mutable:false,target:values[argument].target,loan_parent:slot,origin_call:0,writable:false};
+        values[node] = CheckedValue{ty:copy(expected),state:1,mutable:false,target:values[argument].target,loan_parent:slot,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);
     }else{copy_task_summary(&mut values[0..values.len()], argument, node, copy(expected), false);}
     expected
 }
@@ -173,39 +175,39 @@ pub fn check_envelope_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     if payload>=6000000 && payload<7000000 {
         if nodes[argument].kind!=7{return -9;}
         let binding=graph[argument].binding;let ty=values[binding].ty;let root=values[binding].target;
-        if bootstrap::pool_results::allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],root)!=payload{return 0-violation(1,nodes[argument].start);}
+        if bootstrap::pool_results::allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],root)!=payload{return 0-violation_site(1, nodes[argument].start, 438);}
         let actual=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],argument,ty,1);if actual<0{return actual;}return 0;
     }
     let scalar = checked_result_payload(copy(payload));
     if unit_result_payload(copy(payload)) {
         if nodes[argument].kind != 19 || graph[argument].first_child != 0 {
-            return 0 - violation(1, nodes[argument].start);
+            return 0 - violation_site(1, nodes[argument].start, 439);
         }
     } else if scalar != 0 || inline_array(copy(payload)) {
         let ty = if scalar != 0 { scalar } else { copy(payload) };
         let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(argument), copy(ty), 1);
         if actual < 0 { return actual; }
-        if actual != ty { return 0 - violation(1, nodes[argument].start); }
+        if actual != ty { return 0 - violation_site(1, nodes[argument].start, 440); }
     } else {
         let nominal = unsigned(payload - 3000000);
         let kind: i64 = if nodes[nominal].kind == 29 { 310 } else { 300 };
         if nodes[argument].kind == 37 || nodes[argument].kind == 17 {
             let name = if nodes[graph[argument].first_child].kind == 7 { graph[argument].first_child } else { copy(argument) };
             if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name) != nominal {
-                return 0 - violation(1, nodes[argument].start);
+                return 0 - violation_site(1, nodes[argument].start, 441);
             }
             let actual = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(argument), copy(argument));
             if actual < 0 { return actual; }
-            if actual != kind { return 0 - violation(1, nodes[argument].start); }
+            if actual != kind { return 0 - violation_site(1, nodes[argument].start, 442); }
         } else if nodes[argument].kind == 15 {
             let actual = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(argument), copy(kind), 1);
             if actual < 0 { return actual; }
             if actual != kind || values[argument].target != 0
                 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                    values[argument].origin_call) != nominal { return 0 - violation(1, nodes[argument].start); }
+                    values[argument].origin_call) != nominal { return 0 - violation_site(1, nodes[argument].start, 443); }
         } else if nodes[argument].kind == 7 {
             let binding = graph[argument].binding;
             let shape = values[binding].origin_call;
@@ -213,7 +215,7 @@ pub fn check_envelope_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                 || nodes[shape].kind == 37 { shape } else { graph[shape].first_child };
             if values[binding].ty != kind || values[binding].target != 0
                 || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name) != nominal {
-                return 0 - violation(1, nodes[argument].start);
+                return 0 - violation_site(1, nodes[argument].start, 444);
             }
             let status = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], argument, kind, 1);

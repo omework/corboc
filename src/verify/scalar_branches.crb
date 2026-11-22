@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::scalar::is_primitive_value;
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::scalar::{scalar_hint, verify_primitive};
@@ -52,7 +53,7 @@ fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let test = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], condition, 3, 0);
     if test < 0 { return test; }
-    if test != 3 { return 0 - violation(1, nodes[branch].start); }
+    if test != 3 { return 0 - violation_site(1, nodes[branch].start, 879); }
     let hint = scalar_hint(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &values[0..values.len()], copy(left), copy(right), expected);
     let result = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -62,7 +63,7 @@ fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let other = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(right), copy(result), 0);
     if other < 0 { return other; }
-    if result != other { return 0 - violation(1, nodes[branch].start); }
+    if result != other { return 0 - violation_site(1, nodes[branch].start, 880); }
     if consume {
         let conflict = scalar_moves(&nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(branch), false);
@@ -96,13 +97,13 @@ pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Check
     if merge {
         let ty = values[binding].ty;
         let mutable = values[binding].mutable;
-        values[binding] = CheckedValue { ty: ty, state: 4, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false };
+        values[binding] = CheckedValue{ ty: ty, state: 4, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binding);
         return 0;
     }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         binding, copy(node), true);
     if conflict < 0 { return -9; }
-    if conflict > 0 { return 0 - violation(5, nodes[node].start); }
+    if conflict > 0 { return 0 - violation_site(5, nodes[node].start, 881); }
     0
 }
 

@@ -1,3 +1,23 @@
+## Tuple projections and for patterns
+
+- [x] Distinguish tuple indices from leading-dot floats and accept numeric field suffixes.
+- [x] Parse tuple loop patterns and normalize through ordinary tuple destructuring.
+- [x] Connect tuple aggregate layouts, field dependencies and borrowed patterns end to end.
+- [x] Execute six tuple examples under UBSan, check seven refusals and pass ten iteration regressions.
+- [x] Self-rebuild and atomically update the local installation; two installed smoke checks pass.
+
+[Evidence](TUPLE_ITERATION_CYCLE.md).
+
+## Semantic diagnostic context
+
+- [x] Attach failure-site descriptions and explicit expected/actual type metadata.
+- [x] Observe checked-value writes without replacing verification assignments.
+- [x] Add scoped diagnostic views, source labels and lifetime/move/borrow history.
+- [x] Build and validate thirteen focused semantic observations, sixteen source-diagnostic regressions and ten iteration regressions.
+- [x] Rebuild with the new compiler generation and atomically update the PATH installation; two installed smoke checks pass.
+
+[Evidence](SEMANTIC_DIAGNOSTICS_CYCLE.md).
+
 ## Universal reference spelling and for loops
 
 - [x] Specify exact ref/mut_ref equivalence and loop ownership semantics.

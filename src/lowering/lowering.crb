@@ -301,6 +301,7 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if ty <= 0 || uses_pool(copy(ty)) { return -1; }
         let result = if kind == 17 { ty }
             else if (ty >= 3000000 && ty < 4000000) || (ty >= 10000 && ty < 1000000) { ty + 1000000 }
+            else if is_tuple(copy(ty)){scalar_reference(ty,graph[node].mutable)}
             else if ty < 20 { ty + (if graph[node].mutable { 40 } else { 20 }) }
             else { return -1; };
         if emit {
@@ -427,7 +428,8 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if shape < 10000 { return -1; }
         if emit {
             declaration(7, node); character(61);
-            if shape >= 2000000 { local(binding); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
+            if wide_array(copy(shape)){number(array_length(shape));}
+            else if shape >= 2000000 { local(binding); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
             else { number(unsigned((array_shape(shape) - 10000) / 100)); }
             { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
         }
@@ -462,7 +464,8 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         if element <= 0 || uses_pool(copy(element)) { return -1; }
         let ty = if kind != 13 { element } else if element < 20 {
             element + (if graph[node].mutable { 40 } else { 20 })
-        } else if element >= 3000000 && element < 4000000 {
+        } else if is_tuple(copy(element)){scalar_reference(element,graph[node].mutable)}
+        else if element >= 3000000 && element < 4000000 {
             element + 1000000
         } else { return -1; };
         if emit {
@@ -746,7 +749,7 @@ fn array_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &m
         while item != 0 { count = count + 1; item = graph[item].next_sibling; }
     }
     let mut element = if array_value_type(copy(expected)) { array_item(copy(expected)) } else { 0 };
-    if element == 0 && (nodes[first].kind == 44 || nodes[first].kind == 45 || nodes[first].kind == 37) {
+    if element == 0 && (nodes[first].kind == 44 || nodes[first].kind == 45 || nodes[first].kind == 37 || nodes[first].kind == 20) {
         let dry = Lowering { emit:false, result:(*ctx).result, function:(*ctx).function, loop_result:(*ctx).loop_result,
             loop_slot:(*ctx).loop_slot, loop_node:(*ctx).loop_node, storage:(*ctx).storage, poll_body:(*ctx).poll_body };
         element = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -836,6 +839,8 @@ fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
             if emit { { let code: [u8;3] = [40,42,40]; byte_text(&code[..]); } c_type(copy(payload)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } local(binding); { let code: [u8;6] = [46,115,108,111,116,41]; byte_text(&code[..]); } }
             return payload;
         }
+        let tuple=scalar_referent(copy(ty));
+        if is_tuple(copy(tuple)){if emit{character(40);character(42);local(binding);character(41);}return tuple;}
         if ty < 4000000 || ty >= 5000000 { return -1; }
         if emit { { let code: [u8;2] = [40,42]; byte_text(&code[..]); } local(binding); character(41); }
         return ty - 1000000;
@@ -847,10 +852,21 @@ fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
     if kind != 17 { return -1; }
     let parent = member_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &types[0..types.len()], base, copy(emit));
-    if parent < 3000000 || parent >= 4000000 { return -1; }
-    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal_type(parent), node);
+    let tuple=if is_tuple(copy(parent)){copy(parent)}else{scalar_referent(copy(parent))};
+    if is_tuple(copy(tuple)){
+        let mut ordinal:u64=0;let mut at=nodes[node].name_start;
+        if at==nodes[node].name_end{return -1;}
+        while at<nodes[node].name_end{let digit=source[at];if digit<48 || digit>57 || ordinal>65536{return -1;}ordinal=ordinal*10+(digit-48) as u64;at+=1;}
+        let count=tuple_count(copy(tuple));if ordinal>=count{return -1;}
+        if emit{if !is_tuple(copy(parent)){character(45);character(62);}else{character(46);}character(109);number(copy(ordinal));}
+        return tuple_part(tuple,ordinal,count);
+    }
+    let indirect=parent>=4000000 && parent<5000000;
+    let nominal=if indirect{parent-1000000}else{parent};
+    if nominal < 3000000 || nominal >= 4000000 { return -1; }
+    let field = verification_field(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal_type(nominal), node);
     if field == 0 { return -1; }
-    if emit { { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(copy(field)); }
+    if emit { if indirect{character(45);character(62);}else{character(46);}character(109);number(copy(field)); }
     types[field]
 }
 
@@ -1399,20 +1415,25 @@ fn tuple_bind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
     let value = if has_type { graph[first].next_sibling } else { copy(first) };
     let want = if has_type { annotation_type(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], first) } else { 0 };
-    let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+    let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut types[0..types.len()], ctx, copy(value), want);
+    let borrowed=is_tuple(scalar_referent(copy(actual)));
+    let exclusive=borrowed && actual%2==1;
+    let ty=if borrowed{scalar_referent(copy(actual))}else{actual};
     if !is_tuple(copy(ty)) { return false; }
     let count = tuple_count(copy(ty));
     let mut ordinal: u64 = 0;
     let mut binding = graph[value].next_sibling;
     while binding != 0 {
         if ordinal >= count { return false; }
-        let field = tuple_part(copy(ty), copy(ordinal), copy(count));
+        let item = tuple_part(copy(ty), copy(ordinal), copy(count));
+        let field=if !borrowed{copy(item)}else if item>=3000000 && item<4000000{item+1000000}else{scalar_reference(item,exclusive)};
+        if field<=0{return false;}
         if graph[binding].declaration {
             types[binding] = copy(field);
             if (*ctx).emit {
                 c_type(copy(field)); character(32); local(copy(binding)); character(61);
-                temporary(copy(value)); { let code: [u8;2] = [46,109]; byte_text(&code[..]); } number(copy(ordinal)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+                if borrowed{character(38);temporary(copy(value));character(45);character(62);character(109);}else{temporary(copy(value));character(46);character(109);} number(copy(ordinal)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
                 consume(copy(field), copy(binding), true);
             }
         }
@@ -2089,9 +2110,16 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                 continue;
             }
             let indirect = nodes[child].kind == 14;
+            let field=nodes[child].kind==17;
             let name = if indirect { graph[child].first_child } else { copy(child) };
             let binding = graph[name].binding;
-            let want = if indirect {
+            let want = if field {
+                if !prepare_member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(child)){return -1;}
+                let ty=member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(child),false);
+                if ty<=0{return -1;}
+                if emit{c_type(copy(ty));character(32);character(42);character(112);number(copy(child));character(61);character(38);let lowered=member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(child),true);drop(lowered);character(59);character(10);}
+                ty
+            } else if indirect {
                 // Evaluate the pointer naming the assignment place before the RHS.
                 let address = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     &mut types[0..types.len()], ctx, copy(name), 0);
@@ -2102,15 +2130,20 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             };
             if want <= 0 || uses_pool(copy(want)) { return -1; }
             let value = graph[child].next_sibling;
+            // A saved assignment place must have a frame slot before an await.
+            // Keep this backend limitation explicit until plain-place spilling
+            // shares the compound-assignment frame path.
+            if field && (*ctx).poll_body!=0 && suspends(&nodes[0..nodes.len()],copy(value)){return -1;}
             let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(value), copy(want));
             if ty != want { return -1; }
             if emit {
                 // Evaluate the replacement before destroying the old value. A
                 // moved record has already been cleared by expression lowering.
-                if !indirect && want >= 3000000 && want < 4000000 {
+                if !indirect && !field && want >= 3000000 && want < 4000000 {
                     drop_value(copy(want), copy(binding), true);
                 }
-                if indirect { character(42); temporary(name); }
+                if field{character(42);character(112);number(child);}
+                else if indirect { character(42); temporary(name); }
                 else {
                             local(binding);
                 }

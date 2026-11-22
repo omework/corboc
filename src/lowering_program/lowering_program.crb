@@ -1,3 +1,5 @@
+use bootstrap::lowering_types::{scalar_referent,reset_tuple_definitions};
+use bootstrap::lowering_records::tuple_definition;
 use bootstrap::runtime_sources::c_runtime_api;
 use bootstrap::lowering_c::emit_c_declarations;
 use bootstrap::socket_runtime::emit_completion_runtime;
@@ -160,6 +162,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
         function = graph[function].next_sibling;
     }
     if emit {
+        reset_tuple_definitions();
         function = copy(first);
         while function != 0 {
         if nodes[function].kind == 49 && graph[function].first_child != 0 {
@@ -231,6 +234,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
             }
             function = graph[function].next_sibling;
         }
+        let mut seen=[false;524289];
         let mut inline_layouts: [bool; 410100] = [false; 410100];
         point = 1;
         while point < nodes.len() as u64 {
@@ -240,6 +244,8 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                 continue;
             }
             let stored = types[point];
+            let tuple=if is_tuple(copy(stored)){copy(stored)}else if wide_array(copy(stored)){array_item(copy(stored))}else if scalar_referent(copy(stored))>0{scalar_referent(copy(stored))}else{slice_element(copy(stored))};
+            if is_tuple(copy(tuple)){tuple_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[..],&mut seen[..],tuple);}
             let ty = array_shape(copy(stored));
             if future_type(copy(stored)) || handle_type(copy(stored)) || completion(copy(stored)) {
                 point = point + 1;
@@ -271,7 +277,6 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
             }
             point = point + 1;
         }
-        let mut seen = [false;524289];
         point = 1;
         while point < nodes.len() as u64 {
             if wide_array(types[point]) {
@@ -289,25 +294,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
         point = 1;
         while point < nodes.len() as u64 {
             let stored = types[point];
-            if is_tuple(copy(stored)) {
-                let mut seen = false;
-                let mut previous: u64 = 1;
-                while previous < point {
-                    if types[previous] == stored { seen = true; break; }
-                    previous = previous + 1;
-                }
-                if !seen {
-                    { let code: [u8;15] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123]; byte_text(&code[..]); }
-                    let count = tuple_count(copy(stored));
-                    let mut i: u64 = 0;
-                    while i < count {
-                        c_type(tuple_part(copy(stored), copy(i), copy(count))); { let code: [u8;2] = [32,109]; byte_text(&code[..]); } number(copy(i)); { let code: [u8;1] = [59]; byte_text(&code[..]); }
-                        i = i + 1;
-                    }
-                    { let code: [u8;2] = [125,32]; byte_text(&code[..]); } c_type(stored); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
-                }
-
-            }
+            if is_tuple(copy(stored)) {tuple_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[..],&mut seen[..],stored);}
             point = point + 1;
         }
         function = copy(first);
@@ -331,6 +318,12 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                 if previous == point {
                     { let code: [u8;48] = [115,116,97,116,105,99,32,105,110,108,105,110,101,32,95,95,97,116,116,114,105,98,117,116,101,95,95,40,40,117,110,117,115,101,100,41,41,32,118,111,105,100,32,100,114,111,112,95]; byte_text(&code[..]); } array_name(copy(ty)); character(40);
                     c_type(ty); { let code: [u8;4] = [42,41,59,10]; byte_text(&code[..]); }
+                }
+            }
+            if tuple_has_owners(copy(ty)){
+                let mut previous:u64=1;while previous<point && types[previous]!=ty{previous+=1;}
+                if previous==point{
+                    let prefix="static inline void drop_tuple";let bytes=prefix.as_bytes();byte_text(bytes);number(unsigned(copy(ty)));character(40);c_type(ty);character(42);character(41);character(59);character(10);
                 }
             }
             point = point + 1;

@@ -107,9 +107,11 @@ failure. `check`, `check --watch` and `build` report the original file, line and
 column, a source excerpt and a caret:
 
 ```text
-src/main.crb:2:22: error[N1]: value is undefined, uninitialized, or does not match the required type
+src/main.crb:2:22: error[N1]: type mismatch for this expression or binding
      2 |     let value: i64 = true;
        |                      ^~~~
+       = expected: i64
+       = actual: bool
 ```
 
 Source locations survive linking, generic specialization and closure lowering.
@@ -119,7 +121,13 @@ expected syntax, including malformed for-loop headers.
 This is terminal output, not an IDE
 language server. `--verify FILE` and other raw frontend modes retain their numeric
 protocol; `check FILE.crb` adds normal STD/module resolution.
-See [diagnostic validation](docs/DIAGNOSTICS_CYCLE.md).
+Semantic failures report the operation-specific reason, expected and actual types
+when available, and related declaration, move, destruction or borrow locations.
+These notes use original source locations, including imported modules.
+Tuple field selectors (`item.0`) and tuple patterns in `for` loops are supported;
+borrowed patterns bind field references. See [tuple iteration](docs/TUPLE_ITERATION_CYCLE.md).
+See [source diagnostic validation](docs/DIAGNOSTICS_CYCLE.md) and
+[semantic diagnostic validation](docs/SEMANTIC_DIAGNOSTICS_CYCLE.md).
 
 A file below a package's `src/` uses its enclosing `package.toml`, module context
 and dependencies. The complete package is checked, so diagnostics in companion

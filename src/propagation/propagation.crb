@@ -1,3 +1,6 @@
+use bootstrap::verify::type_violation;
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Static Result/Option propagation and exact error-conversion lookup.
 use bootstrap::model::{AstNode,StaticNode,CheckedValue,result_type,result_payload};
@@ -40,7 +43,7 @@ pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:
 pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
     let mut function=nodes[node].parent;
     while function!=0 && nodes[function].kind!=1 && nodes[function].kind!=35 && nodes[function].kind!=55 {function=nodes[function].parent;}
-    if function==0{return 0-violation(1,nodes[node].start);}
+    if function==0{return 0-violation_site(1, nodes[node].start, 412);}
     let mut output=graph[function].first_child;while nodes[output].kind==3{output=graph[output].next_sibling;}
     let child=graph[node].first_child;
     let ty=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(child),0,1);
@@ -48,18 +51,18 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
     let mut payload:i64=0;
     if result_type(copy(ty)) {
         let outer=result_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(output));
-        if !result_type(copy(outer)){return 0-violation(1,nodes[node].start);}
+        if !result_type(copy(outer)){return 0-violation_site(1, nodes[node].start, 413);}
         let inner_error=result_payload(copy(ty),false);let outer_error=result_payload(outer,false);
-        if inner_error!=outer_error && error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner_error,outer_error)==0{return 0-violation(8,nodes[node].start);}
+        if inner_error!=outer_error && error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner_error,outer_error)==0{return 0-violation_site(8, nodes[node].start, 414);}
         payload=result_payload(copy(ty),true);
     } else if scalar_option(copy(ty)) {
         let outer=scalar_option_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],output);
-        if !scalar_option(outer){return 0-violation(1,nodes[node].start);}
+        if !scalar_option(outer){return 0-violation_site(1, nodes[node].start, 415);}
         payload=checked_option_payload(copy(ty));
-    }else{return 0-violation(1,nodes[node].start);}
+    }else{return 0-violation_site(1, nodes[node].start, 416);}
     if result_type(copy(ty)) && payload>=6000000 && payload<7000000 {
         let value=values[child].loan_parent;if value==0{return -9;}let actual=values[value].ty;
-        if mode==2 || (expected!=0 && expected!=actual){return 0-violation(1,nodes[node].start);}
+        if mode==2 || (expected!=0 && expected!=actual){return 0-type_violation(nodes[node].start,expected,actual,417);}
         copy_task_summary(&mut values[0..values.len()],value,node,copy(actual),false);return actual;
     }
     let scalar=checked_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
@@ -71,8 +74,8 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
     let resource=option_allocation(copy(ty));
     if resource!=0{actual=allocation_kind(copy(resource));}
     if inline_array(copy(payload)){actual=payload%100+400;}
-    if expected!=0 && expected!=actual{return 0-violation(1,nodes[node].start);}
-    if mode==2{return 0-violation(3,nodes[node].start);}
+    if expected!=0 && expected!=actual{return 0-type_violation(nodes[node].start,expected,actual,418);}
+    if mode==2{return 0-violation_site(3, nodes[node].start, 419);}
     if reference!=0 {
         copy_option_borrow(&mut values[0..values.len()],copy(child),copy(node),copy(actual),false);
     }else if resource!=0 || nested_checked_option(copy(ty))!=0 {
@@ -81,10 +84,10 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
         let handle=values[child].target;
         copy_task_summary(&mut values[0..values.len()],handle,copy(node),copy(actual),false);
     }else if inline_array(copy(payload)) {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false};
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false}; record_checked(&values[0..values.len()],node);
     }else if actual==300 || actual==310 {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),writable:false};
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),writable:false}; record_checked(&values[0..values.len()],node);
     }else {
-        values[node]=CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);
     }actual
 }

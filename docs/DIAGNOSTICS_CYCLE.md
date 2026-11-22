@@ -32,8 +32,9 @@ Reproduce with `scripts/validate_diagnostics.py --compiler PATH`,
 `scripts/validate_package_check.py --compiler PATH --out RESULTS` and
 `scripts/validate_file_watch.py --compiler PATH --out RESULTS`.
 
-Rule messages do not yet include expected/actual type descriptions or secondary
-borrow-origin labels. Columns count Unicode code points with tab expansion, not
+Expected/actual type descriptions and secondary move/borrow labels were added
+in the subsequent [semantic diagnostic cycle](SEMANTIC_DIAGNOSTICS_CYCLE.md).
+Columns count Unicode code points with tab expansion, not
 full terminal display width. This does not implement an IDE/LSP diagnostic service.
 Historical numeric-output descriptions in earlier cycle reports are superseded
 for user-facing commands by this report.

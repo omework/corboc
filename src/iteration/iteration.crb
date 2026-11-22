@@ -149,8 +149,10 @@ pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode]
             pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_item) => { let ");
         }
         let loop_token=token_at(&tokens[0..tokens.len()],nodes[chosen].start);
+        let pattern = source[nodes[chosen].name_start] == 40;
         if tokens[loop_token+1].kind==16 {pos=text(&mut out[0..out.len()],pos,"mut ");}
-        pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[chosen].name_start,nodes[chosen].name_end);
+        if pattern {pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_tuple");}
+        else {pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[chosen].name_start,nodes[chosen].name_end);}
         if mode!=0 {
             if mode==3 || mode==5 {pos=text(&mut out[0..out.len()],pos," = &mut ");}
             else if mode==2 || mode==4 {pos=text(&mut out[0..out.len()],pos," = & ");}
@@ -163,6 +165,12 @@ pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode]
         } else {
             pos=text(&mut out[0..out.len()],pos," = ");
             pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_item; ");
+        }
+        if pattern {
+            pos=text(&mut out[0..out.len()],pos,"let ");
+            pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[chosen].name_start,nodes[chosen].name_end);
+            pos=text(&mut out[0..out.len()],pos," = ");
+            pos=named(&mut out[0..out.len()],pos,&name[0..name.len()],"_tuple; ");
         }
         // A real nested body preserves per-iteration cleanup and shadowing.
         pos=span(&source[0..source.len()],&mut out[0..out.len()],&mut offsets[0..offsets.len()],pos,nodes[body].start,nodes[body].end);

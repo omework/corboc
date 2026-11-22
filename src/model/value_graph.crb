@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Immutable per-call value graphs, allocated separately from source-node identities.
 
@@ -7,7 +8,7 @@ pub fn reserve_summary(values:&mut [CheckedValue],source_count:u64,length:u64)->
     if cursor==0{cursor=values.len() as u64;}
     if cursor<source_count || length>cursor-source_count{return 0;}
     let first=cursor-length;
-    values[0]=CheckedValue{ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:copy(first),writable:false};first
+    values[0] = CheckedValue{ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:copy(first),writable:false}; record_checked(&values[0..values.len()],0);first
 }
 
 /// Maps a list cursor to its value; source argument lists need no wrapper.

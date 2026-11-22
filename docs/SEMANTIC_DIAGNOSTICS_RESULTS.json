@@ -1,0 +1,229 @@
+{
+  "date": "2026-11-22",
+  "platform": "macOS ARM64",
+  "semantic": {
+    "audit": {
+      "failure_sites": 1006,
+      "observed_state_writes": 346,
+      "status": "passed"
+    },
+    "observations": [
+      {
+        "case": "binding-types",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/binding-types.crb:2:16: error[N1]: type mismatch for this expression or binding\n     2 |  let value:i64=true;\n       |                ^~~~\n       = expected: i64\n       = actual: bool\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "operand-types",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/operand-types.crb:4:18: error[N1]: type mismatch for this expression or binding 'right'\n     4 |  let result=left+right;\n       |                  ^~~~~\n       = expected: i64\n       = actual: bool\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/operand-types.crb:3:6: note: value declared here\n     3 |  let right:bool=true;\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "argument-types",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/argument-types.crb:3:7: error[N1]: type mismatch for this expression or binding\n     3 |  take(true);\n       |       ^~~~\n       = expected: i64\n       = actual: bool\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/argument-types.crb:1:9: note: parameter type required here\n     1 | fn take(value:i64){}\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "named-types",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/named-types.crb:4:2: error[N1]: type mismatch for this expression or binding 'value'\n     4 |  let value:First=Second{value:1};\n       |  ^~~\n       = expected: First\n       = actual: Second\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "undefined-name",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/undefined-name.crb:2:8: error[N1]: cannot find this value in the current scope 'missing'\n     2 |  print(missing);\n       |        ^~~~~~~\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "moved-value",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/moved-value.crb:5:8: error[N6]: use of a value after its ownership was moved 'item'\n     5 |  print(item.value);\n       |        ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/moved-value.crb:4:2: note: ownership moved here\n     4 |  let moved=item;\n       |  ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/moved-value.crb:3:6: note: value declared here\n     3 |  let item=Item{value:1};\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "dropped-value",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/dropped-value.crb:4:8: error[N6]: use of a value after it was explicitly destroyed 'value'\n     4 |  print(value);\n       |        ^~~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/dropped-value.crb:3:7: note: value destroyed here\n     3 |  drop(value);\n       |       ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/dropped-value.crb:2:6: note: value declared here\n     2 |  let value:i64=1;\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "immutable",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/immutable.crb:3:2: error[N5]: cannot mutate an immutable binding 'value'\n     3 |  value=2;\n       |  ^~~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/immutable.crb:2:6: note: value declared here\n     2 |  let value:i64=1;\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "shared-write",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/shared-write.crb:4:2: error[N5]: cannot mutate through a shared reference 'view'\n     4 |  *view=2;\n       |  ^~~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/shared-write.crb:3:2: note: borrow created here\n     3 |  let view=&value;\n       |  ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/shared-write.crb:2:10: note: borrowed target declared here\n     2 |  let mut value:i64=1;\n       |          ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/shared-write.crb:3:6: note: value declared here\n     3 |  let view=&value;\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "borrow-escape",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/borrow-escape.crb:4:9: error[N4]: returned reference would outlive its target 'view'\n     4 |  return view;\n       |         ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/borrow-escape.crb:3:2: note: borrow created here\n     3 |  let view=&value;\n       |  ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/borrow-escape.crb:2:6: note: borrowed target declared here\n     2 |  let value:i64=1;\n       |      ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/borrow-escape.crb:3:6: note: value declared here\n     3 |  let view=&value;\n       |      ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "drop-with-borrow",
+        "exit": 8,
+        "baseline_exit": 8,
+        "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/drop-with-borrow.crb:5:7: error[N5]: access conflicts with a live borrow or outstanding synchronized branch 'item'\n     5 |  drop(item);\n       |       ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/drop-with-borrow.crb:3:6: note: value declared here\n     3 |  let item=Item{value:1};\n       |      ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-semantic-leux6x6g/drop-with-borrow.crb:4:2: note: borrow created here\n     4 |  let view=&item;\n       |  ^\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "accepted iteration regression",
+        "exit": 0
+      },
+      {
+        "case": "raw machine protocol unchanged",
+        "exit": 8
+      }
+    ]
+  },
+  "source_diagnostics": [
+    {
+      "case": "type",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/type.crb:2:22: error[N1]: type mismatch for this expression or binding\n     2 |     let value: i64 = true;\n       |                      ^~~~\n       = expected: i64\n       = actual: bool\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "move",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/move.crb:5:11: error[N6]: use of a value after its ownership was moved 'item'\n     5 |     print(item.value);\n       |           ^~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/move.crb:4:5: note: ownership moved here\n     4 |     let moved = item;\n       |     ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/move.crb:3:9: note: value declared here\n     3 |     let item = Item { value: 1 };\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "syntax",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/syntax.crb:2:9: error[E0100]: expected a binding name after let or let mut\n     2 |     let = 42;\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unclosed",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/unclosed.crb:1:1: error[E0017]: declaration is not closed before the end of this source file\n     1 | fn main() {\n       | ^~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "for-loop",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/for-loop.crb:3:14: error[E0104]: expected 'in' after the for-loop binding\n     3 |     for slot buffer { print(slot); }\n       |              ^~~~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "initializer",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/initializer.crb:2:19: error[E0101]: expected '=' and an initializer for this binding\n     2 |     let value: i64;\n       |                   ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "separator",
+      "exit": 7,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/separator.crb:2:14: error[E0103]: expected ';' after this expression, or '}' to return its value\n     2 |     print(1) print(2);\n       |              ^~~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "lex",
+      "exit": 3,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/lex.crb:2:26: error[E0003]: unterminated string literal before end of line\n     2 |     print(\"unterminated);\n       |                          ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "generic",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/generic.crb:5:21: error[N8]: call does not satisfy the required signatures contract\n     5 |     let value: i64 = identity(true);\n       |                     ^~~~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "closure",
+      "exit": 8,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/closure.crb:2:28: error[N1]: type mismatch for this expression or binding\n     2 |     let read = || -> i64 { true };\n       |                            ^~~~\n       = expected: i64\n       = actual: bool\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unresolved import",
+      "exit": 13,
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/missing_import.crb:1:1: error[E0013]: cannot resolve this import or qualified name\n     1 | use missing::answer;\n       | ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "watch refreshes source locations after recovery",
+      "status": "passed"
+    },
+    {
+      "case": "imported source",
+      "exit": 8,
+      "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/project/src/helper/helper.crb:2:5: error[N1]: type mismatch for this expression or binding\n     2 |     true\n       |     ^~~~\n       = expected: i64\n       = actual: bool\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "legacy machine protocol",
+      "exit": 8
+    },
+    {
+      "case": "normal build source diagnostic",
+      "exit": 8,
+      "stderr": "/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/project/src/helper/helper.crb:2:5: error[N1]: type mismatch for this expression or binding\n     2 |     true\n       |     ^~~~\n       = expected: i64\n       = actual: bool\ncorboc: package compilation failed\n"
+    },
+    {
+      "case": "manifest path",
+      "exit": 12,
+      "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-diagnostics-ox3eaz2o/project/package.toml: error[E0012]: invalid package manifest or dependency declaration\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "iteration": [
+    {
+      "case": "arrays",
+      "status": "passed",
+      "stdout": "4\n11\n2\n13\n4\n8\n11\n100\n"
+    },
+    {
+      "case": "next",
+      "status": "passed",
+      "stdout": "0\n1\n2\n3\n77\n14\n15\n"
+    },
+    {
+      "case": "aggregate-fields",
+      "status": "passed",
+      "stdout": "2\n"
+    },
+    {
+      "case": "slices-nested",
+      "status": "passed",
+      "stdout": "27\n"
+    },
+    {
+      "case": "cleanup",
+      "status": "passed",
+      "stdout": "1\n2\n99\n"
+    },
+    {
+      "case": "immutable",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/immutable.crb:1:23: error[N5]: cannot mutate an immutable binding 'value'\n     1 | fn main(){let value=1;let r=value.mut_ref();*r=2;}\n       |                       ^~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/immutable.crb:1:15: note: value declared here\n     1 | fn main(){let value=1;let r=value.mut_ref();*r=2;}\n       |               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "dangling",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/dangling.crb:1:29: error[N4]: value would outlive a borrowed target or its allocation source 'value'\n     1 | fn bad()->&i64 {let value=1;value.ref()} fn main(){}\n       |                             ^~~~~\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/dangling.crb:1:21: note: value declared here\n     1 | fn bad()->&i64 {let value=1;value.ref()} fn main(){}\n       |                     ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "reference-level",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/reference-level.crb:1:50: error[E0009]: this construct is not supported by the compiler yet\n     1 | fn read(value:&i64){} fn main(){let n=1;let r=&n;read(r.ref());}\n       |                                                  ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "arity",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/arity.crb:1:29: error[E0105]: ref() and mut_ref() take no arguments\n     1 | fn main(){let value=1;value.ref(2);}\n       |                             ^~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "moved-iterator",
+      "status": "refused",
+      "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/moved-iterator.crb:1:108: error[N6]: use of a value after its ownership was moved 's'\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                                                            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/moved-iterator.crb:1:88: note: ownership moved here (generated-source anchor)\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                                        ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corboc-iteration-6qr28x1_/moved-iterator.crb:1:79: note: value declared here\n     1 | struct S {n:i64} impl S {fn next(&mut self)->Option<i64>{None}} fn main(){let s=S{n:0};for x in s {} print(s.n);}\n       |                                                                               ^\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "self_rebuild": {
+    "corbo_revision": "e0a6fc8b8d8c9996916cc10f45bc6c28e5bc7011",
+    "seed": "/Users/jabarkarim/sources/corboc/build/semantic/install/bin/corboc",
+    "compiler": "/Users/jabarkarim/sources/corboc/build/semantic/rebuilt/bin/corboc",
+    "c_sha256": "b048dd1f5ed5b17b1afcdea6081ec0b3435edfdb5edba619567fead2645b56a5",
+    "self_verified": false
+  },
+  "installed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "installed_sha256": "4ed1dd8b18449438004a69cf8a851cfa530ef1960f7c53527e355b682dfdb24d",
+  "installed_smokes": 2
+}

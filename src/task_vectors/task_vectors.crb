@@ -1,3 +1,6 @@
+use bootstrap::verify::type_violation;
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, Token, constructor_arguments, constructor_field_value};
 use bootstrap::tasks::{scalar_handle_type, check_native_worker, thread_block, copy_task_summary, task_survives, dependent_handle, task_method, in_async, complete_task};
 use bootstrap::verify::{verify_expr, violation};
@@ -69,10 +72,10 @@ pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     if vector == 0 { return 0; }
     if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, copy(receiver)) { return -9; }
     let writable = if values[owner].ty == 734 { values[owner].writable } else { values[owner].mutable };
-    if !writable { return 0 - violation(5, nodes[receiver].start); }
+    if !writable { return 0 - violation_site(5, nodes[receiver].start, 624); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(owner), copy(receiver), true);
-    if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation(5, nodes[receiver].start) }; }
+    if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation_site(5, nodes[receiver].start, 625) }; }
     let handle = vector - 2300 + 620;
     let output = option_code(copy(handle));
     let root = if values[owner].ty == 734 { values[owner].target } else { copy(owner) };
@@ -82,10 +85,10 @@ pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if moved < 0 { return moved; }
         if moved > 0 { return output; }
     }
-    values[receiver] = CheckedValue { ty: handle, state: 1, mutable: false,
-        target: 0, loan_parent: 0, origin_call: 0, writable: false };
-    values[call] = CheckedValue { ty: copy(output), state: 1, mutable: false,
-        target: receiver, loan_parent: 0, origin_call: 0, writable: false };
+    values[receiver] = CheckedValue{ ty: handle, state: 1, mutable: false,
+        target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],receiver);
+    values[call] = CheckedValue{ ty: copy(output), state: 1, mutable: false,
+        target: receiver, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
     output
 }
 
@@ -225,10 +228,10 @@ pub fn apply_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     let remaining = values[entry].origin_call;
     let handle = values[entry].target;
     let pool = values[member].target;
-    values[member] = CheckedValue { ty: ty, state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: remaining, writable: false };
-    values[call] = CheckedValue { ty: result, state: 1, mutable: false, target: handle,
-        loan_parent: 0, origin_call: 0, writable: false };
+    values[member] = CheckedValue{ ty: ty, state: 1, mutable: false, target: pool,
+        loan_parent: 0, origin_call: remaining, writable: false }; record_checked(&values[0..values.len()],member);
+    values[call] = CheckedValue{ ty: result, state: 1, mutable: false, target: handle,
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
     1
 }
 
@@ -240,8 +243,8 @@ pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
     let new: [u8; 3] = [110,101,119];
     if !name.content_eq(&new[..]) { return -9; }
     let argument = graph[graph[call].first_child].next_sibling;
-    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
-    if values[pool].state != 1 || !values[pool].mutable { return 0 - violation(5, nodes[call].start); }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 626); }
+    if values[pool].state != 1 || !values[pool].mutable { return 0 - violation_site(5, nodes[call].start, 627); }
     let expected = values[pool].ty - 2350 + 620;
     let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
     let actual = if worker != 0 {
@@ -252,14 +255,14 @@ pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
             &mut values[0..values.len()], copy(argument), copy(expected), 1)
     };
     if actual < 0 { return actual; }
-    if actual != expected { return 0 - violation(1, nodes[call].start); }
+    if actual != expected { return 0 - type_violation(nodes[call].start,expected,actual,628); }
     let summary = if worker == 0 { argument } else { worker };
     if !task_survives(&graph[0..graph.len()], &values[0..values.len()], copy(summary), graph[destination].scope) {
-        return 0 - violation(4, nodes[call].start);
+        return 0 - violation_site(4, nodes[call].start, 629);
     }
     let ty = actual - 620 + 2400;
-    values[destination] = CheckedValue { ty: copy(ty), state: 1, mutable: graph[destination].mutable,
-        target: pool, loan_parent: 0, origin_call: summary, writable: false };
+    values[destination] = CheckedValue{ ty: copy(ty), state: 1, mutable: graph[destination].mutable,
+        target: pool, loan_parent: 0, origin_call: summary, writable: false }; record_checked(&values[0..values.len()],destination);
     return ty;
 }
 
@@ -283,12 +286,12 @@ pub fn drop_temporary_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         if ty < 0 { return ty; }
         let discarded = if joins {
             if in_async(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(method)) {
-                return 0 - violation(8, nodes[method].start);
+                return 0 - violation_site(8, nodes[method].start, 630);
             }
             values[worker].loan_parent
         } else { copy(worker) };
         if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], discarded) {
-            return 0 - violation(8, nodes[method].start);
+            return 0 - violation_site(8, nodes[method].start, 631);
         }
         if joins && ty != 3301 {
             let captures = values[worker].origin_call;
@@ -303,7 +306,7 @@ pub fn drop_temporary_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         &tokens[0..tokens.len()], &mut values[0..values.len()], copy(method), copy(method), pool);
     if allocated < 0 { return allocated; }
     if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(method)) {
-        return 0 - violation(8, nodes[method].start);
+        return 0 - violation_site(8, nodes[method].start, 632);
     }
     return 1;
 }
@@ -314,19 +317,19 @@ pub fn take_pooled_handle(nodes: &[AstNode], graph: &[StaticNode], values: &mut 
     let ty = values[binding].ty;
     let pool = values[binding].target;
     let summary = values[binding].origin_call;
-    if values[binding].state != 1 || values[pool].state != 1 { return 0 - violation(4, start); }
+    if values[binding].state != 1 || values[pool].state != 1 { return 0 - violation_site(4, start, 633); }
     if mode != 1 && mode != 3 { return -9; }
     let handle = ty - 2400 + 620;
-    if expected != 0 && handle != expected { return 0 - violation(1, start); }
+    if expected != 0 && handle != expected { return 0 - violation_site(1, start, 634); }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(binding), copy(expression), true);
-    if conflict > 0 { return 0 - violation(5, start); }
+    if conflict > 0 { return 0 - violation_site(5, start, 635); }
     if conflict < 0 { return -9; }
-    if mode == 3 && values[summary].origin_call != 0 { return 0 - violation(8, start); }
+    if mode == 3 && values[summary].origin_call != 0 { return 0 - violation_site(8, start, 636); }
     let mutable = values[binding].mutable;
     copy_task_summary(&mut values[0..values.len()], copy(summary), expression, copy(handle), false);
-    values[binding] = CheckedValue { ty: ty, state: 2, mutable: mutable,
-        target: pool, loan_parent: 0, origin_call: summary, writable: false };
+    values[binding] = CheckedValue{ ty: ty, state: 2, mutable: mutable,
+        target: pool, loan_parent: 0, origin_call: summary, writable: false }; record_checked(&values[0..values.len()],binding);
     return handle;
 }
 
@@ -336,16 +339,16 @@ pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
     let push: [u8; 4] = [112,117,115,104];
     let argument = graph[graph[call].first_child].next_sibling;
     if !name.content_eq(&push[..]) { return -9; }
-    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation(8, nodes[call].start); }
+    if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 637); }
     let ty = values[vector].ty;
     let pool = values[vector].target;
-    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation(4, nodes[call].start); }
-    if !values[vector].mutable { return 0 - violation(5, nodes[call].start); }
+    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation_site(4, nodes[call].start, 638); }
+    if !values[vector].mutable { return 0 - violation_site(5, nodes[call].start, 639); }
     let optional = graph[call].scope != graph[vector].scope;
     let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(vector), copy(call), true);
     if access < 0 { return -9; }
-    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    if access > 0 { return 0 - violation_site(5, nodes[call].start, 640); }
     let expected = ty - 2300 + 620;
     let worker = thread_block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
     let actual = if worker != 0 {
@@ -356,10 +359,10 @@ pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             &mut values[0..values.len()], copy(argument), copy(expected), 1)
     };
     if actual < 0 { return actual; }
-    if actual != expected { return 0 - violation(1, nodes[call].start); }
+    if actual != expected { return 0 - type_violation(nodes[call].start,expected,actual,641); }
     let summary = if worker == 0 { argument } else { worker };
     if !task_survives(&graph[0..graph.len()], &values[0..values.len()], copy(summary), graph[vector].scope) {
-        return 0 - violation(4, nodes[call].start);
+        return 0 - violation_site(4, nodes[call].start, 642);
     }
     let previous = values[vector].origin_call;
     if optional {
@@ -370,15 +373,15 @@ pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             && dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(vector)) {
             return -9;
         }
-        values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
-            loan_parent: call, origin_call: previous, writable: false };
+        values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
+            loan_parent: call, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],vector);
         return 1;
     }
     if values[vector].loan_parent != 0 { return -9; }
-    values[call] = CheckedValue { ty: 0, state: 1, mutable: false, target: summary,
-        loan_parent: 0, origin_call: previous, writable: false };
-    values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: call, writable: false };
+    values[call] = CheckedValue{ ty: 0, state: 1, mutable: false, target: summary,
+        loan_parent: 0, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],call);
+    values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
+        loan_parent: 0, origin_call: call, writable: false }; record_checked(&values[0..values.len()],vector);
     return 1;
 }
 
@@ -393,16 +396,16 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if !removes && (nodes[nodes[call].parent].kind != 39
         || graph[nodes[call].parent].first_child != call) { return -9; }
     if (removes && (argument == 0 || graph[argument].next_sibling != 0)) || (!removes && argument != 0) {
-        return 0 - violation(8, nodes[call].start);
+        return 0 - violation_site(8, nodes[call].start, 643);
     }
     let pool = values[vector].target;
-    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation(4, nodes[call].start); }
-    if !values[vector].mutable { return 0 - violation(5, nodes[call].start); }
+    if values[vector].state != 1 || values[pool].state != 1 { return 0 - violation_site(4, nodes[call].start, 644); }
+    if !values[vector].mutable { return 0 - violation_site(5, nodes[call].start, 645); }
     if graph[call].scope != graph[vector].scope || values[vector].loan_parent != 0 { return -9; }
     let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(vector), copy(call), true);
     if access < 0 { return -9; }
-    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    if access > 0 { return 0 - violation_site(5, nodes[call].start, 646); }
     let head = values[vector].origin_call;
     let mut len: u64 = 0;
     let mut item = copy(head);
@@ -416,7 +419,7 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let index_type = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(argument), 0, 0);
         if index_type < 0 { return index_type; }
-        if index_type < 1 || index_type > 7 || index_type == 3 { return 0 - violation(1, nodes[argument].start); }
+        if index_type < 1 || index_type > 7 || index_type == 3 { return 0 - violation_site(1, nodes[argument].start, 647); }
         let index = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(argument));
         if index.known {
             if index.negative || index.magnitude >= len { return -9; }
@@ -434,20 +437,20 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let handle = values[selected].target;
     let ty = values[vector].ty;
     if predecessor == 0 {
-        values[vector] = CheckedValue { ty: copy(ty), state: 1, mutable: true, target: pool,
-            loan_parent: 0, origin_call: next, writable: false };
+        values[vector] = CheckedValue{ ty: copy(ty), state: 1, mutable: true, target: pool,
+            loan_parent: 0, origin_call: next, writable: false }; record_checked(&values[0..values.len()],vector);
     } else {
         let payload = values[predecessor].target;
-        values[predecessor] = CheckedValue { ty: 0, state: 1, mutable: false, target: payload,
-            loan_parent: 0, origin_call: next, writable: false };
+        values[predecessor] = CheckedValue{ ty: 0, state: 1, mutable: false, target: payload,
+            loan_parent: 0, origin_call: next, writable: false }; record_checked(&values[0..values.len()],predecessor);
     }
     if removes {
         let output = ty - 2300 + 620;
         copy_task_summary(&mut values[0..values.len()], handle, call, copy(output), false);
         return output;
     }
-    values[call] = CheckedValue { ty: 951, state: 1, mutable: false, target: handle,
-        loan_parent: 0, origin_call: 0, writable: false };
+    values[call] = CheckedValue{ ty: 951, state: 1, mutable: false, target: handle,
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
     return 951;
 }
 
@@ -534,7 +537,7 @@ pub fn drain_handles(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(vector), copy(loop_node), true);
     if access != 0 { return 0; }
-    values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: 0, writable: false };
+    values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],vector);
     return 1;
 }

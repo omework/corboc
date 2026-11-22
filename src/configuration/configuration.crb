@@ -1,3 +1,4 @@
+use bootstrap::verify::{report_violation_site};
 use bootstrap::diagnostics::diagnostic_copy;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lexical package-constant environments, reduced to concrete declarations.
@@ -130,21 +131,21 @@ fn environment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants
         let target = graph[entry].first_child;
         let declaration = resolve_constant(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(target));
         let index = slot(&constants[0..constants.len()], copy(declaration));
-        if index == 0 { drop(report_violation(1, nodes[target].start)); state[2] = 8; return 0; }
-        if assigned[index - 1] { drop(report_violation(1, nodes[target].start)); state[2] = 8; return 0; }
+        if index == 0 { drop(report_violation_site(1, nodes[target].start, 61)); state[2] = 8; return 0; }
+        if assigned[index - 1] { drop(report_violation_site(1, nodes[target].start, 62)); state[2] = 8; return 0; }
         assigned[index - 1] = true;
         let expression = graph[target].next_sibling;
         let value = literal(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&constants[0..constants.len()], &environments[0..environments.len()],copy(expression), copy(parent), 0);
-        if value == 0 { drop(report_violation(1, nodes[expression].start)); state[2] = 8; return 0; }
+        if value == 0 { drop(report_violation_site(1, nodes[expression].start, 63)); state[2] = 8; return 0; }
         let negative = nodes[value].kind == 12;
         let atom = if negative { graph[value].first_child } else { copy(value) };
         let ty = constant_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(declaration));
         let source_constant = resolve_constant(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
         if source_constant != 0 && constant_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],source_constant) != ty {
-            drop(report_violation(1, nodes[expression].start)); state[2] = 8; return 0;
+            drop(report_violation_site(1, nodes[expression].start, 64)); state[2] = 8; return 0;
         }
         if verify_literal(&source[0..source.len()], &nodes[atom],copy(ty),copy(negative)) < 0 {
-            drop(report_violation(1, nodes[expression].start)); state[2] = 8; return 0;
+            drop(report_violation_site(1, nodes[expression].start, 65)); state[2] = 8; return 0;
         }
         values[index - 1] = value;
         entry = graph[entry].next_sibling;
@@ -200,12 +201,12 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
             && tokens[token].kind == 1
             && !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[token].start, tokens[token].end);
         if array_length {
-            if symbol == 0 || nodes[symbols[symbol - 1]].kind != 76 { drop(report_violation(1,copy(at))); state[2] = 8; return; }
+            if symbol == 0 || nodes[symbols[symbol - 1]].kind != 76 { drop(report_violation_site(1, copy(at), 66)); state[2] = 8; return; }
             let constant = symbols[symbol - 1];
             let index = slot(&constants[0..constants.len()], copy(constant));
             let value = if index == 0 { graph[graph[constant].first_child].next_sibling }
                 else { environments[env * 256 + index - 1] };
-            if nodes[value].kind != 9 { drop(report_violation(1,copy(at))); state[2] = 8; return; }
+            if nodes[value].kind != 9 { drop(report_violation_site(1, copy(at), 67)); state[2] = 8; return; }
             let before = state[1];
             put(&mut output[0..output.len()], &mut state[0..state.len()], &source[nodes[value].start..nodes[value].end]);
             skip_span(copy(at), tokens[token].end, &mut offsets[0..offsets.len()],copy(before));

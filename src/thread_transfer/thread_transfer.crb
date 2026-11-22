@@ -1,3 +1,4 @@
+use bootstrap::verify::{violation_site};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Keep thread transfer eligibility independent of permission, locks and lifetimes.
 
@@ -418,7 +419,7 @@ pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[Stati
         if thread_annotation(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) {
             let owner = nodes[item].parent;
             if (nodes[owner].kind != 28 && nodes[owner].kind != 29) || facts[owner] != 0 {
-                return violation(1, nodes[item].start);
+                return violation_site(1, nodes[item].start, 710);
             }
             facts[owner] = copy(item);
         }
@@ -467,7 +468,7 @@ pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[Stati
                 let mut parameter = graph[method].first_child;
                 while nodes[parameter].kind == 3 {
                     if facts[parameter] != 0 {
-                        return violation(8, nodes[parameter].start);
+                        return violation_site(8, nodes[parameter].start, 711);
                     }
                     parameter = graph[parameter].next_sibling;
                 }
@@ -497,7 +498,7 @@ pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[Stati
                     0
                 };
                 if facts[argument] != 0 || capture != 0 {
-                    return violation(8, nodes[argument].start);
+                    return violation_site(8, nodes[argument].start, 712);
                 }
                 argument = graph[argument].next_sibling;
             }

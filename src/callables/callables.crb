@@ -1,3 +1,4 @@
+use bootstrap::verify::{report_violation_site};
 use bootstrap::diagnostics::diagnostic_reverse;
 use bootstrap::lowering_annotations::same_bytes;
 // SPDX-License-Identifier: MIT OR Apache-2.0
@@ -276,7 +277,7 @@ fn materialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &
         if nodes[point].kind == 7 && binding != 0 && nodes[binding].start < nodes[closure].start {
             if captured[binding] == 0 { captured[binding] = copy(point); }
             if !capture_copy(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(point)) && nodes[closure].name_start == nodes[closure].name_end {
-                return (report_violation(3, nodes[point].start), 0);
+                return (report_violation_site(3, nodes[point].start, 2), 0);
             }
             let mut at = copy(point);
             while at != body && at != 0 {
@@ -284,7 +285,7 @@ fn materialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &
                 if (nodes[parent].kind == 21 && graph[parent].first_child == at)
                     || (nodes[parent].kind == 13 && graph[parent].mutable) {
                     mutable = true;
-                    if at == point && !graph[binding].mutable { return (report_violation(5, nodes[point].start), 0); }
+                    if at == point && !graph[binding].mutable { return (report_violation_site(5, nodes[point].start, 3), 0); }
                 }
                 if nodes[parent].kind == 16 && graph[parent].first_child == at {
                     let owner = expression_layout(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(at));
@@ -462,19 +463,19 @@ fn specialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[
     let mut argument = graph[graph[call].first_child].next_sibling;
     let invoke_name: [u8; 14] = [95,95,99,111,114,98,111,95,105,110,118,111,107,101];
     while nodes[parameter].kind == 3 {
-        if argument == 0 { return (report_violation(1, nodes[call].start), 0); }
+        if argument == 0 { return (report_violation_site(1, nodes[call].start, 4), 0); }
         let expected = callable_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()], graph[parameter].type_node);
         if expected != 0 {
             let layout = expression_layout(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(argument));
             let invoke = method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(layout), &invoke_name[..]);
             if !is_generated(&source[0..source.len()],&nodes[0..nodes.len()],copy(layout)) || invoke == 0 || !signature_matches(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expected),copy(invoke)) {
-                return (report_violation(1, nodes[argument].start), 0);
+                return (report_violation_site(1, nodes[argument].start, 5), 0);
             }
         }
         parameter = graph[parameter].next_sibling;
         argument = graph[argument].next_sibling;
     }
-    if argument != 0 { return (report_violation(1, nodes[call].start), 0); }
+    if argument != 0 { return (report_violation_site(1, nodes[call].start, 6), 0); }
     let mut name: [u8; 4096] = [0; 4096];
     let name_length = specialization_name(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(function),copy(call), &mut name[..], 0);
     if name_length >= 4096 { return (4, 0); }
@@ -542,7 +543,7 @@ pub fn specialize_callables(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                 let invoke_name: [u8; 14] = [95,95,99,111,114,98,111,95,105,110,118,111,107,101];
                 let invoke = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(layout), &invoke_name[..]);
                 if invoke == 0 || !signature_matches(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expected), invoke) {
-                    return (report_violation(1, nodes[node].start), 0);
+                    return (report_violation_site(1, nodes[node].start, 7), 0);
                 }
                 let mut cursor = put(&mut out[0..out.len()], 0, &source[0..nodes[expected].start]);
                 cursor = put(&mut out[0..out.len()], cursor, &source[nodes[layout].name_start..nodes[layout].name_end]);
@@ -921,7 +922,7 @@ fn invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
         let mode: i64 = if nodes[base].kind == 13 { if graph[base].mutable { 2 } else { 1 } }
             else if nodes[base].kind == 14 || nodes[base].kind == 17 { if mutable { 2 } else { 1 } }
             else { 0 };
-        if mode == 1 && mutable { let error = report_violation(5, nodes[callee].start); drop(error); return 0; }
+        if mode == 1 && mutable { let error = report_violation_site(5, nodes[callee].start, 8); drop(error); return 0; }
         cursor = put(&mut out[0..out.len()],copy(cursor), &source[nodes[layout].name_start..nodes[layout].name_end]);
         cursor = if mode == 0 { call_text_14(&mut out[0..out.len()],copy(cursor)) }
             else if mode == 1 { call_text_15(&mut out[0..out.len()],copy(cursor)) }

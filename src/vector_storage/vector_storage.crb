@@ -1,3 +1,5 @@
+use bootstrap::checked_state::record as record_checked;
+use bootstrap::verify::{violation_site};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::scalar::verify_primitive;
@@ -104,25 +106,25 @@ pub fn record_vector_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let item = if nodes[argument].kind == 7 { graph[argument].binding } else { copy(argument) };
     let source_pool = values[item].target;
     if values[vector].state != 1 || values[pool].state != 1 || values[item].state != 1
-        || source_pool == 0 || values[source_pool].state != 1 { return 0 - violation(4, nodes[call].start); }
-    if !values[vector].mutable { return 0 - violation(5, nodes[call].start); }
+        || source_pool == 0 || values[source_pool].state != 1 { return 0 - violation_site(4, nodes[call].start, 730); }
+    if !values[vector].mutable { return 0 - violation_site(5, nodes[call].start, 731); }
     let allocation = if ty == 2708 { 301 } else { copy(ty) - 2500 };
-    if values[item].ty != allocation { return 0 - violation(1, nodes[argument].start); }
+    if values[item].ty != allocation { return 0 - violation_site(1, nodes[argument].start, 732); }
     if ty == 2708 {
         let shape = vector_allocation_shape(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(pool));
         if shape == 0 || values[item].loan_parent != 0
             || nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], values[item].origin_call) != shape {
-            return 0 - violation(1, nodes[argument].start);
+            return 0 - violation_site(1, nodes[argument].start, 733);
         }
     }
     if !scope_contains(&graph[0..graph.len()], graph[source_pool].scope, graph[vector].scope) {
-        return 0 - violation(4, nodes[call].start);
+        return 0 - violation_site(4, nodes[call].start, 734);
     }
     let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(item), copy(argument), true);
-    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    if access > 0 { return 0 - violation_site(5, nodes[call].start, 735); }
     if access < 0 { return -9; }
     let mut edge = values[vector].origin_call;
     let mut already_recorded = false;
@@ -132,14 +134,14 @@ pub fn record_vector_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     }
     if already_recorded && values[argument].target != source_pool { return -9; }
     let mutable = values[item].mutable;
-    values[item] = CheckedValue { ty: copy(allocation), state: 2, mutable: mutable, target: copy(source_pool),
-        loan_parent: 0, origin_call: 0, writable: false };
+    values[item] = CheckedValue{ ty: copy(allocation), state: 2, mutable: mutable, target: copy(source_pool),
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],item);
     if !already_recorded {
         let tail = values[vector].origin_call;
-        values[argument] = CheckedValue { ty: allocation, state: 1, mutable: false, target: source_pool,
-            loan_parent: 0, origin_call: tail, writable: false };
-        values[vector] = CheckedValue { ty: ty, state: 1, mutable: true, target: pool,
-            loan_parent: 0, origin_call: argument, writable: false };
+        values[argument] = CheckedValue{ ty: allocation, state: 1, mutable: false, target: source_pool,
+            loan_parent: 0, origin_call: tail, writable: false }; record_checked(&values[0..values.len()],argument);
+        values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
+            loan_parent: 0, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],vector);
     }
     1
 }
@@ -151,7 +153,7 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let ty = values[binding].ty;
     if (ty < 2701 || ty > 2708) || nodes[receiver].kind != 7 { return 0; }
     if values[binding].state != 1 || values[values[binding].target].state != 1 {
-        return 0 - violation(4, nodes[call].start);
+        return 0 - violation_site(4, nodes[call].start, 736);
     }
     let index = graph[receiver].next_sibling;
     let pop_name: [u8;3] = [112,111,112];
@@ -161,18 +163,18 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let pop = nodes[call].kind == 16 && name.content_eq(&pop_name[..]);
     let remove = nodes[call].kind == 16 && name.content_eq(&remove_name[..]);
     if !indexed && !pop && !remove { return 0; }
-    if !indexed && !values[binding].mutable { return 0 - violation(5, nodes[call].start); }
-    if pop != (index == 0) || graph[index].next_sibling != 0 { return 0 - violation(1, nodes[call].start); }
+    if !indexed && !values[binding].mutable { return 0 - violation_site(5, nodes[call].start, 737); }
+    if pop != (index == 0) || graph[index].next_sibling != 0 { return 0 - violation_site(1, nodes[call].start, 738); }
     let access = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(binding), copy(call), !indexed);
-    if access > 0 { return 0 - violation(5, nodes[call].start); }
+    if access > 0 { return 0 - violation_site(5, nodes[call].start, 739); }
     if access < 0 { return -9; }
     if ty == 2708 {
         if !remove || mode != 1 || (expected != 0 && expected != 301) { return -9; }
         let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], index, 0, 0);
         if checked < 0 { return checked; }
-        if checked < 1 || checked == 3 || checked > 7 { return 0 - violation(1, nodes[call].start); }
+        if checked < 1 || checked == 3 || checked > 7 { return 0 - violation_site(1, nodes[call].start, 740); }
         let mut entry = values[binding].origin_call;
         let pool = values[entry].target;
         if pool == 0 || values[pool].state != 1 { return -9; }
@@ -185,8 +187,8 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         if shape == 0 { return -9; }
         // The index is checked at runtime. The vector conservatively keeps
         // the pool dependency because it can still contain other slots.
-        values[call] = CheckedValue { ty: 301, state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: shape, writable: false };
+        values[call] = CheckedValue{ ty: 301, state: 1, mutable: false, target: pool,
+            loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
         return 301;
     }
     if indexed {
@@ -194,10 +196,10 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         let checked = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], index, 0, 0);
         if checked < 0 { return checked; }
-        if checked < 1 || checked == 3 || checked > 7 { return 0 - violation(1, nodes[call].start); }
+        if checked < 1 || checked == 3 || checked > 7 { return 0 - violation_site(1, nodes[call].start, 741); }
         let mut entry = values[binding].origin_call;
         while entry != 0 {
-            if values[values[entry].target].state != 1 { return 0 - violation(4, nodes[call].start); }
+            if values[values[entry].target].state != 1 { return 0 - violation_site(4, nodes[call].start, 742); }
             entry = values[entry].origin_call;
         }
         return ty - 2500;
@@ -229,15 +231,15 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     let tail = values[item].origin_call;
     let owner = values[binding].target;
     if previous == 0 {
-        values[binding] = CheckedValue { ty: ty, state: 1, mutable: true, target: owner,
-            loan_parent: 0, origin_call: tail, writable: false };
+        values[binding] = CheckedValue{ ty: ty, state: 1, mutable: true, target: owner,
+            loan_parent: 0, origin_call: tail, writable: false }; record_checked(&values[0..values.len()],binding);
     } else {
         let prior_pool = values[previous].target;
-        values[previous] = CheckedValue { ty: copy(allocation), state: 1, mutable: false, target: prior_pool,
-            loan_parent: 0, origin_call: tail, writable: false };
+        values[previous] = CheckedValue{ ty: copy(allocation), state: 1, mutable: false, target: prior_pool,
+            loan_parent: 0, origin_call: tail, writable: false }; record_checked(&values[0..values.len()],previous);
     }
-    values[call] = CheckedValue { ty: copy(result), state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: 0, writable: false };
+    values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: pool,
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
     result
 }
 
@@ -257,11 +259,11 @@ pub fn remove_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         || autonomous_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name) == 0
         || dependent_handle(&graph[0..graph.len()], &values[0..values.len()], copy(shape)) { return -9; }
     if !values[vector].mutable || values[vector].state != 1 || values[pool].state != 1 {
-        return 0 - violation(5, nodes[operation].start);
+        return 0 - violation_site(5, nodes[operation].start, 743);
     }
     let alias = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         copy(vector), copy(operation), true);
-    if alias > 0 { return 0 - violation(5, nodes[operation].start); }
+    if alias > 0 { return 0 - violation_site(5, nodes[operation].start, 744); }
     if alias < 0 { return -9; }
     let index = graph[receiver].next_sibling;
     let offset = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(index));
@@ -269,10 +271,10 @@ pub fn remove_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], index, 0, 1);
     if ty < 0 { return ty; }
-    if ty < 1 || ty > 7 || ty == 3 { return 0 - violation(1, nodes[operation].start); }
-    values[vector] = CheckedValue { ty: 296, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: 0, writable: false };
-    values[operation] = CheckedValue { ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: shape, writable: false };
+    if ty < 1 || ty > 7 || ty == 3 { return 0 - violation_site(1, nodes[operation].start, 745); }
+    values[vector] = CheckedValue{ ty: 296, state: 1, mutable: true, target: pool,
+        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],vector);
+    values[operation] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
+        loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],operation);
     310
 }

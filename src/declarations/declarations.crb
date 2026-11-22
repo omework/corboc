@@ -1,3 +1,4 @@
+use bootstrap::verify::{report_violation_site};
 use bootstrap::socket_runtime::channel_wait_call;
 use bootstrap::scalar::primitive_enum;
 use bootstrap::socket_runtime::mutex_wait_call;
@@ -87,16 +88,16 @@ fn validate_field_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(annotation));
         if nominal != 0 {
-            if child != 0 { return report_violation(1, nodes[annotation].start); }
+            if child != 0 { return report_violation_site(1, nodes[annotation].start, 74); }
             return validate_layout(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut states[0..states.len()], nominal, depth + 1);
         }
         if verify_primitive(&source[0..source.len()], start, end) == 0 && !known_builtin_type(&name[0..name.len()]) {
             let callable: [u8; 2] = [102,110];
-            if !name.content_eq(&callable[..]) { return report_violation(1, nodes[annotation].start); }
+            if !name.content_eq(&callable[..]) { return report_violation_site(1, nodes[annotation].start, 75); }
         }
         if !valid_builtin_arity(&name[0..name.len()], &graph[0..graph.len()], copy(child)) {
-            return report_violation(1, nodes[annotation].start);
+            return report_violation_site(1, nodes[annotation].start, 76);
         }
         // Named generic arguments may refer to a containing layout through
         // indirection. Validate that their names exist without expanding layouts.
@@ -136,17 +137,17 @@ pub fn validate_type_names(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             let end = nodes[node].name_end;
             if end > start {
                 if unsupported_reference_type(&source[0..source.len()], &nodes[0..nodes.len()],
-                    &graph[0..graph.len()], copy(node)) { return report_violation(8, start); }
+                    &graph[0..graph.len()], copy(node)) { return report_violation_site(8, start, 77); }
                 let name = &source[start..end];
                 let callable: [u8; 2] = [102,110];
                 if verify_primitive(&source[0..source.len()], start, end) == 0
                     && !known_builtin_type(&name[0..name.len()]) && !name.content_eq(&callable[..])
                     && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(node)) == 0 {
-                    return report_violation(1, nodes[node].start);
+                    return report_violation_site(1, nodes[node].start, 78);
                 }
                 if !valid_builtin_arity(&name[0..name.len()], &graph[0..graph.len()], graph[node].first_child) {
-                    return report_violation(1, nodes[node].start);
+                    return report_violation_site(1, nodes[node].start, 79);
                 }
             }
             let status = validate_type_names(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -175,18 +176,18 @@ fn duplicate_child(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], paren
 
 pub fn validate_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], states: &mut [u8], nominal: u64, depth: u64) -> i32 {
     if depth >= 128 { return 9; }
-    if states[nominal] == 1 { return report_violation(1, nodes[nominal].start); }
+    if states[nominal] == 1 { return report_violation_site(1, nodes[nominal].start, 80); }
     if states[nominal] == 2 { return 0; }
     states[nominal] = 1;
     let duplicate = duplicate_child(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(nominal));
-    if duplicate != 0 { return report_violation(1, nodes[duplicate].start); }
+    if duplicate != 0 { return report_violation_site(1, nodes[duplicate].start, 81); }
     let mut child = graph[nominal].first_child;
     while child != 0 {
         if nodes[nominal].kind == 29 {
             let duplicate = duplicate_child(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(child));
-            if duplicate != 0 { return report_violation(1, nodes[duplicate].start); }
+            if duplicate != 0 { return report_violation_site(1, nodes[duplicate].start, 82); }
         }
         let mut field = if nodes[nominal].kind == 29 { graph[child].first_child } else { copy(child) };
         while field != 0 {
@@ -217,7 +218,7 @@ pub fn validate_destructors(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if nodes[item].kind == 49 {
             let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(item));
-            if nominal == 0 { return report_violation(1, nodes[item].start); }
+            if nominal == 0 { return report_violation_site(1, nodes[item].start, 83); }
             let mut method = graph[item].first_child;
             while method != 0 {
                 let name = &source[nodes[method].name_start..nodes[method].name_end];
@@ -230,7 +231,7 @@ pub fn validate_destructors(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                     if seen[nominal] || nodes[receiver].kind != 3 || graph[receiver].first_child != 0
                         || tokens[first].kind != 25 || tokens[first+1].kind != 16 || tokens[first+2].kind != 66
                         || nodes[body].kind != 2 {
-                        return report_violation(1, nodes[method].start);
+                        return report_violation_site(1, nodes[method].start, 84);
                     }
                     seen[nominal] = true;
                 }
@@ -258,7 +259,7 @@ pub fn validate_region_capacities(source: &[u8], nodes: &[AstNode], graph: &[Sta
         let mut cursor = nodes[literal].start;
         while cursor < nodes[literal].end {
             let digit = (source[cursor] - 48) as u64;
-            if value > (limit - digit) / 10 { return report_violation(1, nodes[property].start); }
+            if value > (limit - digit) / 10 { return report_violation_site(1, nodes[property].start, 85); }
             value = value * 10 + digit;
             cursor = cursor + 1;
         }
@@ -575,7 +576,7 @@ fn invalid_tuple_literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         field = graph[field].next_sibling;
         element = graph[element].next_sibling;
     }
-    if field != 0 || element != 0 { return report_violation(1, nodes[expression].start); }
+    if field != 0 || element != 0 { return report_violation_site(1, nodes[expression].start, 86); }
     0
 }
 
@@ -585,10 +586,10 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
     let mut type_contracts = false;
     while item != 0 {
         let kind = nodes[item].kind;
-        if kind == 32 || kind == 64 { return report_violation(1, nodes[item].start); }
+        if kind == 32 || kind == 64 { return report_violation_site(1, nodes[item].start, 87); }
         if kind == 58 {
             let spelling = &source[nodes[item].name_start..nodes[item].name_end];
-            if !spelling.content_eq(&datastack[..]) { return report_violation(1, nodes[item].start); }
+            if !spelling.content_eq(&datastack[..]) { return report_violation_site(1, nodes[item].start, 88); }
         }
         if kind == 1 || kind == 35 {
             let header = graph[item].first_child;
@@ -597,7 +598,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 let lock: [u8; 4] = [108,111,99,107];
                 let name = &source[nodes[header].name_start..nodes[header].name_end];
                 if name.content_eq(&branch[..]) || name.content_eq(&lock[..]) {
-                    return report_violation(1, nodes[header].start);
+                    return report_violation_site(1, nodes[header].start, 89);
                 }
                 type_contracts = true;
             }
@@ -618,7 +619,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                         if graph[prior].declaration {
                             let name = &source[nodes[prior].name_start..nodes[prior].name_end];
                             if current.content_eq(&name[0..name.len()]) {
-                                return report_violation(1, nodes[param].start);
+                                return report_violation_site(1, nodes[param].start, 90);
                             }
                         }
                         prior = graph[prior].next_sibling;
@@ -636,7 +637,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 if same_namespace && (previous == 28 || previous == 29 || previous == 1 || previous == 35) {
                     let earlier = &source[nodes[prior].name_start..nodes[prior].name_end];
                     if name.content_eq(&earlier[0..earlier.len()]) {
-                        return report_violation(1, nodes[item].start);
+                        return report_violation_site(1, nodes[item].start, 91);
                     }
                 }
                 prior = graph[prior].next_sibling;
@@ -646,7 +647,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 let replicate: [u8; 4] = [99,111,112,121];
                 let display: [u8; 5] = [112,114,105,110,116];
                 if name.content_eq(&discard[..]) || name.content_eq(&replicate[..]) || name.content_eq(&display[..]) {
-                    return report_violation(1, nodes[item].start);
+                    return report_violation_site(1, nodes[item].start, 92);
                 }
             }
         }
@@ -660,25 +661,25 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             let mut method = copy(child);
             while method != 0 {
                 let header = graph[method].first_child;
-                if nodes[header].kind == 58 { return report_violation(8, nodes[header].start); }
+                if nodes[header].kind == 58 { return report_violation_site(8, nodes[header].start, 93); }
                 method = graph[method].next_sibling;
             }
         }
         if kind == 51 && unsupported_register_class(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(at)) { return report_violation(8, nodes[at].start); }
-        if kind == 55 || kind == 65 { return report_violation(8, nodes[at].start); }
+            &graph[0..graph.len()], copy(at)) { return report_violation_site(8, nodes[at].start, 94); }
+        if kind == 55 || kind == 65 { return report_violation_site(8, nodes[at].start, 95); }
         if kind == 27 && value_loop_without_break(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(at)) {
-            return report_violation(1, nodes[at].start);
+            return report_violation_site(1, nodes[at].start, 96);
         }
         if kind == 13 && direct_mutability_error(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(at)) { return report_violation(5, nodes[at].start); }
+            &graph[0..graph.len()], copy(at)) { return report_violation_site(5, nodes[at].start, 97); }
         if kind == 58 {
             let directive: [u8; 9] = [100,105,114,101,99,116,105,118,101];
             let spelling = &source[nodes[at].name_start..nodes[at].name_end];
-            if spelling.content_eq(&directive[..]) { return report_violation(8, nodes[at].start); }
+            if spelling.content_eq(&directive[..]) { return report_violation_site(8, nodes[at].start, 98); }
         }
         if kind == 8 && unsupported_effect(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(child)) { return report_violation(8, nodes[child].start); }
+            &graph[0..graph.len()], copy(child)) { return report_violation_site(8, nodes[child].start, 99); }
         if kind == 2 {
             let context = nodes[nodes[at].parent].kind;
             let wrapper = nodes[at].parent;
@@ -688,13 +689,13 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if (tail || context == 5 || context == 6 || context == 11 || context == 12
                 || context == 18 || context == 20 || context == 21 || context == 37 || context == 44)
                 && missing_block_value(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(at)) {
-                return report_violation(1, nodes[at].start);
+                return report_violation_site(1, nodes[at].start, 100);
             }
         }
         if kind == 23 && child != 0 && graph[at].destination != 0
             && direct_local_loan(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 copy(child), graph[graph[at].destination].scope) {
-            return report_violation(4, nodes[child].start);
+            return report_violation_site(4, nodes[child].start, 101);
         }
         if kind == 6 || kind == 10 {
             let parent = nodes[nodes[at].parent].parent;
@@ -702,7 +703,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if nodes[function].kind == 1 || nodes[function].kind == 35 {
                 if direct_local_loan(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     copy(child), graph[function].scope) {
-                    return report_violation(4, nodes[child].start);
+                    return report_violation_site(4, nodes[child].start, 102);
                 }
                 let mut annotation = graph[function].first_child;
                 while nodes[annotation].kind == 3 { annotation = graph[annotation].next_sibling; }
@@ -715,7 +716,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             && source[nodes[at].name_start] == 97 && source[nodes[at].name_start + 1] == 115 {
             let target = graph[child].next_sibling;
             if nodes[target].kind == 4 && source[nodes[target].start] == 38 {
-                return report_violation(1, nodes[target].start);
+                return report_violation_site(1, nodes[target].start, 103);
             }
         }
         if kind == 18 && nodes[child].kind == 18 {
@@ -725,7 +726,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 let initializer = graph[holder].initializer;
                 if (nodes[initializer].kind == 44 || nodes[initializer].kind == 45)
                     && nodes[graph[initializer].first_child].kind == 13 {
-                    return report_violation(1, nodes[at].start);
+                    return report_violation_site(1, nodes[at].start, 104);
                 }
             }
         }
@@ -736,7 +737,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 let referent = graph[annotation].first_child;
                 let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], referent);
-                if nodes[nominal].kind == 28 { return report_violation(1, nodes[at].start); }
+                if nodes[nominal].kind == 28 { return report_violation_site(1, nodes[at].start, 105); }
             }
         }
         if kind == 13 && nodes[child].kind == 18 {
@@ -753,7 +754,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                     let string_name:[u8;6]=[83,116,114,105,110,103];let vector_name=&source[nodes[vector].name_start..nodes[vector].name_end];
                     if !vector_name.content_eq(&string_name[..]) && scalar != 2 && scalar != 4 && inline_vector_shape(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], vector) == 0 {
-                        return report_violation(1, nodes[at].start);
+                        return report_violation_site(1, nodes[at].start, 106);
                     }
                 }
             }
@@ -763,14 +764,14 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if (nodes[parent].kind == 17 || nodes[parent].kind == 37) && graph[parent].first_child == at
                 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], copy(at)) == 0 {
-                return report_violation(1, nodes[at].start);
+                return report_violation_site(1, nodes[at].start, 107);
             }
             if nodes[parent].kind == 18 && graph[parent].first_child == at {
-                return report_violation(1, nodes[at].start);
+                return report_violation_site(1, nodes[at].start, 108);
             }
         }
         if kind == 15 && (nodes[child].kind == 19 || nodes[child].kind == 55) {
-            return report_violation(8, nodes[at].start);
+            return report_violation_site(8, nodes[at].start, 109);
         }
         if kind == 15 && nodes[child].kind == 7 && graph[child].binding == 0 {
             let clone_word: [u8; 4] = [99,111,112,121];
@@ -780,14 +781,14 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if spelling.content_eq(&drop_word[..]) && nodes[argument].kind == 7
                 && graph[argument].next_sibling == 0
                 && tracked_address_conflict(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                    copy(at), graph[argument].binding) { return report_violation(5, nodes[at].start); }
+                    copy(at), graph[argument].binding) { return report_violation_site(5, nodes[at].start, 110); }
             if spelling.content_eq(&clone_word[..]) && nodes[argument].kind == 7 {
                 let initializer = graph[graph[argument].binding].initializer;
                 if nodes[initializer].kind == 44 || nodes[initializer].kind == 45
                     || (nodes[initializer].kind == 37 && !primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], initializer)))
                     || nodes[initializer].kind == 20 {
-                    return report_violation(3, nodes[at].start);
+                    return report_violation_site(3, nodes[at].start, 111);
                 }
             }
         }
@@ -797,7 +798,7 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
             if context == 5 || context == 11 || context == 12 || context == 16 || context == 17
                 || context == 18 || context == 21 || context == 6 {
                 let invalid = missing_value_alternative(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(at));
-                if invalid != 0 { return report_violation(1, nodes[invalid].start); }
+                if invalid != 0 { return report_violation_site(1, nodes[invalid].start, 112); }
             }
         }
         if kind == 21 && nodes[child].kind == 7 {
@@ -807,57 +808,57 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 && graph[binding].scope != graph[at].scope
                 && scope_contains(&graph[0..graph.len()], graph[binding].scope, graph[at].scope)
                 && direct_local_loan(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(value), graph[at].scope) {
-                return report_violation(4, nodes[value].start);
+                return report_violation_site(4, nodes[value].start, 113);
             }
             if binding != 0 && nodes[graph[binding].initializer].kind == 13 {
-                return report_violation(8, nodes[child].start);
+                return report_violation_site(8, nodes[child].start, 114);
             }
         }
         if kind == 21 && nodes[child].kind == 18 && nodes[at].name_end == nodes[at].name_start + 1 {
             let place = graph[child].first_child;
             let nested = nodes[place].kind == 18;
             let base = if nested { graph[place].first_child } else { place };
-            if nodes[base].kind != 7 { return report_violation(1, nodes[child].start); }
+            if nodes[base].kind != 7 { return report_violation_site(1, nodes[child].start, 115); }
             let binding = graph[base].binding;
             let annotation = graph[binding].type_node;
             let slice = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(binding));
             if nested && (slice == 0 || source[nodes[graph[slice].first_child].start] != 91) {
-                return report_violation(1, nodes[child].start);
+                return report_violation_site(1, nodes[child].start, 116);
             }
             if slice != 0 && !borrow_mutable(&source[nodes[annotation].start..nodes[slice].start]) {
-                return report_violation(5, nodes[child].start);
+                return report_violation_site(5, nodes[child].start, 117);
             }
             if slice == 0 && nodes[binding].kind == 3 && annotation != 0 && source[nodes[annotation].start] == 38
                 && source[nodes[graph[annotation].first_child].start] == 91 && !graph[binding].mutable {
-                return report_violation(5, nodes[child].start);
+                return report_violation_site(5, nodes[child].start, 118);
             }
         }
         if kind == 47 {
             let invalid = tuple_pattern_error(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(at));
-            if invalid != 0 { return report_violation(1, nodes[invalid].start); }
+            if invalid != 0 { return report_violation_site(1, nodes[invalid].start, 119); }
         }
         if kind == 16 && !package {
             let content: [u8; 10] = [99,111,110,116,101,110,116,95,101,113];
             let method = &source[nodes[at].name_start..nodes[at].name_end];
             if method.content_eq(&content[..]) && byte_slice_receiver(&source[0..source.len()],
-                &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) { return report_violation(8, nodes[at].start); }
+                &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) { return report_violation_site(8, nodes[at].start, 120); }
         }
         if kind == 16 && unavailable_method(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(at)) { return report_violation(8, nodes[at].start); }
+            &graph[0..graph.len()], copy(at)) { return report_violation_site(8, nodes[at].start, 121); }
         if kind == 15 && (env_call == 0 || nodes[at].start != env_call) {
             let problem = qualified_call_error(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(at));
             if problem == 2 { unknown_qualified_function(&source[nodes[child].start..nodes[child].end]); }
-            if problem != 0 { return report_violation(8, nodes[at].start); }
+            if problem != 0 { return report_violation_site(8, nodes[at].start, 122); }
         }
         if kind == 66 && invalid_pool_element(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(at)) { return report_violation(1, nodes[at].start); }
+            &graph[0..graph.len()], copy(at)) { return report_violation_site(1, nodes[at].start, 123); }
         if kind == 5 {
             let value = graph[at].initializer;
             if nodes[value].kind == 7 && nodes[graph[graph[value].binding].initializer].kind == 66 {
-                return report_violation(4, nodes[value].start);
+                return report_violation_site(4, nodes[value].start, 124);
             }
         }
         if (kind == 5 && nodes[child].kind == 4) || kind == 66 {

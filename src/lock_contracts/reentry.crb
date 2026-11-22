@@ -1,3 +1,4 @@
+use bootstrap::verify::{violation_site};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Check acquisition reachability separately from the runtime implementation of a lock.
 
@@ -301,7 +302,7 @@ pub fn validate_lock_reentry(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
                     0
                 );
                 if found != 0 {
-                    return violation(5, nodes[found].start);
+                    return violation_site(5, nodes[found].start, 188);
                 }
             }
         }

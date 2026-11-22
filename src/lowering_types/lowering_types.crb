@@ -26,8 +26,31 @@ pub fn unsigned(n: i64) -> u64 {
     unsigned(n / 2) * 2 + (if n % 2 == 0 { 0 } else { 1 })
 }
 
+// Tuple layouts remain structural. Containers use a bounded compact handle
+// rather than truncating their full structural code into a container payload.
+fn tuple_layout(op:i64,value:i64)->i64 {
+    let mut result:i64=-1;
+    @unchecked { @c {
+        static int64_t layouts[65536]; static bool emitted[65536]; static uint64_t count;
+        int64_t op=${op},value=${value};
+        if(op==0){uint64_t i=0;while(i<count&&layouts[i]!=value)++i;
+            if(i<count)${result}=(int64_t)i+1;
+            else if(count<65536){layouts[count]=value;${result}=(int64_t)++count;}}
+        else if(op==1&&value>0&&(uint64_t)value<=count)${result}=layouts[value-1];
+        else if(op==2&&value>0&&(uint64_t)value<=count){${result}=emitted[value-1]?1:0;emitted[value-1]=true;}
+        else if(op==3){for(uint64_t i=0;i<count;++i)emitted[i]=false;${result}=0;}
+    } }
+    result
+}
+pub fn tuple_slot(ty:i64)->i64 {tuple_layout(0,ty)}
+pub fn tuple_stored(slot:i64)->i64 {tuple_layout(1,slot)}
+pub fn tuple_emitted(ty:i64)->bool {tuple_layout(2,tuple_slot(ty))!=0}
+pub fn reset_tuple_definitions(){drop(tuple_layout(3,0));}
+
 // Keep the mutability of each loan in a scalar reference chain.
 pub fn scalar_reference(referent: i64, mutable: bool) -> i64 {
+    if referent>=3000000 && referent<4000000{return referent+1000000;}
+    if is_tuple(copy(referent)) {let slot=tuple_slot(referent);return if slot>0 {10000000+slot*2+(if mutable {1}else{0})}else{-1};}
     if referent > 0 && referent < 20 { return referent + (if mutable { 40 } else { 20 }); }
     if referent >= 20 && referent < 60 { return referent + (if mutable { 80 } else { 40 }); }
     if referent > 6000000 && referent <= 6000009 {
@@ -37,6 +60,8 @@ pub fn scalar_reference(referent: i64, mutable: bool) -> i64 {
 }
 
 pub fn scalar_referent(reference: i64) -> i64 {
+    if reference>=4000000 && reference<5000000{return reference-1000000;}
+    if reference>=10000002 && reference<=10131073 {return tuple_stored((reference-10000000)/2);}
     if reference >= 20 && reference < 60 { return reference % 20; }
     if reference >= 60 && reference < 100 { return reference - 40; }
     if reference >= 100 && reference < 140 { return reference - 80; }
@@ -74,6 +99,7 @@ pub fn vector_element(ty: i64) -> i64 {
 }
 
 pub fn slice_code(element: i64) -> i64 {
+    if is_tuple(copy(element)){let slot=tuple_slot(element);return if slot>0{2800000+slot}else{-1};}
     if element > 0 && element < 140 { return 2000000 + element; }
     if element >= 10101 && element <= 419609 && element % 100 >= 1 && element % 100 <= 9 {
         return 2700000 + compact_array_code(element);
@@ -83,6 +109,7 @@ pub fn slice_code(element: i64) -> i64 {
 }
 
 pub fn slice_element(ty: i64) -> i64 {
+    if ty>2800000 && ty<=2865536{return tuple_stored(ty-2800000);}
     if ty > 2700000 && ty <= 2740969 { return compact_array_type(ty - 2700000); }
     if ty == 2000139 { return 2000138; }
     if ty > 2100000 && ty <= 2624288 { return 3000000 + ty - 2100000; }
@@ -91,6 +118,7 @@ pub fn slice_element(ty: i64) -> i64 {
 }
 
 pub fn c_type(ty: i64) {
+    if ty>=10000002 && ty<=10131073 {c_type(scalar_referent(ty));character(42);return;}
     if ty == 11 { c_type(pointer_integer_type()); return; }
     if result_type(copy(ty)) { character(114); number(unsigned(ty - 9000000000000000000)); return; }
     if wide_array(copy(ty)) {
@@ -159,10 +187,11 @@ pub fn consume(ty: i64, node: u64, binding: bool) {
 }
 
 pub fn array_code(element: i64, length: u64, placed: bool) -> i64 {
-    if length > 4194304 || element <= 0 || element >= 8000000 { return -1; }
+    let stored = if is_tuple(copy(element)){let slot=tuple_slot(element);if slot>0{8300000+slot}else{-1}}else{copy(element)};
+    if length > 4194304 || stored <= 0 || stored >= 9000000 { return -1; }
     if !placed && length <= 4096 && element < 60 { return 10000 + signed(length) * 100 + element; }
     6000000000000000000 + (if placed || length > 4096 { 500000000000000000 } else { 0 })
-        + signed(length) * 10000000 + element
+        + signed(length) * 10000000 + stored
 }
 
 pub fn wide_array(ty: i64) -> bool { ty / 1000000000000000000 == 6 }
@@ -173,7 +202,7 @@ pub fn array_value_type(ty: i64) -> bool {
     (ty >= 10000 && ty < 1000000) || wide_array(ty)
 }
 pub fn array_item(ty: i64) -> i64 {
-    if wide_array(copy(ty)) { return ty % 10000000; }
+    if wide_array(copy(ty)) {let item=ty%10000000;return if item>8300000 && item<=8365536{tuple_stored(item-8300000)}else{item};}
     array_shape(ty) % 100
 }
 pub fn array_length(ty: i64) -> u64 {
@@ -186,7 +215,7 @@ pub fn array_name(ty: i64) {
 pub fn array_has_owners(ty: i64) -> bool {
     if !wide_array(copy(ty)) { return false; }
     let item = array_item(ty);
-    handle_type(copy(item)) || (item >= 3000000 && item < 4000000) || (item >= 6000000 && item < 7000000)
+    tuple_has_owners(copy(item)) || handle_type(copy(item)) || (item >= 3000000 && item < 4000000) || (item >= 6000000 && item < 7000000)
 }
 
 pub fn array_shape(ty: i64) -> i64 { ty % 1000000 }

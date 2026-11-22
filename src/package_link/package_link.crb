@@ -1,3 +1,4 @@
+use bootstrap::verify::{report_violation_site};
 use bootstrap::diagnostics::{diagnostic_link,diagnostic_emit};
 use bootstrap::constants::constant_name_reserved;
 use bootstrap::model::{AstNode, StaticNode, LayoutVisibility, Token, token_at};
@@ -530,7 +531,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             let file = file_at(&files[0..files.len()], copy(start));
             let module = &names[files[file].module_start..files[file].module_end];
             if !standard_module(&module[0..module.len()]) {
-                return (report_violation(1, start), 0, 0);
+                return (report_violation_site(1, start, 297), 0, 0);
             }
         }
         token = token + 1;
@@ -559,7 +560,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 let start = nodes[node].name_start;
                 let end = nodes[node].name_end;
                 if kind == 76 && constant_name_reserved(&source[start..end], false) {
-                    return (report_violation(1, start), 0, 0);
+                    return (report_violation_site(1, start, 298), 0, 0);
                 }
                 if declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
                     &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end)) != 0 { drop(diagnostic_emit(5,14,nodes[node].name_start));return (14, 0, 0); }
@@ -658,7 +659,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 let native = native_std_type(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], copy(target));
                 is_string = native && target_name.content_eq(&string[..]);
             }
-            if is_string && tokens[last+1].kind == 23 && tokens[last+2].kind != 8 { return (report_violation(1,start),0,0); }
+            if is_string && tokens[last+1].kind == 23 && tokens[last+2].kind != 8 { return (report_violation_site(1, start, 299),0,0); }
             if is_string && tokens[last+1].kind == 23 && tokens[last+2].kind == 8 {
                 let mut candidate: usize = 0;
                 let mut found: u64 = 0;
@@ -670,7 +671,7 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                         && declaration_name.content_eq(&bounded[..]) { found = declaration; }
                     candidate += 1;
                 }
-                if found == 0 { return (report_violation(1, start),0,0); }
+                if found == 0 { return (report_violation_site(1, start, 300),0,0); }
                 target = found;
             }
             if target != 0 && target != main_node && (!type_name || nominal(nodes[target].kind)) {
