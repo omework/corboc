@@ -132,7 +132,7 @@ pub fn read_check_file(
         return invalid;
     }
     let mut terminated: [u8; 4096] = [0; 4096];
-    let length = append(&mut terminated[..], 0, path);
+    let length = append(&mut terminated[..], 0, &path[0..path.len()]);
     let limit = source.len() - 1;
     let (status, count) = read_source(&terminated[..length + 1], &mut source[0..limit]);
     if status != 0 {
@@ -152,6 +152,9 @@ pub fn read_check_file(
     if module_end == 0 {
         return invalid;
     }
+    let path_start = module_end;
+    let path_end = append(&mut names[0..names.len()], path_start, &path[0..path.len()]);
+    if path_end == 0 { return invalid; }
     files[0] = PackageFile {
         end: count as u64,
         module_start: 0,
@@ -159,17 +162,19 @@ pub fn read_check_file(
         entry: true,
         package: 0,
         visible: 1,
+        path_start: path_start as u64,
+        path_end: path_end as u64,
     };
     if stdlib.len() == 0 {
         return PackageInput {
             source_end: (count + 1) as u64,
-            names_end: module_end as u64,
+            names_end: path_end as u64,
             files_end: 1,
             error: 0,
         };
     }
     let std_name: [u8; 3] = [115, 116, 100];
-    let std_end = append(&mut names[0..names.len()], module_end, &std_name[..]);
+    let std_end = append(&mut names[0..names.len()], path_end, &std_name[..]);
     if std_end == 0 || stdlib.len() >= 4096 {
         return invalid;
     }
@@ -177,7 +182,7 @@ pub fn read_check_file(
     let used = append(&mut directory[..], 0, stdlib);
     walk(
         &directory[..used + 1],
-        module_end,
+        path_end,
         std_end,
         &mut source[0..source.len()],
         &mut names[0..names.len()],

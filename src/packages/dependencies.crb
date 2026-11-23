@@ -252,7 +252,8 @@ pub fn read_package(root: &[u8], stdlib: &[u8], source: &mut [u8], names: &mut [
         let module_end = files[file].module_end;
         let entry = files[file].entry;
         files[file] = PackageFile { end: end, module_start: module_start,
-            module_end: module_end, entry: entry, package: copy(owner), visible: packages[owner].visible };
+            module_end: module_end, entry: entry, package: copy(owner), visible: packages[owner].visible,
+            path_start: files[file].path_start, path_end: files[file].path_end };
         file = file + 1;
     }
     if stdlib.len() == 0 {

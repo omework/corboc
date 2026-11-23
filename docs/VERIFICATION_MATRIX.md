@@ -353,3 +353,23 @@ Plain-value replacement uses existing content-access checks; ownership-bearing
 replacement rules are not bypassed. Installed compiler smoke checks pass.
 Host: macOS ARM64; target ABI/runtime unchanged. No platform matrix replay.
 [Focused report](PROJECTED_WRITES_CYCLE.md).
+
+## Selected-file diagnostics and dependency-aware watching
+
+Compiler CLI context selection, not a normative rule change. Nine direct focus
+checks and one watch sequence pass; seven existing file-watch cases remain
+passing. A normal two-module build executes with output 42. Selected files retain
+original source locations and do not inherit unrelated main/module errors;
+required module and manifest failures remain relevant. The rebuilt compiler is
+installed. Host: macOS ARM64; no target ABI/runtime changes or platform replay.
+[Report](SELECTED_FILE_CHECK_CYCLE.md).
+
+## Nominal instance-method dispatch
+
+Struct and enum receivers share method lookup, parameter ownership and borrow
+reservations. `scripts/validate_enum_methods.py` checks receiver mutation
+permission, moving versus primitive-enum copying, retained enum identity,
+borrowed matches and resource cleanup. It also covers generic structs/enums.
+This is focused compiler integration coverage, not new normative rules or proof
+of general safety. See [the cycle report](ENUM_METHODS_CYCLE.md) and its checklist
+for execution/install status.

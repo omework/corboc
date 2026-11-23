@@ -22,7 +22,7 @@ use bootstrap::map_entries::entry_effect_scalar;
 use bootstrap::tuples::{tuple_annotation, symbolic_tuple};
 use bootstrap::array_relays::array_relay_contract;
 use bootstrap::task_relay::{envelope_relay, envelope_wait, conditional_wait, nominal_relay_declaration, awaited_projection};
-use bootstrap::verify::{check_type, check_block, report_violation, violation, unsupported_value_receiver};
+use bootstrap::verify::{check_type, check_block, report_violation, violation};
 use bootstrap::stored::{vector_relay_type, vector_reference_type, vector_reference_owner, returned_field, returned_array_loan, field_reborrow};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
@@ -82,10 +82,9 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         || source[nodes[annotation].start] == 38 {
                         return report_violation_site(1, nodes[annotation].start, 1000);
                     }
-                    if !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, 0, true) {
-                        unsupported_value_receiver();
-                        return unsupported_declaration(&nodes[0..nodes.len()], item);
-                    }
+                    // Receiver ownership is an ordinary by-value parameter.
+                    // Its fields and dependencies are checked by the signature
+                    // path below, rather than a separate method-layout gate.
                 }
                 method = graph[method].next_sibling;
             }
@@ -292,7 +291,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             let shape = nodes[item].parent;
             let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(shape));
-            if nodes[record].kind != 28 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
+            if nodes[record].kind != 28 && nodes[record].kind != 29 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
             let exclusive = borrow_mutable(&source[nodes[child].start..nodes[child].name_start]);
             values[child] = CheckedValue{ ty: 734, state: 1, mutable: false, target: copy(child),
                 loan_parent: 0, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],child);

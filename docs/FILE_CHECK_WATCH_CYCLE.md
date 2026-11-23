@@ -1,3 +1,7 @@
+> Superseded for package-backed file targets by
+> [selected-file checks](SELECTED_FILE_CHECK_CYCLE.md): directories still check
+> full packages, while file targets check their module/import context first.
+
 # File checks and dependency-aware watch
 
 Date: 2026-11-22. Scope: compiler CLI/build tooling. No grammar, normative rule,

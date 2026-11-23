@@ -1,3 +1,4 @@
+use bootstrap::packages::append;
 use bootstrap::self_type::{has_self_type,expand_self_type};
 use bootstrap::semantic_diagnostics::begin as semantic_begin;
 use bootstrap::iteration::{has_iteration_syntax, expand_iteration_syntax};
@@ -33,7 +34,6 @@ use bootstrap::packages::{check_target, check_file_present, read_check_input, ch
     use bootstrap::build_driver::{stdlib_path, workspace_path, redirect_stdout, restore_stdout,
         toolchain, publish, clean, diagnostic, ensure_directory};
     use bootstrap::packages::binary_output;
-    use bootstrap::packages::append;
 #(endif)
 
 fn name_start(byte: u8) -> bool {
@@ -3297,6 +3297,8 @@ fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) -> i32 {
     }
     let result: i32 = if kind != 0 && !check_file_present(&file[0..file.len()]) {
         11
+    } else if kind == 1 {
+        compile_input_selection(&root[0..root.len()], stdlib, 7, false, &file[0..file.len()])
     } else if kind == 2 {
         compile_input_mode(&file[0..file.len()], stdlib, 7, true)
     } else {
@@ -3305,7 +3307,7 @@ fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) -> i32 {
     if result == 0 {
         check_message("corboc: check passed\n");
     } else {
-        if kind==2 {diagnostic_finish(&file[0..file.len()],result);} else {diagnostic_finish(&root[0..root.len()],result);}
+        if kind!=0 {diagnostic_finish(&file[0..file.len()],result);} else {diagnostic_finish(&root[0..root.len()],result);}
         check_message("corboc: check failed (see compiler diagnostics)\n");
     }
     result
@@ -3412,23 +3414,249 @@ fn compile_package_mode(root: &[u8], stdlib: &[u8], mode: i32) -> i32 {
     compile_input_mode(root,stdlib,mode,false)
 }
 
+/// Match a module path against a qualified token sequence without resolving
+/// symbols. The linker still decides visibility, aliases and ambiguities.
+fn check_module_end(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) -> usize {
+    let mut at: usize = 0;
+    let mut token = first;
+    while at < module.len() {
+        let start = at;
+        while at < module.len() && module[at] != 58 { at += 1; }
+        if token >= tokens.len() || tokens[token].kind == 0 { return 0; }
+        let expected = &module[start..at];
+        if tokens[token].kind == 4 {
+            // Grouped imports name several alternative components after the
+            // same qualified prefix. Skip aliases while finding that member.
+            token += 1;
+            loop {
+                if token >= tokens.len() || tokens[token].kind == 0 || tokens[token].kind == 5 { return 0; }
+                let member = &source[tokens[token].start..tokens[token].end];
+                if member.content_eq(&expected[0..expected.len()]) { break; }
+                while token < tokens.len() && tokens[token].kind != 0 && tokens[token].kind != 5
+                    && tokens[token].kind != 11 { token += 1; }
+                if tokens[token].kind != 11 { return 0; }
+                token += 1;
+            }
+        }
+        let actual = &source[tokens[token].start..tokens[token].end];
+        if !actual.content_eq(&expected[0..expected.len()]) { return 0; }
+        token += 1;
+        if at < module.len() {
+            if at + 1 >= module.len() || module[at + 1] != 58 || tokens[token].kind != 43 { return 0; }
+            at += 2;
+            token += 1;
+        }
+    }
+    token
+}
+
+fn check_module_prefix(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) -> bool {
+    check_module_end(source, tokens, first, module) != 0
+}
+
+/// Select only the requested module and its transitive qualified/imported
+/// modules. Original source identities are retained through compaction.
+fn focus_check_input(source: &mut [u8], names: &[u8], files: &mut [PackageFile],
+    tokens: &mut [Token], path: &[u8], mode: i32) -> (i32, u64, u64) {
+    let total = files.len();
+    let mut primary: usize = total;
+    let mut file: usize = 0;
+    while file < total {
+        let identity = &names[files[file].path_start..files[file].path_end];
+        if identity.content_eq(&path[0..path.len()]) { primary = file; break; }
+        file += 1;
+    }
+    if primary == total { return (11, 0, 0); }
+    let mut selected: [bool; 256] = [false; 256];
+    let mut visited: [bool; 256] = [false; 256];
+    let module = &names[files[primary].module_start..files[primary].module_end];
+    file = 0;
+    while file < total {
+        let other = &names[files[file].module_start..files[file].module_end];
+        selected[file] = files[file].package == 64 || other.content_eq(&module[0..module.len()]);
+        file += 1;
+    }
+    // Keep offsets global during discovery so lexical/configuration diagnostics
+    // map directly to the original file, even before source reordering.
+    let mut working: [u8; 4194304] = [32; 4194304];
+    let mut previous_start: usize = 0;
+    let mut previous_end: usize = 0;
+    loop {
+        let mut next: usize = total;
+        if !visited[primary] { next = primary; }
+        if next == total {
+            file = 0;
+            while file < total {
+                if selected[file] && !visited[file] && files[file].package != 64 { next = file; break; }
+                file += 1;
+            }
+        }
+        if next == total { break; }
+        visited[next] = true;
+        let start: usize = if next == 0 { 0 } else { files[next - 1].end as usize + 1 };
+        let end = files[next].end as usize + 1;
+        let mut at = previous_start;
+        while at < previous_end { working[at] = 32; at += 1; }
+        drop(append(&mut working[..], start, &source[start..end]));
+        previous_start = start;
+        previous_end = end;
+        let (status, count) = scan_tokens(&working[..end], &mut tokens[0..tokens.len()], copy(mode));
+        if status != 0 { return (status, 0, 0); }
+        let used = select_target(&working[..end], &mut tokens[0..count + 3]);
+        if used == 0 { return (7, 0, 0); }
+        let mut token: usize = 0;
+        while token + 1 < used && tokens[token].kind != 0 {
+            if tokens[token + 1].kind == 43 && (token == 0 || tokens[token - 1].kind != 43) {
+                let mut longest: usize = 0;
+                file = 0;
+                while file < total {
+                    let candidate = &names[files[file].module_start..files[file].module_end];
+                    if candidate.len() > longest && check_module_prefix(&source[0..source.len()],
+                        &tokens[0..used], token, &candidate[0..candidate.len()]) { longest = candidate.len(); }
+                    file += 1;
+                }
+                if longest != 0 {
+                    file = 0;
+                    while file < total {
+                        let candidate = &names[files[file].module_start..files[file].module_end];
+                        if candidate.len() == longest && check_module_prefix(&source[0..source.len()],
+                            &tokens[0..used], token, &candidate[0..candidate.len()]) { selected[file] = true; }
+                        file += 1;
+                    }
+                }
+            }
+            token += 1;
+        }
+        // Import aliases are lexical to this file. Preserve module aliases,
+        // grouped imports and qualified descendants without pulling in every
+        // other module of the dependency package.
+        let mut alias_tokens: [usize; 4096] = [0; 4096];
+        let mut alias_files: [usize; 4096] = [0; 4096];
+        let mut aliases: usize = 0;
+        token = 0;
+        let use_word = "use";
+        let use_bytes = use_word.as_bytes();
+        while token + 1 < used && tokens[token].kind != 0 {
+            let spelling = &source[tokens[token].start..tokens[token].end];
+            if spelling.content_eq(&use_bytes[0..use_bytes.len()]) {
+                file = 0;
+                while file < total {
+                    let candidate = &names[files[file].module_start..files[file].module_end];
+                    let end = check_module_end(&source[0..source.len()], &tokens[0..used], token + 1,
+                        &candidate[0..candidate.len()]);
+                    if end != 0 {
+                        let kind = tokens[end].kind;
+                        if kind == 43 && tokens[end + 1].kind == 4 { selected[file] = true; }
+                        if kind == 41 || kind == 14 || kind == 11 || kind == 5 {
+                            selected[file] = true;
+                            if aliases == 4096 { return (4, 0, 0); }
+                            alias_tokens[aliases] = if kind == 41 { end + 1 } else { end - 1 };
+                            alias_files[aliases] = file;
+                            aliases += 1;
+                        }
+                    }
+                    file += 1;
+                }
+            }
+            token += 1;
+        }
+        token = 0;
+        while token + 1 < used && tokens[token].kind != 0 {
+            if tokens[token + 1].kind == 43 {
+                let actual = &source[tokens[token].start..tokens[token].end];
+                let mut alias: usize = 0;
+                while alias < aliases {
+                    let name = alias_tokens[alias];
+                    let spelling = &source[tokens[name].start..tokens[name].end];
+                    if actual.content_eq(spelling) {
+                        let owner = alias_files[alias];
+                        let prefix = &names[files[owner].module_start..files[owner].module_end];
+                        file = 0;
+                        while file < total {
+                            let candidate = &names[files[file].module_start..files[file].module_end];
+                            let length = prefix.len();
+                            if candidate.len() > length + 2 && candidate[length] == 58 && candidate[length + 1] == 58 {
+                                let head = &candidate[0..length];
+                                if head.content_eq(&prefix[0..prefix.len()]) && check_module_prefix(&source[0..source.len()],
+                                    &tokens[0..used], token + 2, &candidate[length + 2..candidate.len()]) { selected[file] = true; }
+                            }
+                            file += 1;
+                        }
+                    }
+                    alias += 1;
+                }
+            }
+            token += 1;
+        }
+    }
+    let mut ordered = [PackageFile { end: 0, module_start: 0, module_end: 0,
+        entry: false, package: 0, visible: 0, path_start: 0, path_end: 0 }; 256];
+    let mut written: usize = 0;
+    let mut count: usize = 0;
+    let mut pass: usize = 0;
+    diagnostic_stage(&source[0..source.len()]);
+    while pass <= total {
+        let mut selected_file: usize = primary;
+        if pass != 0 { selected_file = pass - 1; }
+        pass += 1;
+        if !selected[selected_file] || (pass > 1 && selected_file == primary) { continue; }
+        let mut start: usize = 0;
+        if selected_file != 0 { start = files[selected_file - 1].end as usize + 1; }
+        let end = files[selected_file].end as usize + 1;
+        written = append(&mut working[..], written, &source[start..end]);
+        if written == 0 { return (4, 0, 0); }
+        ordered[count] = PackageFile { end: written as u64 - 1,
+            module_start: files[selected_file].module_start, module_end: files[selected_file].module_end,
+            entry: files[selected_file].entry, package: files[selected_file].package,
+            visible: files[selected_file].visible,
+            path_start: files[selected_file].path_start, path_end: files[selected_file].path_end };
+        count += 1;
+    }
+    diagnostic_linked(written);
+    let mut at: usize = 0;
+    while at < written { source[at] = working[at]; at += 1; }
+    file = 0;
+    while file < count {
+        files[file] = PackageFile { end: ordered[file].end, module_start: ordered[file].module_start,
+            module_end: ordered[file].module_end, entry: ordered[file].entry,
+            package: ordered[file].package, visible: ordered[file].visible,
+            path_start: ordered[file].path_start, path_end: ordered[file].path_end };
+        file += 1;
+    }
+    (0, written as u64, count as u64)
+}
+
 fn compile_input_mode(root: &[u8], stdlib: &[u8], mode: i32, file:bool) -> i32 {
+    let empty: [u8; 0] = [];
+    compile_input_selection(root, stdlib, mode, file, &empty[..])
+}
+
+fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, focus: &[u8]) -> i32 {
     diagnostic_begin();
     // Include the compiler sources and the documented standard library in a single package.
     let mut source: [u8; 4194304] = [0; 4194304];
     let mut names: [u8; 131072] = [0; 131072];
-    let mut files = [PackageFile { end: 0, module_start: 0, module_end: 0, entry: false, package: 0, visible: 0 }; 256];
+    let mut files = [PackageFile { end: 0, module_start: 0, module_end: 0, entry: false, package: 0, visible: 0, path_start: 0, path_end: 0 }; 256];
     let package = read_check_input(root,stdlib,&mut source[..],&mut names[..],&mut files[..],file);
     if package.error != 0 { return package.error; }
     // Allow 1536 Ki tokens for the combined compiler and standard library, plus sentinels.
     let mut tokens: [Token; 1572867] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
-    let (status, count) = scan_tokens(&source[..package.source_end], &mut tokens[..], copy(mode));
+    let mut source_end = package.source_end;
+    let mut files_end = package.files_end;
+    if focus.len() != 0 {
+        let (status, length, count) = focus_check_input(&mut source[..source_end], &names[..package.names_end],
+            &mut files[..files_end], &mut tokens[..], focus, copy(mode));
+        if status != 0 { return status; }
+        source_end = length;
+        files_end = count;
+    }
+    let (status, count) = scan_tokens(&source[..source_end], &mut tokens[..], copy(mode));
     if status != 0 { return status; }
-    let selected = select_target(&source[..package.source_end], &mut tokens[..count + 3]);
+    let selected = select_target(&source[..source_end], &mut tokens[..count + 3]);
     if selected == 0 { return 7; }
-    prepare_native_exports(&source[..package.source_end], &names[..package.names_end],
-        &files[..package.files_end], &mut tokens[..selected]);
-    mark_nominal_names(&source[..package.source_end], &mut tokens[..selected]);
+    prepare_native_exports(&source[..source_end], &names[..package.names_end],
+        &files[..files_end], &mut tokens[..selected]);
+    mark_nominal_names(&source[..source_end], &mut tokens[..selected]);
     let mut nodes = [AstNode {
         kind: 0, parent: 0, start: 0, end: 0, name_start: 0, name_end: 0, public: false,
     }; 524289];
@@ -3440,12 +3668,12 @@ fn compile_input_mode(root: &[u8], stdlib: &[u8], mode: i32, file:bool) -> i32 {
         visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0,
         access_mode: 0, protection: 0,
     }; 524289];
-    build_graph(&source[..package.source_end], &nodes[..used], &tokens[..selected], &mut graph[..], false);
+    build_graph(&source[..source_end], &nodes[..used], &tokens[..selected], &mut graph[..], false);
     let mut linked: [u8; 4194304] = [0; 4194304];
     let mut visibility = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
-    diagnostic_stage(&source[..package.source_end]);
-    let (error, length, env_call) = link_package(&source[..package.source_end], &names[..package.names_end],
-        &files[..package.files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..], mode==7);
+    diagnostic_stage(&source[..source_end]);
+    let (error, length, env_call) = link_package(&source[..source_end], &names[..package.names_end],
+        &files[..files_end], &tokens[..selected], &nodes[..used], &graph[..used], &mut linked[..], &mut visibility[..], mode==7);
     if error != 0 { return error; }
     diagnostic_linked(length);
     // Reuse the package token storage for the rewritten source.

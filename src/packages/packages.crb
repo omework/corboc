@@ -8,6 +8,9 @@ pub struct PackageFile {
     entry: bool,
     package: u64,
     visible: u64,
+    /// Canonical input path in the package name arena; distinct from its module.
+    path_start: u64,
+    path_end: u64,
 }
 
 pub struct PackageInput {
@@ -112,8 +115,12 @@ fn walk(path: &[u8], module_start: usize, module_end: usize, source: &mut [u8],
             source[last] = 10;
             diagnostic_input(&next[..full+1],&source[base..last+1]);
             let entry = module_start == 0 && name.content_eq(&entry_file[..]);
+            let path_start = names_end;
+            names_end = append(&mut names[0..names.len()], path_start, &next[..full]);
+            if names_end == 0 { error = 4; break; }
             files[files_end] = PackageFile { end: copy(last) as u64, module_start: copy(module_start) as u64,
-                module_end: copy(module_end) as u64, entry: entry, package: copy(package), visible: 0 };
+                module_end: copy(module_end) as u64, entry: entry, package: copy(package), visible: 0,
+                path_start: path_start as u64, path_end: names_end as u64 };
             source_end = last + 1;
             files_end = files_end + 1;
         } else if kind != 8 && kind != 10 {

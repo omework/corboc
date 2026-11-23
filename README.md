@@ -134,12 +134,14 @@ borrowed patterns bind field references. See [tuple iteration](docs/TUPLE_ITERAT
 See [source diagnostic validation](docs/DIAGNOSTICS_CYCLE.md) and
 [semantic diagnostic validation](docs/SEMANTIC_DIAGNOSTICS_CYCLE.md).
 
-A file below a package's `src/` uses its enclosing `package.toml`, module context
-and dependencies. The complete package is checked, so diagnostics in companion
-modules are retained. Standalone files (including files outside `src/`) are
-checked with the installed STD and need no `main`; named local-package imports
-require a package context. A missing selected file is reported even when the
-remaining package could still pass.
+A file below a package's `src/` is the primary check target, using its enclosing
+`package.toml`, module companions and transitive imports. Its source is processed
+first; unrelated modules and `main.crb` do not mask its errors. Required imported
+modules still produce diagnostics when their context is needed. Use a directory
+or `corboc check` to check the complete package. Standalone files (including files
+outside `src/`) are checked with the installed STD and need no `main`; named
+local-package imports require a package context. A missing selected file is
+reported against that file's path.
 
 `--watch` runs an initial check and stays alive after errors. It polls contents
 at 250 ms intervals and rechecks after one stable interval, debouncing rapid saves.
@@ -158,7 +160,9 @@ with a pinned `rev` are immutable inputs: their manifest source/revision changes
 are watched; polling neither fetches repositories nor follows moving remote refs.
 Standalone-file watches ignore unrelated neighboring files. Package-backed file
 watches conservatively cover the complete package and its declared local
-dependency trees. Each run is a full check, not incremental analysis.
+dependency trees. Saving those inputs rechecks the same selected target; it
+does not switch the diagnostic target to `main.crb` or the changed dependency.
+Each run is a fresh check of its selected context, not incremental analysis.
 Status messages go to stderr. Stop watching with Ctrl-C.
 
 ## Create a package

@@ -44,7 +44,7 @@ pub fn primitive_envelope(ty: i64) -> bool {
 pub fn value_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) -> u64 {
     let mut origin = values[value].origin_call;
     if nodes[origin].kind == 29 { return origin; }
-    if nodes[origin].kind != 4 { origin = graph[origin].first_child; }
+    if nodes[origin].kind != 4 && nodes[origin].kind != 49 { origin = graph[origin].first_child; }
     nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], origin)
 }
 

@@ -200,7 +200,7 @@ fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
     let ty = types[binding];
     if nodes[receiver].kind != 7 || ty < 3000000 || ty >= 5000000 { return -2; }
     let record = nominal_type(ty);
-    if nodes[record].kind != 28 { return -2; }
+    if nodes[record].kind != 28 && nodes[record].kind != 29 { return -2; }
     let owner = &source[nodes[record].name_start..nodes[record].name_end];
     let name = &source[nodes[node].name_start..nodes[node].name_end];
     let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],

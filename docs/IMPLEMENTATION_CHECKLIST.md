@@ -416,3 +416,26 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild/install corboc and retain stable diagnostic identities.
 
 [Report and scope](PROJECTED_WRITES_CYCLE.md).
+
+## Selected-file check/watch targeting
+
+- [x] Retain source-path identity independently of module identity.
+- [x] Select the requested module/import closure and process its file first.
+- [x] Preserve companion modules, aliases, grouped imports and target selection.
+- [x] Retain complete directory checks and dependency-aware watch refreshes.
+- [x] Pass nine direct focus checks and one watch sequence.
+- [x] Pass seven existing file-watch regression cases and a normal module build.
+- [x] Rebuild/install at the existing shell path; inspect the actual WAL diagnostic.
+
+[Report and context boundaries](SELECTED_FILE_CHECK_CYCLE.md).
+
+## Instance methods on user-defined structs and enums
+
+- [x] Accept both nominal families in receiver setup, lookup and lowering.
+- [x] Inspect `match self` through an existing borrowed enum receiver.
+- [x] Use ordinary parameter checks for consuming receivers and owned cleanup.
+- [x] Execute focused receiver/copy/move/cleanup checks under fatal UBSan.
+- [x] Complete enum regression checks against the final rebuilt compiler.
+- [x] Rebuild and install at the existing PATH location.
+
+[Implementation and validation scope](ENUM_METHODS_CYCLE.md).

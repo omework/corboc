@@ -280,13 +280,16 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
     result: i64, receiver: i64, destination: u64) -> (i64, i64) {
     let subject = graph[expression].first_child;
     let mut which = copy(subject);
-    let borrowed = nodes[subject].kind == 13;
-    if borrowed { which = graph[subject].first_child; }
-    if borrowed && nodes[which].kind==14 {which=graph[which].first_child;}
+    let explicit_borrow = nodes[subject].kind == 13;
+    if explicit_borrow { which = graph[subject].first_child; }
+    if explicit_borrow && nodes[which].kind==14 {which=graph[which].first_child;}
     let base = graph[which].binding;
     let mut ty: i64 = 0;
     let mut nominal: u64 = 0;
     let owner = values[base].ty;
+    // A reference receiver already names borrowed storage. Matching that
+    // reference must not attempt to consume its pointee.
+    let borrowed = explicit_borrow || (nodes[subject].kind == 7 && owner == 734);
     if owner == 70 && nodes[subject].kind == 7 {
         if values[base].state != 1 { return (violation_site(6, nodes[subject].start, 13), 0); }
         let arm = graph[subject].next_sibling;
@@ -307,8 +310,8 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             return (violation_site(4, nodes[which].start, 14), 0);
         }
         let constructor = values[base].origin_call;
-        let name = if nodes[constructor].kind == 4 || nodes[constructor].kind == 29 { copy(constructor) } else { graph[constructor].first_child };
-        if nodes[name].kind != 7 && nodes[name].kind != 4 && nodes[name].kind != 29 && nodes[name].kind != 17 { return (9, 0); }
+        let name = if nodes[constructor].kind == 4 || nodes[constructor].kind == 29 || nodes[constructor].kind == 49 { copy(constructor) } else { graph[constructor].first_child };
+        if nodes[name].kind != 7 && nodes[name].kind != 4 && nodes[name].kind != 29 && nodes[name].kind != 49 && nodes[name].kind != 17 { return (9, 0); }
         nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], name);
         if nodes[nominal].kind != 29 { return (9, 0); }
         if !borrowed {

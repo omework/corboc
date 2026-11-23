@@ -6,7 +6,7 @@ use bootstrap::loans::{access_conflict, checked_access_root, launch_access_confl
 use bootstrap::process_arguments::shared_text_annotation;
 use bootstrap::value_summaries::borrowed_record_type;
 use bootstrap::scalar_options::option_handle;
-use bootstrap::results::{result_annotation, plain_data_type};
+use bootstrap::results::{result_annotation, owned_data_type};
 use bootstrap::signatures::{check_signature, check_slice_argument, argument_conflicts};
 use bootstrap::model::{result_type,constructor_arguments,summary_value,summary_next};
 use bootstrap::calls::{identity_aggregate, bootstrap_callee};
@@ -1899,7 +1899,7 @@ pub fn autonomous_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a
     let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
     if nodes[nominal].kind != 29 { return 0; }
-    if plain_data_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation), 0) {
+    if owned_data_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation), 0) {
         return nominal;
     }
     let mut variant = graph[nominal].first_child;

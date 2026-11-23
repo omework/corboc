@@ -148,11 +148,11 @@ pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
     let receiver = graph[call].first_child;
     if nodes[receiver].kind != 7 { return 0; }
     let binding = graph[receiver].binding;
-    if values[binding].ty != 300 && values[binding].ty != 734 { return 0; }
+    if values[binding].ty != 300 && values[binding].ty != 310 && values[binding].ty != 734 { return 0; }
     let shape = values[binding].origin_call;
     let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], shape);
-    if nodes[record].kind != 28 { return 0; }
+    if nodes[record].kind != 28 && nodes[record].kind != 29 { return 0; }
     let owner = &source[nodes[record].name_start..nodes[record].name_end];
     let member = &source[nodes[call].name_start..nodes[call].name_end];
     lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],

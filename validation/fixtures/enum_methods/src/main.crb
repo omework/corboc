@@ -1,0 +1,105 @@
+// Enum methods use the same receiver permissions as struct methods.
+enum State { Available, Busy, Consumed }
+enum Mark { Consumed, Reinject }
+
+impl Mark {
+    fn slot_state(&self) -> State {
+        match self {
+            Mark.Consumed => { State.Consumed },
+            Mark.Reinject => { State.Available }
+        }
+    }
+
+    fn consume(self: Mark) -> i64 { 42 }
+}
+
+impl State {
+    fn set_busy(&mut self) { *self = State.Busy; }
+}
+
+enum Counter { Value(i64), Empty }
+
+impl Counter {
+    fn read(&self) -> i64 {
+        match self {
+            Counter.Value(number) => { number },
+            Counter.Empty => { 0 }
+        }
+    }
+
+    fn update(&mut self) {
+        match &mut *self {
+            Counter.Value(number) => { *number = 12; },
+            Counter.Empty => {}
+        }
+    }
+}
+
+fn read_counter(counter: &Counter) -> i64 { counter.read() }
+
+struct Resource { value: i64 }
+
+impl Resource {
+    fn drop(&mut self) { print((*self).value); }
+    fn read(&self) -> i64 { (*self).value }
+}
+
+enum Envelope { Item(Resource), Empty }
+
+impl Envelope {
+    fn finish(self: Envelope) -> i64 {
+        match self {
+            Envelope.Item(item) => { item.read() },
+            Envelope.Empty => { 0 }
+        }
+    }
+}
+
+#(type: T)
+enum Generic<T> { Item(T), Empty }
+
+impl Generic<T> {
+    fn answer(&self) -> i64 { 42 }
+}
+
+#(type: T)
+struct Boxed<T> { value: T }
+
+impl Boxed<T> {
+    fn answer(&self) -> i64 { 43 }
+}
+
+struct View { value: &i64 }
+
+impl View {
+    fn read(self: View) -> i64 { *self.value }
+}
+
+fn main() {
+    let mark = Mark.Reinject;
+    print(mark.slot_state() == State.Available);
+    print(mark.consume());
+    print(mark.consume()); // Primitive-only enums retain implicit Copy.
+
+    let mut state = State.Available;
+    state.set_busy();
+    print(state == State.Busy);
+
+    let mut counter = Counter.Value(7);
+    print(read_counter(&counter));
+    counter.update();
+    print(counter.read());
+
+    // A consuming enum receiver owns and cleans its resource once.
+    let owner = Envelope.Item(Resource { value: 101 });
+    print(owner.finish());
+
+    let generic = Generic.Item(1);
+    print(generic.answer());
+    let boxed = Boxed { value: 1 };
+    print(boxed.answer());
+
+    let number = 42;
+    let view = View { value: &number };
+    print(view.read());
+}
