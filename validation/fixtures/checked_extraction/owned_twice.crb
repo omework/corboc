@@ -1,0 +1,8 @@
+struct Item { value: i64 }
+fn main() {
+    let wrapped: Option<Item> = Some(Item { value: 7 });
+    let first = wrapped!;
+    let second = wrapped!;
+    print(first.value);
+    print(second.value);
+}

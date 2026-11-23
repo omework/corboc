@@ -8106,5 +8106,21 @@
     "rule": "3",
     "condition": "array field projection requested by value",
     "message": "cannot move an array field out of its containing value; borrow it with ref() or mut_ref()"
+  },
+  {
+    "id": 1013,
+    "file": "src/propagation/propagation.crb",
+    "function": "check_propagation",
+    "rule": "1",
+    "condition": "postfix ! operand is neither Result nor Option",
+    "message": "postfix ! requires a Result or Option; await a Future before unwrapping it"
+  },
+  {
+    "id": 1014,
+    "file": "src/verify/expressions.crb",
+    "function": "verify_expr",
+    "rule": "1",
+    "condition": "as source or target is not a numeric primitive",
+    "message": "as requires numeric primitive types; bool and references are not numeric conversions"
   }
 ]

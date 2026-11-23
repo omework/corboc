@@ -1363,7 +1363,7 @@ fn conversion_bits(ty: i64) -> u64 {
     if ty == 1 { 31 } else if ty == 2 { 63 } else if ty == 4 { 8 }
     else if ty == 5 { 16 } else if ty == 6 { 32 } else { 64 }
 }
-fn conversion_code(out: &mut [u8], start: usize, from: i64, into: i64) -> usize {
+pub fn conversion_code(out: &mut [u8], start: usize, from: i64, into: i64) -> usize {
     let mut at = start;
     if from < 8 && into < 8 {
         at = numeric_text_8(&mut out[0..out.len()], at);

@@ -1053,7 +1053,9 @@ static const char *const reasons[]={
 "cannot destructure a tuple reference that is no longer available",
 "cannot destructure a tuple reference whose target is no longer valid",
 "cannot move a tuple item out of borrowed storage; borrow its fields instead",
-"cannot move an array field out of its containing value; borrow it with ref() or mut_ref()"
+"cannot move an array field out of its containing value; borrow it with ref() or mut_ref()",
+"postfix ! requires a Result or Option; await a Future before unwrapping it",
+"as requires numeric primitive types; bool and references are not numeric conversions"
 };
 // END FAILURE SITES
 if(op==0){

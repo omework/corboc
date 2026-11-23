@@ -465,3 +465,16 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Install the rebuilt compiler at the existing PATH.
 
 [Implementation and evidence](ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).
+
+## Postfix unwrap and checked numeric `as`
+
+- [x] Parse postfix `!` without changing prefix negation or `!=`.
+- [x] Extract Result/Option payloads once, retaining ownership/borrow information.
+- [x] Share exact numeric representability checks with `try_from`.
+- [x] Emit located fatal diagnostics without changing raw compiler protocols.
+- [x] Update grammar, normative decision, English/French docs and README example.
+- [x] Pass 21 focused UBSan/refusal observations and diagnostic regressions.
+- [x] Rebuild the updated sources and install at the existing PATH.
+- [x] Commit/push both repositories as Jabar with the updated shared-source pin.
+
+[Implementation and evidence](CHECKED_EXTRACTION_CYCLE.md).

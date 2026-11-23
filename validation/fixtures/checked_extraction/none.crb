@@ -1,0 +1,1 @@
+fn absent()->Option<i64>{None} fn main(){print(absent()!);}

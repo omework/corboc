@@ -774,7 +774,10 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if from < 0 { return from; }
             let to = verify_primitive(&source[0..source.len()], nodes[right].name_start, nodes[right].name_end);
             if to == 0 || graph[right].first_child != 0 { return -9; }
-            if !exact_numeric_cast(from, copy(to)) || (expected != 0 && expected != to) { return 0 - violation_site(1, start, 845); }
+            if (!is_integer(from) && !is_float(from)) || (!is_integer(to) && !is_float(to)) {
+                return 0-violation_site(1,nodes[node].name_start,1014);
+            }
+            if expected!=0 && expected!=to{return 0-type_violation(start,expected,to,845);}
             return to;
         }
         if (first == 60 || first == 62) && second == first && compound {

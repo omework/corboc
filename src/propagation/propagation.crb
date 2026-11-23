@@ -43,7 +43,8 @@ pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:
 pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
     let mut function=nodes[node].parent;
     while function!=0 && nodes[function].kind!=1 && nodes[function].kind!=35 && nodes[function].kind!=55 {function=nodes[function].parent;}
-    if function==0{return 0-violation_site(1, nodes[node].start, 412);}
+    let force=source[nodes[node].name_start]==33;
+    if function==0 && !force{return 0-violation_site(1, nodes[node].start, 412);}
     let mut output=graph[function].first_child;while nodes[output].kind==3{output=graph[output].next_sibling;}
     let child=graph[node].first_child;
     let ty=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(child),0,1);
@@ -51,15 +52,18 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
     let mut payload:i64=0;
     if result_type(copy(ty)) {
         let outer=result_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(output));
-        if !result_type(copy(outer)){return 0-violation_site(1, nodes[node].start, 413);}
+        if !force && !result_type(copy(outer)){return 0-violation_site(1, nodes[node].start, 413);}
         let inner_error=result_payload(copy(ty),false);let outer_error=result_payload(outer,false);
-        if inner_error!=outer_error && error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner_error,outer_error)==0{return 0-violation_site(8, nodes[node].start, 414);}
+        if !force && inner_error!=outer_error && error_conversion(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],inner_error,outer_error)==0{return 0-violation_site(8, nodes[node].start, 414);}
         payload=result_payload(copy(ty),true);
     } else if scalar_option(copy(ty)) {
         let outer=scalar_option_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],output);
-        if !scalar_option(outer){return 0-violation_site(1, nodes[node].start, 415);}
+        if !force && !scalar_option(outer){return 0-violation_site(1, nodes[node].start, 415);}
         payload=checked_option_payload(copy(ty));
-    }else{return 0-violation_site(1, nodes[node].start, 416);}
+    }else{
+        if force{return 0-violation_site(1,nodes[node].name_start,1013);}
+        return 0-violation_site(1, nodes[node].start, 416);
+    }
     if result_type(copy(ty)) && payload>=6000000 && payload<7000000 {
         let value=values[child].loan_parent;if value==0{return -9;}let actual=values[value].ty;
         if mode==2 || (expected!=0 && expected!=actual){return 0-type_violation(nodes[node].start,expected,actual,417);}
@@ -68,6 +72,7 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
     let scalar=checked_result_payload(copy(payload));let mut actual=if scalar!=0{scalar}else if payload>=3000000 && payload<4000000{
         let nominal=unsigned(copy(payload)-3000000);if nodes[nominal].kind==29{310}else{300}
     }else{copy(payload)};
+    if force && payload==10{actual=0;}
     let reference=option_borrow(copy(ty));
     if record_borrow(copy(reference)){actual=734;}
     if slice_borrow(copy(reference)){actual=slice_borrow_type(copy(reference));}
@@ -86,7 +91,8 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
     }else if inline_array(copy(payload)) {
         values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false}; record_checked(&values[0..values.len()],node);
     }else if actual==300 || actual==310 {
-        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned(payload-3000000),writable:false}; record_checked(&values[0..values.len()],node);
+        let shape=if values[child].origin_call!=0{values[child].origin_call}else{unsigned(payload-3000000)};
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:values[child].target,loan_parent:values[child].loan_parent,origin_call:shape,writable:values[child].writable}; record_checked(&values[0..values.len()],node);
     }else {
         values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);
     }actual

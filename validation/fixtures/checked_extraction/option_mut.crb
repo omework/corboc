@@ -1,0 +1,1 @@
+fn main(){let mut number=1;let wrapped:Option<&mut i64>=Some(&mut number);let view=wrapped!;*view=42;print(number);}

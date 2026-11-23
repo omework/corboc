@@ -1,0 +1,1 @@
+fn main(){let size:usize=65536;print(size as u16);}

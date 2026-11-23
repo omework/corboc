@@ -1,0 +1,11 @@
+fn number(count: &mut i64) -> usize { *count += 1; 42 }
+fn answer(count: &mut i64) -> Result<i64, bool> { *count += 1; Ok(7) }
+fn main() {
+    let mut count = 0;
+    print(number(&mut count) as u16);
+    print(answer(&mut count)!);
+    print(count);
+    let value: Option<i64> = Some(9);
+    print(value!);
+    print(value!);
+}

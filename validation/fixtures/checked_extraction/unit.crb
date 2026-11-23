@@ -1,0 +1,1 @@
+fn answer()->Result<(),bool>{Ok(())} fn main(){answer()!;print(42);}

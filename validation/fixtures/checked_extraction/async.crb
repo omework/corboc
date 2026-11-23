@@ -1,0 +1,1 @@
+async fn answer()->Result<i64,bool>{yield;Ok(42)} async fn work()->i64{answer().await!} fn main(){let task=runtime::spawn(work());match task.join(){Ok(n)=>{print(n);},Err(e)=>{print(-1);}}}

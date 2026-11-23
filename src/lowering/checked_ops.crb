@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Successful extraction and exact numeric conversion with located fatal failures.
+use bootstrap::diagnostics::runtime_location;
+use bootstrap::generics::conversion_code;
+use bootstrap::scalar::exact_numeric_cast;
+use bootstrap::model::{AstNode, StaticNode, result_type, result_payload};
+use bootstrap::results::scalar_result_payload;
+use bootstrap::lowering_types::{optional, option_payload, c_type, temporary, number, declaration};
+use bootstrap::target_c::{byte_text, character};
+
+fn checked_text(text: &str) {
+    let bytes = text.as_bytes();
+    byte_text(&bytes[0..bytes.len()]);
+}
+
+// Escape source paths as C data, never as part of a printf format string.
+fn checked_string(bytes: &[u8]) {
+    character(34);
+    let mut at: usize = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        if byte == 34 || byte == 92 {
+            character(92);
+            character(byte as i32);
+        } else if byte < 32 || byte >= 127 {
+            character(92);
+            character((48 + (byte / 64)) as i32);
+            character((48 + ((byte / 8) % 8)) as i32);
+            character((48 + (byte % 8)) as i32);
+        } else {
+            character(byte as i32);
+        }
+        at += 1;
+    }
+    character(34);
+}
+
+// Abort is intentional: these operators do not propagate or unwind failures.
+fn checked_abort(offset: u64, message: &str) {
+    let mut location: [u8; 4352] = [0; 4352];
+    let length = runtime_location(offset, &mut location[..]);
+    checked_text("fprintf(stderr,\"%s: runtime error: %s\\n\",");
+    checked_string(&location[..length]);
+    character(44);
+    let bytes = message.as_bytes();
+    checked_string(&bytes[0..bytes.len()]);
+    checked_text(");fflush(stderr);abort();\n");
+}
+
+fn lower_unwrap(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    types: &mut [i64], ctx: &Lowering, node: u64) -> i64 {
+    let child = graph[node].first_child;
+    let inner = expression(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut types[0..types.len()], ctx, child, 0);
+    let result = result_type(inner);
+    if !result && !optional(inner) { return -1; }
+    let payload = if result { result_payload(inner, true) } else { option_payload(inner) };
+    let scalar = scalar_result_payload(payload);
+    let actual = if payload == 10 { 0 } else if scalar != 0 { scalar } else { payload };
+    types[node] = actual;
+    if (*ctx).emit {
+        checked_text("if(!");
+        temporary(child);
+        if result {
+            checked_text(".ok){\n");
+            checked_abort(nodes[node].name_start,"postfix ! failed: Result::Err");
+        } else {
+            checked_text(".some){\n");
+            checked_abort(nodes[node].name_start,"postfix ! failed: Option::None");
+        }
+        checked_text("}\n");
+        if actual != 0 {
+            declaration(actual, node);
+            character(61);
+            temporary(child);
+            if result { checked_text(".payload.success;\n"); } else { checked_text(".value;\n"); }
+        }
+        temporary(child);
+        if result { checked_text(".live=false;\n"); } else { checked_text(".some=false;\n"); }
+    }
+    actual
+}
+
+fn numeric_label(ty: i64, out: &mut [u8]) -> usize {
+    if ty == 1 || ty == 2 {
+        out[0]=105;out[1]=if ty==1{51}else{54};out[2]=if ty==1{50}else{52};return 3;
+    }
+    if ty == 8 || ty == 9 {
+        out[0]=102;out[1]=if ty==8{51}else{54};out[2]=if ty==8{50}else{52};return 3;
+    }
+    out[0]=117;
+    if ty==4{out[1]=56;return 2;}
+    out[1]=if ty==5{49}else if ty==6{51}else{54};
+    out[2]=if ty==5{54}else if ty==6{50}else{52};
+    3
+}
+
+// conversion_code is also used by numeric try_from helpers. Only its operand
+// placeholders are substituted here, so the representability checks stay shared.
+fn emit_checked_cast(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    node: u64, operand: u64, from: i64, into: i64) {
+    declaration(into, node);
+    if from < 8 && into < 8 && exact_numeric_cast(from, into) {
+        checked_text("=("); c_type(into); character(41); temporary(operand); checked_text(";\n");
+        return;
+    }
+    checked_text("=0;{bool exact=false;\n");
+    let mut code: [u8; 4096] = [0; 4096];
+    let length = conversion_code(&mut code[..], 0, from, into);
+    let mut at: usize = 0;
+    while at < length {
+        if code[at] == 36 && at + 1 < length && code[at + 1] == 123 {
+            let start = at + 2;
+            at = start;
+            while at < length && code[at] != 125 { at += 1; }
+            let name = &code[start..at];
+            let value: [u8; 5] = [118,97,108,117,101];
+            let converted: [u8; 9] = [99,111,110,118,101,114,116,101,100];
+            if name.content_eq(&value[..]) { temporary(operand); }
+            else if name.content_eq(&converted[..]) { temporary(node); }
+            else { checked_text("exact"); }
+            at += 1;
+        } else {
+            character(code[at] as i32);
+            at += 1;
+        }
+    }
+    checked_text("if(!exact){\n");
+    let mut message: [u8; 192] = [0; 192];
+    let mut end: usize = 0;
+    let prefix_text = "checked conversion failed: ";
+    let prefix = prefix_text.as_bytes();
+    let mut i: usize = 0;
+    while i < prefix.len() { message[end] = prefix[i]; end += 1; i += 1; }
+    let annotation=graph[graph[operand].binding].type_node;
+    let spelling=&source[nodes[annotation].name_start..nodes[annotation].name_end];
+    let pointer:[u8;5]=[117,115,105,122,101];
+    let mut from_buffer:[u8;8]=[0;8];
+    let from_length=numeric_label(from,&mut from_buffer[..]);
+    if spelling.content_eq(&pointer[..]) {
+        i=0;while i<5{message[end]=pointer[i];end+=1;i+=1;}
+    } else {
+        i=0;while i<from_length{message[end]=from_buffer[i];end+=1;i+=1;}
+    }
+    let arrow_text = " -> ";
+    let arrow = arrow_text.as_bytes(); i = 0;
+    while i < arrow.len() { message[end] = arrow[i]; end += 1; i += 1; }
+    let target = graph[graph[node].first_child].next_sibling;
+    let to_bytes = &source[nodes[target].name_start..nodes[target].name_end]; i = 0;
+    while i < to_bytes.len() && end < 180 { message[end] = to_bytes[i]; end += 1; i += 1; }
+    // The message is UTF-8 assembled from numeric type spellings and fixed text.
+    checked_text("fprintf(stderr,\"%s: runtime error: %s\\n\",");
+    let mut location: [u8; 4352] = [0; 4352];
+    let size = runtime_location(nodes[node].name_start, &mut location[..]);
+    checked_string(&location[..size]); character(44); checked_string(&message[..end]);
+    checked_text(");fflush(stderr);abort();\n}}\n");
+}

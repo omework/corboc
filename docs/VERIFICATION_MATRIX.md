@@ -391,3 +391,10 @@ ordinary root/borrow and lock-result dependencies into code generation.
 executions and permission/lifetime refusals, plus actionable async/constructor
 diagnostics. Existing enum/copy/move and semantic-diagnostic regressions remain
 applicable. See [scope and evidence](ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).
+
+## Checked extraction and numeric conversion
+
+Postfix `!` shares the existing successful-payload ownership/borrow representation
+with `?`; numeric `as` shares the value-exact checks with `try_from`.
+Twenty-one focused native/fatal-UBSan observations pass, plus semantic/category
+regressions and raw-protocol comparisons. See [evidence and platform limits](CHECKED_EXTRACTION_CYCLE.md).

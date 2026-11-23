@@ -42,7 +42,9 @@ bool fallback=false;
 do {
     if(operation==0){state.enabled=a!=0;${result}=true;break;}
     if(operation==15){${result}=state.enabled;break;}
-    if(!state.enabled)break;
+    // Source provenance is also needed for runtime checks in raw emit modes.
+    // Human diagnostic emission remains explicitly enabled and protocol-compatible.
+    if(!state.enabled && !(operation>=1&&operation<=6) && operation!=11 && operation!=18 && operation!=31)break;
     ${result}=true;
     if(operation==1){
         state.original_len=state.current_len=state.files=state.parse_at=state.parse_root=0;
@@ -87,6 +89,21 @@ do {
         for(size_t i=0;i<b;++i){if(state.next[i])prior=state.next[i];else if(prior)state.next[i]=prior|DIAG_APPROX;}
         memcpy(state.current,state.next,b*sizeof(uint32_t));state.current_len=b;
         state.stage=false;state.stage_base=0;state.stage_len=0;break;
+    }
+    if(operation==31){
+        unsigned char *output=(unsigned char*)(${input}).data;size_t capacity=(${input}).len;
+        if(!capacity)break;
+        uint32_t encoded=a<state.current_len?state.current[a]:0;
+        size_t at=encoded?((encoded&DIAG_INDEX)-1):SIZE_MAX,file=0;
+        while(file<state.files&&at>=state.ends[file])++file;
+        int length=0;
+        if(file<state.files&&at>=state.starts[file]){
+            size_t line=1,column=1;
+            for(size_t i=state.starts[file];i<at;++i){unsigned char ch=state.original[i];if(ch=='\n'){++line;column=1;}else if(ch=='\t')column+=4-((column-1)%4);else if((ch&0xc0)!=0x80)++column;}
+            length=snprintf((char*)output,capacity,"%s:%zu:%zu%s",state.paths[file],line,column,(encoded&DIAG_APPROX)?" (generated-source anchor)":"");
+        }else length=snprintf((char*)output,capacity,"source byte %zu",(size_t)a);
+        if(length<0)length=0;if((size_t)length>=capacity)length=(int)capacity-1;
+        output[length]=0;break;
     }
     if(operation==30){
         state.semantic_at=a;state.related_count=0;state.type_approximate=false;
@@ -395,4 +412,13 @@ pub fn diagnostic_limitation(nodes:&[AstNode],point:u64,reason:&str)->bool {
     let empty:[u8;0]=[];let notes:[u64;0]=[];
     drop(control(30,nodes[point].start as usize,0,0,0,&message[..written],&empty[..],&notes[..]));
     diagnostic_emit(4,9,nodes[point].start)
+}
+
+/// Original-source location for generated abort diagnostics, including raw emit modes.
+pub fn runtime_location(offset:u64,output:&mut [u8])->usize {
+    let bytes:[u8;0]=[];let words:[u64;0]=[];
+    drop(control(31,offset as usize,0,0,0,&output[0..output.len()],&bytes[..],&words[..]));
+    let mut length:usize=0;
+    while length<output.len() && output[length]!=0{length+=1;}
+    length
 }

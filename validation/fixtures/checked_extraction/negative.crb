@@ -1,0 +1,1 @@
+fn main() { let value: i64 = -1; print(value as u64); }

@@ -314,6 +314,9 @@ fn fold_into(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression:
     fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child), &mut left[..]);
     if left[0] == 0 { return; }
     if op == 97 && second == 115 {
+        let target=graph[child].next_sibling;
+        let ty=verify_primitive(&source[0..source.len()],nodes[target].name_start,nodes[target].name_end);
+        if !is_integer(ty) || left[2]>magnitude_limit(ty,left[1]!=0){return;}
         output[0] = left[0];
         output[1] = left[1];
         output[2] = left[2];

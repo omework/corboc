@@ -1562,11 +1562,11 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
     if primary_only { return (index, count, root); }
     let mut nominal_receiver = nodes[root].kind == 7 || nodes[root].kind == 36;
     nominal_receiver = nominal_receiver && tokens[index - 1].nominal;
-    while tokens[index].kind == 2 || tokens[index].kind == 38 || tokens[index].kind == 39 || tokens[index].kind == 84 {
+    while tokens[index].kind == 2 || tokens[index].kind == 38 || tokens[index].kind == 39 || tokens[index].kind == 84 || tokens[index].kind == 28 {
         let outer = copy(count);
         count = count + 1;
         reparent(&mut nodes[0..nodes.len()], copy(root), copy(outer));
-        if tokens[index].kind==84 {
+        if tokens[index].kind==84 || tokens[index].kind==28 {
             nodes[outer]=AstNode{kind:79,parent:copy(parent),start:nodes[root].start,end:tokens[index].end,
                 name_start:tokens[index].start,name_end:tokens[index].end,public:false};
             index=index+1;root=outer;nominal_receiver=false;continue;

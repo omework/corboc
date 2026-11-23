@@ -1,0 +1,1 @@
+fn answer()->Result<i64,bool>{Ok(42)} fn optional()->Option<bool>{Some(true)} fn main(){print(answer()!);print(!optional()!);let size:usize=65535;let narrow=size as u16;print(narrow);print(u16::try_from(size)!);let f:f64=1.5;let small=f as f32;print(small);let whole:f64=42.0;let integer=whole as i64;print(integer);}

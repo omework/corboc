@@ -1,0 +1,4 @@
+struct View { value: &i64 }
+fn wrap(value: &i64) -> Result<View, bool> { Ok(View { value: value }) }
+fn escaped() -> View { let number = 42; wrap(&number)! }
+fn main() { let view = escaped(); print(*view.value); }

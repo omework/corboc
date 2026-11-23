@@ -1,0 +1,1 @@
+fn answer()->Result<i64,bool>{Err(true)} fn main(){print(answer()!);}

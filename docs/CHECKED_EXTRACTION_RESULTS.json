@@ -1,0 +1,134 @@
+{
+  "compiler": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/rebuilt/bin/corboc",
+  "sanitizer": "undefined, fatal",
+  "cases": [
+    {
+      "case": "basic",
+      "status": "passed",
+      "stdout": "42\nfalse\n65535\n65535\n1.5\n42\n",
+      "stderr": ""
+    },
+    {
+      "case": "owned",
+      "status": "passed",
+      "stdout": "7\n7\n",
+      "stderr": ""
+    },
+    {
+      "case": "borrow",
+      "status": "passed",
+      "stdout": "42\n",
+      "stderr": ""
+    },
+    {
+      "case": "option_mut",
+      "status": "passed",
+      "stdout": "42\n",
+      "stderr": ""
+    },
+    {
+      "case": "async",
+      "status": "passed",
+      "stdout": "42\n",
+      "stderr": ""
+    },
+    {
+      "case": "unit",
+      "status": "passed",
+      "stdout": "42\n",
+      "stderr": ""
+    },
+    {
+      "case": "once",
+      "status": "passed",
+      "stdout": "42\n7\n2\n9\n9\n",
+      "stderr": ""
+    },
+    {
+      "case": "err",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/err/src/main.crb:1:66: runtime error: postfix ! failed: Result::Err\n"
+    },
+    {
+      "case": "none",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/none/src/main.crb:1:56: runtime error: postfix ! failed: Option::None\n"
+    },
+    {
+      "case": "overflow",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/overflow/src/main.crb:1:43: runtime error: checked conversion failed: usize -> u16\n"
+    },
+    {
+      "case": "negative",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/negative/src/main.crb:1:46: runtime error: checked conversion failed: i64 -> u64\n"
+    },
+    {
+      "case": "fractional",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/fractional/src/main.crb:1:41: runtime error: checked conversion failed: f64 -> i64\n"
+    },
+    {
+      "case": "precision",
+      "status": "fatal",
+      "stdout": "",
+      "stderr": "/Users/jabarkarim/sources/corboc/build/unwrap-cast/validation/precision/src/main.crb:1:46: runtime error: checked conversion failed: u64 -> f32\n"
+    },
+    {
+      "case": "bad_operand",
+      "status": "refused",
+      "diagnostic": "corboc: checking file (with module context)\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/bad_operand.crb:1:40: error[N1]: rule violation: postfix ! requires a Result or Option; await a Future before unwrapping it 'value'\n     1 | fn main() { let value = 42; print(value!); }\n       |                                        ^\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/bad_operand.crb:1:17: note: value declared here\n     1 | fn main() { let value = 42; print(value!); }\n       |                 ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "bad_bool",
+      "status": "refused",
+      "diagnostic": "corboc: checking file (with module context)\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/bad_bool.crb:1:43: error[N1]: rule violation: as requires numeric primitive types; bool and references are not numeric conversions 'value'\n     1 | fn main() { let value = true; print(value as u8); }\n       |                                           ^~\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/bad_bool.crb:1:17: note: value declared here\n     1 | fn main() { let value = true; print(value as u8); }\n       |                 ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "owned_twice",
+      "status": "refused",
+      "diagnostic": "corboc: checking file (with module context)\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/owned_twice.crb:5:18: error[N6]: rule violation: use of a value after its ownership was moved 'wrapped'\n     5 |     let second = wrapped!;\n       |                  ^~~~~~~\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/owned_twice.crb:4:17: note: ownership moved here\n     4 |     let first = wrapped!;\n       |                 ^\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/owned_twice.crb:3:9: note: value declared here\n     3 |     let wrapped: Option<Item> = Some(Item { value: 7 });\n       |         ^\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "borrow_escape",
+      "status": "refused",
+      "diagnostic": "corboc: checking file (with module context)\n/Users/jabarkarim/sources/corboc/validation/fixtures/checked_extraction/borrow_escape.crb:3:41: error[N4]: rule violation: required lifetime relationship cannot be established for this verify operation\n     3 | fn escaped() -> View { let number = 42; wrap(&number)! }\n       |                                         ^~~~\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "propagation",
+      "status": "passed",
+      "stdout": "8\ntrue\n10\n0\n42\ntrue\n",
+      "stderr": ""
+    },
+    {
+      "case": "propagation_record_reference",
+      "status": "passed",
+      "stdout": "7\n",
+      "stderr": ""
+    },
+    {
+      "case": "numeric_bounds",
+      "status": "passed",
+      "stdout": "0\n255\nfalse\nfalse\n",
+      "stderr": ""
+    },
+    {
+      "case": "numeric_exact",
+      "status": "passed",
+      "stdout": "true\ntrue\ntrue\ntrue\ntrue\n",
+      "stderr": ""
+    }
+  ],
+  "platform": "macOS ARM64",
+  "installed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "corbo_revision": "a6913aafb88367d11839f3cbc47f91dc44a845be",
+  "stdlib_sha256": "08b9b56b33fa8554dfa64ff3e00ce35a9af7246aa7f5cae0bece0876f00c8db4",
+  "semantic_diagnostics": "site/history audit and 13 observations passed",
+  "diagnostic_categories": "9 observations and raw-protocol comparisons passed"
+}

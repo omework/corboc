@@ -190,6 +190,7 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
     let kind = nodes[node].kind;
     let child = graph[node].first_child;
     let emit = (*ctx).emit;
+    if kind==79 && source[nodes[node].name_start]==33{return lower_unwrap(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,node);}
     if kind==79{return lower_propagation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,node);}
     if optional(copy(expected)) && kind == 7 && graph[node].binding == 0
         && option_variant(&source[0..source.len()], &nodes[0..nodes.len()], copy(node)) == 2 {
@@ -1701,7 +1702,7 @@ fn binary(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i
         let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], right);
         if ty <= 0 || ty > 9 || a > 9 { return -1; }
         if emit {
-            declaration(copy(ty), node); { let code: [u8;2] = [61,40]; byte_text(&code[..]); } c_type(copy(ty)); character(41); temporary(left); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            emit_checked_cast(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],node,left,a,ty);
         }
         return ty;
     }
