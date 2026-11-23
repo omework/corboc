@@ -1,0 +1,16 @@
+struct Wrapper { value: i64 }
+impl Wrapper {
+    fn ref(&self) -> &i64 { &(*self).value }
+    fn mut_ref(&mut self) -> &mut i64 { &mut (*self).value }
+    fn drop(&mut self) { print(99); }
+}
+fn mark(count: &mut i64) -> i64 { *count = *count * 10 + 1; 0 }
+fn make(count: &mut i64) -> Wrapper { *count = *count * 10 + 2; Wrapper { value: 42 } }
+fn pair(left: i64, right: i64) -> i64 { left + right }
+fn main() {
+    let mut count = 0;
+    print(pair(mark(&mut count), *make(&mut count)));
+    let skipped = false && (*make(&mut count) == 42);
+    print(skipped);
+    print(count);
+}

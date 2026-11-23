@@ -1,0 +1,187 @@
+{
+  "platform": "macOS ARM64",
+  "reference_methods": [
+    {
+      "case": "allocation",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n7\n"
+    },
+    {
+      "case": "allocation_lifetime",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n121\n"
+    },
+    {
+      "case": "bad_signature",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "1\n162\n"
+    },
+    {
+      "case": "borrow_escape",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n426\n9\n314\n"
+    },
+    {
+      "case": "enum_bad_signature",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n141\n9\n88\n"
+    },
+    {
+      "case": "generic",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\ntrue\n"
+    },
+    {
+      "case": "guard_lifetime",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n132\n"
+    },
+    {
+      "case": "move_payload",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n382\n9\n243\n"
+    },
+    {
+      "case": "mutex_deref",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n42\n42\n"
+    },
+    {
+      "case": "native",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n2\n"
+    },
+    {
+      "case": "no_declared_method",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n92\n9\n38\n"
+    },
+    {
+      "case": "no_mut_permission",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n421\n"
+    },
+    {
+      "case": "once",
+      "status": "passed, fatal UBSan",
+      "stdout": "99\n42\nfalse\n12\n"
+    },
+    {
+      "case": "wrapper",
+      "status": "passed, fatal UBSan",
+      "stdout": "13\n42\n42\n"
+    }
+  ],
+  "mutex_regressions": [
+    {
+      "case": "mutex_api",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "42",
+        "42"
+      ]
+    },
+    {
+      "case": "mutex_threads",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "3",
+        "4"
+      ]
+    },
+    {
+      "case": "mutex_aggregate",
+      "status": "executed, fatal UBSan",
+      "stdout": [
+        "41",
+        "99",
+        "99",
+        "41"
+      ]
+    },
+    {
+      "case": "checked_interior_mutation",
+      "status": "rejected",
+      "exit": 9,
+      "diagnostic": "9\n66"
+    },
+    {
+      "case": "destroy_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n156"
+    },
+    {
+      "case": "destroy_owner",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n120"
+    },
+    {
+      "case": "foreign_impl",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "1\n3121\n1\n3121"
+    },
+    {
+      "case": "forge_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "1\n173"
+    },
+    {
+      "case": "raw_helper",
+      "status": "rejected",
+      "exit": 13,
+      "diagnostic": ""
+    },
+    {
+      "case": "reentry",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n128"
+    },
+    {
+      "case": "shared_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "5\n240"
+    },
+    {
+      "case": "sync_guard_suspension",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n236"
+    },
+    {
+      "case": "transfer_guard",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "8\n147"
+    }
+  ],
+  "semantic_regressions": "audit and 13 observations passed",
+  "category_regressions": "nine observations and raw protocol comparisons passed",
+  "installed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "corbo_revision": "d4e5ead90bcb0f5a75df334dc6764f82e3ef9e6b",
+  "stdlib_sha256": "10c795fd9a290d37af51ad85258738d3617050c9d209083ed44893662e3ea3cb",
+  "rebuild": {
+    "corbo_revision": "d4e5ead90bcb0f5a75df334dc6764f82e3ef9e6b",
+    "seed": "/Users/jabarkarim/sources/corboc/build/dereference/pinned/bin/corboc",
+    "compiler": "/Users/jabarkarim/sources/corboc/build/dereference/ready/bin/corboc",
+    "c_sha256": "4a3bdafb8366f92fb7dc959cdd54cd5442414a680e7989fe2d99ecabb19215bd",
+    "self_verified": false,
+    "stdlib_source": "/Users/jabarkarim/sources/corboc/.deps/corbo/stdlib/src",
+    "stdlib_override": false,
+    "stdlib_sha256": "10c795fd9a290d37af51ad85258738d3617050c9d209083ed44893662e3ea3cb"
+  },
+  "lexer_extraction": "identical function bodies verified"
+}

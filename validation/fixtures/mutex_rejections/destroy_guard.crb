@@ -3,7 +3,7 @@ use std::sync::Mutex;
 fn main() {
     let mutex = Mutex::new(0);
     let mut guard = mutex.lock();
-    let view = guard.get_mut();
+    let view = guard.mut_ref();
     drop(guard); // The borrowed payload would be used after unlock.
     *view = 42;
 }

@@ -1,0 +1,3 @@
+enum Wrapper { Value(i64) }
+impl Wrapper { fn ref(&self) -> i64 { 1 } }
+fn main() { let wrapper = Wrapper::Value(1); print(*wrapper); }

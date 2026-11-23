@@ -3,8 +3,8 @@ fn main(){
  let mutex=Mutex::new(0);
  let mut guard=mutex.lock();
  let a=&mut guard;
- let first=runtime::thread({move a;let value=a.get_mut();*value=1;});
+ let first=runtime::thread({move a;let value=a.mut_ref();*value=1;});
  let b=&mut guard;
- let second=runtime::thread({move b;let value=b.get_mut();*value=2;});
+ let second=runtime::thread({move b;let value=b.mut_ref();*value=2;});
  drop(first.join());drop(second.join());
 }

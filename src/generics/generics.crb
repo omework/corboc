@@ -130,7 +130,9 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     let kind = nodes[id].kind;
     let child = graph[id].first_child;
     if kind == 7 {
-        let binding = graph[id].binding;
+        let mut binding = graph[id].binding;
+        // Named block captures inherit the original binding's type.
+        while nodes[binding].kind == 57 { binding = graph[binding].binding; }
         let ty = graph[binding].type_node;
         if ty != 0 { let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty); return packed(&inferred); }
         let self_name: [u8; 4] = [115,101,108,102];
@@ -164,6 +166,17 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     }
     if kind == 13 || kind == 14 {
         let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
+        if kind == 14 && ty.reference == 0 {
+            let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
+            let function = named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, 1);
+            if function != 0 {
+                let result = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], output(&nodes[0..nodes.len()], &graph[0..graph.len()], function));
+                if result.reference != 0 {
+                    let inferred = ConcreteType { node: result.node, reference: 0, slice: result.slice, instance: result.instance };
+                    return packed(&inferred);
+                }
+            }
+        }
         let inferred = ConcreteType { node: ty.node, reference: if kind == 14 { 0 } else if graph[id].mutable { 2 } else { 1 }, slice: ty.slice, instance: ty.instance }; return packed(&inferred);
     }
     if kind == 18 {
@@ -174,6 +187,9 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     }
     if kind == 39 {
         let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], child, depth + 1));
+        // Async function/method lookup already returns its declared output.
+        // A stored explicit Future annotation, in contrast, wraps that output.
+        if layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node) != 0 { return packed(&ty); }
         let inferred = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[ty.node].first_child); return packed(&inferred);
     }
     if kind == 15 {

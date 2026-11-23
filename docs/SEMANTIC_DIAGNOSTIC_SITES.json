@@ -8122,5 +8122,29 @@
     "rule": "1",
     "condition": "as source or target is not a numeric primitive",
     "message": "as requires numeric primitive types; bool and references are not numeric conversions"
+  },
+  {
+    "id": 1015,
+    "file": "src/iteration/iteration.crb",
+    "function": "expand_iteration_syntax",
+    "rule": "1",
+    "condition": "explicit dereference method has an incompatible signature or missing access mode",
+    "message": "dereference requires ref(&self) -> &T for reading or mut_ref(&mut self) -> &mut T for writing, with the same target type and no additional arguments"
+  },
+  {
+    "id": 1016,
+    "file": "src/verify/expression_blocks.crb",
+    "function": "verify_expression_block",
+    "rule": "1",
+    "condition": "block-expression result differs from its contextual type",
+    "message": "expression block result does not match the expected type"
+  },
+  {
+    "id": 1017,
+    "file": "src/verify/expression_blocks.crb",
+    "function": "verify_expression_block",
+    "rule": "4",
+    "condition": "expression block result depends on local storage that cannot survive",
+    "message": "expression block result retains a reference or resource that does not survive the block"
   }
 ]

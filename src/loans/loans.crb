@@ -787,6 +787,13 @@ pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[Sta
         if from == 0 || values[from].state != 1 || !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(from)) {
             return 0 - violation_site(4, start, 161);
         }
+        if values[from].ty>=201 && values[from].ty<=209 {
+            if graph[argument].mutable!=exclusive || values[from].ty-200!=expected{return 0-violation_site(1,start,162);}
+            if exclusive && !values[from].mutable{return 0-violation_site(5,start,163);}
+            let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],from,argument,exclusive);
+            if conflict!=0{return if conflict>0{0-violation_site(5,start,164)}else{-9};}
+            return 1;
+        }
         if values[from].target == 0 || values[from].origin_call != 0 || values[from].ty >= 60 { return -9; }
         if graph[argument].mutable != exclusive || loan_element(&values[0..values.len()], copy(from)) != expected {
             return 0 - violation_site(1, start, 162);
@@ -890,8 +897,8 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 let reborrow = nodes[place].kind == 14;
                 let from = graph[if reborrow { graph[place].first_child } else { copy(place) }].binding;
                 values[argument] = CheckedValue{ ty: copy(input), state: 1, mutable: false,
-                    target: if reborrow { values[from].target } else { copy(from) },
-                    loan_parent: if reborrow { copy(from) } else { 0 }, origin_call: 0, writable: input >= 40 }; record_checked(&values[0..values.len()],argument);
+                    target: if reborrow && (values[from].ty<201 || values[from].ty>209) { values[from].target } else { copy(from) },
+                    loan_parent: if reborrow && (values[from].ty<201 || values[from].ty>209) { copy(from) } else { 0 }, origin_call: 0, writable: input >= 40 }; record_checked(&values[0..values.len()],argument);
                 binding = copy(argument);
             } else if nodes[argument].kind != 7 { return -9; }
             if binding == 0 || values[binding].state != 1 || values[binding].ty >= 100

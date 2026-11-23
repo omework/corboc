@@ -3,7 +3,7 @@ use std::sync::asyn::Mutex as AsyncMutex;
 
 fn increment(mutex: &Mutex<i64>) {
     let mut guard = mutex.lock();
-    let value = guard.get_mut();
+    let value = guard.mut_ref();
     *value += 1;
 }
 
@@ -16,7 +16,7 @@ fn touch(mutex: &Mutex<i64>) {
 
 async fn async_increment(mutex: &AsyncMutex<i64>) -> i64 {
     let mut guard = mutex.lock().await;
-    let value = guard.get_mut();
+    let value = guard.mut_ref();
     *value += 1;
     yield;
     *value
@@ -34,7 +34,7 @@ fn main() {
     drop(first.join()); drop(second.join()); drop(third.join());
     {
         let guard = mutex.lock();
-        let value = guard.get();
+        let value = guard.ref();
         print(*value);
     }
 

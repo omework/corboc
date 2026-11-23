@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Check expression-local materialization with ordinary scope and value summaries.
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, Token};
+use bootstrap::lexer::scan_tokens;
+use bootstrap::check_flow::LoopEdge;
+use bootstrap::tasks::copy_task_summary;
+use bootstrap::value_dependencies::{owned_fields_survive, reduce_loan_aliases};
+
+fn verify_expression_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    let mut tokens=[Token{kind:0,start:0,end:0,nominal:false,annotation:0};524292];
+    let (error,count)=scan_tokens(&source[0..source.len()],&mut tokens[..],2);
+    if error!=0{return 0-(error as i64);}
+    let mut edges=[LoopEdge{breaks:0,continues:0};1];
+    let (status,outcome)=check_block_with_destination(&source[0..source.len()],&nodes[0..nodes.len()],
+        &graph[0..graph.len()],&tokens[..count+3],&mut values[0..values.len()],&mut edges[..],node,0-expected-1,true,node);
+    if status!=0{return 0-status;}
+    if outcome<4{return -9;}
+    let ty=outcome-4;
+    if expected!=0 && expected!=ty{return 0-type_violation(nodes[node].start,expected,ty,1016);}
+    let mut tail=graph[node].first_child;
+    while graph[tail].next_sibling!=0{tail=graph[tail].next_sibling;}
+    let mut value=graph[tail].first_child;
+    while nodes[value].kind==19{value=graph[value].first_child;}
+    if nodes[value].kind==7{value=graph[value].binding;}
+    if ty>9 && values[value].state!=0 {
+        let parent=nodes[node].parent;
+        let scope=graph[parent].scope;
+        copy_task_summary(&mut values[0..values.len()],value,node,ty,false);
+        reduce_loan_aliases(&graph[0..graph.len()],&mut values[0..values.len()],node,scope);
+        if !owned_fields_survive(&graph[0..graph.len()],&values[0..values.len()],node,scope){return 0-violation_site(4,nodes[node].start,1017);}
+    }
+    ty
+}

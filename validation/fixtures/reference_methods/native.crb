@@ -1,0 +1,11 @@
+fn main() {
+    let mut number = 1;
+    let mut view = &mut number;
+    *view = 42;
+    let reference = &number;
+    let double = reference.ref();
+    print(**double);
+    let mut values = [1, 2];
+    for value in values.mut_ref() { *value += 1; }
+    print(values[0]);
+}

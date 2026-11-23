@@ -4,7 +4,7 @@ async fn operation() -> i64 {
     let mutex = Mutex::new(0);
     let guard = mutex.lock();
     yield;
-    let value = guard.get();
+    let value = guard.ref();
     *value
 }
 

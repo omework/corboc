@@ -42,7 +42,7 @@ cases = [
      ["missing required field 'mutex' when constructing 'Holder'", 'required field declared here']),
     ('immutable receiver', 'struct Item{value:i64} impl Item{fn add(&mut self){(*self).value+=1;}} struct Holder{item:Item} fn main(){let h=Holder{item:Item{value:0}};h.item.add();}',
      ['cannot mutate an immutable binding']),
-    ('borrow outlives owner', mutex + 'async fn bad(){let h=Holder{mutex:Mutex::new(Data{value:1})};let mut guard=h.mutex.lock().await;drop(h);let data=guard.get_mut();print((*data).value);} fn main(){}',
+    ('borrow outlives owner', mutex + 'async fn bad(){let h=Holder{mutex:Mutex::new(Data{value:1})};let mut guard=h.mutex.lock().await;drop(h);let data=guard.mut_ref();print((*data).value);} fn main(){}',
      ['rule violation:', 'borrow']),
 ]
 for name, text, messages in cases:

@@ -478,3 +478,15 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Commit/push both repositories as Jabar with the updated shared-source pin.
 
 [Implementation and evidence](CHECKED_EXTRACTION_CYCLE.md).
+
+## General dereferencing and payload reference methods
+
+- [x] Rename synchronous/asynchronous MutexGuard accessors to ref/mut_ref.
+- [x] Resolve explicit methods before universal helpers, without Mutex type checks.
+- [x] Normalize nominal * into context-selected reference-method calls.
+- [x] Make A<T> ref/mut_ref borrow T; preserve explicit handle borrows.
+- [x] Update grammar, docs, generated STD reference and current guard callers.
+- [x] Pass 14 focused reference-method cases and 13 existing mutex checks.
+- [x] Rebuild, commit/push as Jabar, update the pin and install at the same PATH.
+
+[Mechanism and evidence](REFERENCE_METHODS_CYCLE.md).

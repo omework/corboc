@@ -81,6 +81,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let kind = nodes[node].kind;
     let start = nodes[node].start;
     let child = graph[node].first_child;
+    if kind==2{return verify_expression_block(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],node,expected,mode);}
     if kind==7 || kind==9 || kind==13 || kind==17 {
         let text=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(mode));
         if text<0{return text;}if text!=0{if expected!=0 && expected!=text{return 0-violation_site(1, start, 761);}return text;}

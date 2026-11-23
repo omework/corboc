@@ -1,0 +1,2 @@
+use std::sync::Mutex;
+fn main() { let mutex = Mutex::new(1); let guard = mutex.lock(); let value = guard.ref(); drop(guard); print(*value); }

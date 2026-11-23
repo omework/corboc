@@ -1,0 +1,7 @@
+struct Resource { value: i64 }
+struct Wrapper { value: Resource }
+impl Wrapper {
+    fn ref(&self) -> &Resource { &(*self).value }
+    fn mut_ref(&mut self) -> &mut Resource { &mut (*self).value }
+}
+fn main() { let wrapper = Wrapper { value: Resource { value: 1 } }; let taken = *wrapper; print(taken.value); }

@@ -1055,7 +1055,10 @@ static const char *const reasons[]={
 "cannot move a tuple item out of borrowed storage; borrow its fields instead",
 "cannot move an array field out of its containing value; borrow it with ref() or mut_ref()",
 "postfix ! requires a Result or Option; await a Future before unwrapping it",
-"as requires numeric primitive types; bool and references are not numeric conversions"
+"as requires numeric primitive types; bool and references are not numeric conversions",
+"dereference requires ref(&self) -> &T for reading or mut_ref(&mut self) -> &mut T for writing, with the same target type and no additional arguments",
+"expression block result does not match the expected type",
+"expression block result retains a reference or resource that does not survive the block"
 };
 // END FAILURE SITES
 if(op==0){

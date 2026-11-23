@@ -534,9 +534,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let named = graph[input].binding;
                 let reborrow = nodes[input].kind == 13 && nodes[place].kind == 14;
                 let from = if reborrow { graph[graph[place].first_child].binding } else { copy(named) };
-                let root = if reborrow { values[from].target }
+                let allocation=reborrow && values[from].ty>=201 && values[from].ty<=209;
+                let root = if allocation { copy(from) } else if reborrow { values[from].target }
                     else if nodes[input].kind == 7 { values[named].target } else { graph[place].binding };
-                let parent = if reborrow && !values[from].writable { values[from].loan_parent }
+                let parent: u64 = if allocation { 0 } else if reborrow && !values[from].writable { values[from].loan_parent }
                     else if reborrow { copy(from) } else { copy(named) };
                 let checked = check_single_loan_argument(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], &values[0..values.len()], copy(ty_node), copy(input));

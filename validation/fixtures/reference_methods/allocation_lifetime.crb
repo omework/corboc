@@ -1,0 +1,7 @@
+fn main() {
+    let mut numbers = Pool<i64>::new(1);
+    let number = numbers.new(42);
+    let view = number.ref();
+    drop(number);
+    print(*view);
+}

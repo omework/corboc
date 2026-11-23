@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Resolve declared reference methods before ordinary place/loan verification.
+use bootstrap::model::{AstNode, StaticNode, Token};
+use bootstrap::loans::borrow_mutable;
+
+// Only real instance declarations participate. Universal helpers are not methods.
+fn named_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    owner: u64, mode: i64) -> u64 {
+    if owner == 0 { return 0; }
+    let shared: [u8; 3] = [114,101,102];
+    let mutable: [u8; 7] = [109,117,116,95,114,101,102];
+    let mut item = graph[0].first_child;
+    while item != 0 {
+        if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, item) {
+            let mut function = graph[item].first_child;
+            while function != 0 {
+                let name = &source[nodes[function].name_start..nodes[function].name_end];
+                let mut receiver = graph[function].first_child;
+                while nodes[receiver].kind == 58 { receiver = graph[receiver].next_sibling; }
+                let self_name: [u8; 4] = [115,101,108,102];
+                let receiver_name = &source[nodes[receiver].name_start..nodes[receiver].name_end];
+                let mut matches = false;
+                if mode == 2 { matches = name.content_eq(&mutable[..]); }
+                else { matches = name.content_eq(&shared[..]); }
+                if (nodes[function].kind == 1 || nodes[function].kind == 35)
+                    && matches
+                    && nodes[receiver].kind == 3
+                    && receiver_name.content_eq(&self_name[..]) {
+                    return function;
+                }
+                function = graph[function].next_sibling;
+            }
+        }
+        item = graph[item].next_sibling;
+    }
+    0
+}
+
+/// Explicit methods take precedence over universal reference shorthand.
+pub fn declared_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], operand: u64, mode: i64) -> u64 {
+    let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));
+    let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
+    named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, mode)
+}
+
+/// A<T>'s reference helpers address its payload; explicit &a still addresses a.
+/// This is the allocation primitive, not a special case for a nominal wrapper.
+pub fn allocation_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], operand: u64, depth: u64) -> bool {
+    if operand == 0 || depth >= 128 { return false; }
+    let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));
+    if ty.reference != 0 { return false; }
+    let name = &source[nodes[ty.node].name_start..nodes[ty.node].name_end];
+    let allocation: [u8; 1] = [65];
+    if name.content_eq(&allocation[..]) && graph[ty.node].first_child != 0 { return true; }
+    if nodes[operand].kind == 19 {
+        return allocation_reference(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], graph[operand].first_child, depth + 1);
+    }
+    if nodes[operand].kind == 7 {
+        return allocation_reference(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], graph[graph[operand].binding].initializer, depth + 1);
+    }
+    let call = if nodes[operand].kind == 79 { graph[operand].first_child } else { operand };
+    if nodes[call].kind == 16 {
+        let method = &source[nodes[call].name_start..nodes[call].name_end];
+        let new_name: [u8; 3] = [110,101,119];
+        let try_name: [u8; 3] = [116,114,121];
+        if !method.content_eq(&new_name[..]) && !method.content_eq(&try_name[..]) { return false; }
+        let receiver = graph[call].first_child;
+        let binding = graph[receiver].binding;
+        let shape = graph[binding].type_node;
+        let pool: [u8; 4] = [80,111,111,108];
+        let shape_name = &source[nodes[shape].name_start..nodes[shape].name_end];
+        return nodes[receiver].kind == 7 && (nodes[graph[binding].initializer].kind == 66
+            || shape_name.content_eq(&pool[..]));
+    }
+    false
+}
+
+/// True for a mutable place consumer, not merely because its binding is mutable.
+fn mutation_consumer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], node: u64) -> bool {
+    let mut current = node;
+    loop {
+        let parent = nodes[current].parent;
+        if parent == 0 { return false; }
+        let kind = nodes[parent].kind;
+        if graph[parent].first_child != current { return false; }
+        if kind == 21 { return true; }
+        if kind == 13 { return graph[parent].mutable; }
+        if kind == 19 || kind == 17 || kind == 18 || kind == 14 {
+            current = parent;
+            continue;
+        }
+        if kind == 16 {
+            let mutable: [u8; 7] = [109,117,116,95,114,101,102];
+            let name = &source[nodes[parent].name_start..nodes[parent].name_end];
+            if name.content_eq(&mutable[..]) { return true; }
+            let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &tokens[0..tokens.len()], current, 0));
+            let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
+            let function = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, parent);
+            let mut receiver = graph[function].first_child;
+            while nodes[receiver].kind == 58 { receiver = graph[receiver].next_sibling; }
+            let annotation = graph[receiver].first_child;
+            return borrow_mutable(&source[nodes[receiver].start..nodes[receiver].name_start])
+                || (annotation != 0 && borrow_mutable(&source[nodes[annotation].start..nodes[graph[annotation].first_child].start]));
+        }
+        return false;
+    }
+    false
+}
+
+/// Resolve * only for owned nominal operands with explicitly declared methods.
+/// Returns 0 for native references/allocations, -1 for a malformed method pair.
+pub fn dereference_mode(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], node: u64) -> i64 {
+    let operand = graph[node].first_child;
+    let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));
+    if ty.reference != 0 { return 0; }
+    let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
+    if owner == 0 { return 0; }
+    let shared = named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, 1);
+    let mutable = named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, 2);
+    if shared == 0 && mutable == 0 { return 0; }
+    let writing = mutation_consumer(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &tokens[0..tokens.len()], node);
+    let function = if writing { mutable } else { shared };
+    if function == 0 || nodes[function].kind != 1 { return -1; }
+    let result = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], output(&nodes[0..nodes.len()], &graph[0..graph.len()], function));
+    let mut receiver = graph[function].first_child;
+    while nodes[receiver].kind == 58 { receiver = graph[receiver].next_sibling; }
+    let annotation = graph[receiver].first_child;
+    let explicit_reference = annotation != 0 && source[nodes[annotation].start] == 38;
+    let borrowing = source[nodes[receiver].start] == 38 || explicit_reference;
+    let exclusive = if explicit_reference { borrow_mutable(&source[nodes[annotation].start..nodes[graph[annotation].first_child].start]) }
+        else { borrow_mutable(&source[nodes[receiver].start..nodes[receiver].name_start]) };
+    if !borrowing || exclusive != writing || result.reference != (if writing { 2 } else { 1 })
+        || nodes[graph[receiver].next_sibling].kind == 3 { return -1; }
+    // Both modes, when present, must expose the same target shape.
+    if shared != 0 && mutable != 0 {
+        let left = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], output(&nodes[0..nodes.len()], &graph[0..graph.len()], shared));
+        let right = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], output(&nodes[0..nodes.len()], &graph[0..graph.len()], mutable));
+        let left_target=ConcreteType{node:left.node,reference:0,slice:left.slice,instance:left.instance};
+        let right_target=ConcreteType{node:right.node,reference:0,slice:right.slice,instance:right.instance};
+        if !same_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&left_target,&right_target,0){return -1;}
+    }
+    if writing { 2 } else { 1 }
+}

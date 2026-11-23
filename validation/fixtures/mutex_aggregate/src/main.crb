@@ -13,12 +13,12 @@ async fn asynchronous() -> i64 {
     let mutex = AsyncMutex::new(Counter { value: 40 });
     {
         let mut guard = mutex.lock().await;
-        let value = guard.get_mut();
+        let value = guard.mut_ref();
         value.increment();
         yield;
     }
     let guard = mutex.lock().await;
-    let value = guard.get();
+    let value = guard.ref();
     value.read()
 }
 
@@ -27,11 +27,11 @@ fn main() {
         let mutex = Mutex::new(Counter { value: 40 });
         {
             let mut guard = mutex.lock();
-            let value = guard.get_mut();
+            let value = guard.mut_ref();
             value.increment();
         }
         let guard = mutex.lock();
-        let value = guard.get();
+        let value = guard.ref();
         print(value.read());
     }
     let execution = runtime::spawn(asynchronous());

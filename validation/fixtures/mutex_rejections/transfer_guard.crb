@@ -5,7 +5,7 @@ fn main() {
     let guard = mutex.lock();
     let execution = runtime::thread({
         move guard; // Native-thread-owned guards cannot transfer.
-        let view = guard.get();
+        let view = guard.ref();
         print(*view);
     });
     drop(execution.join());

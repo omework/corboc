@@ -10,7 +10,7 @@ struct Holder { mutex: Mutex<Data> }
 impl Holder {
     async fn work(&self) -> i64 {
         let mut guard = self.mutex.lock().await;
-        let data = guard.get_mut();
+        let data = guard.mut_ref();
         (*data).value = 42;
         (*data).value
     }

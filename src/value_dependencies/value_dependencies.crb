@@ -1,3 +1,4 @@
+use bootstrap::checked_state::record as record_checked;
 use bootstrap::lowering_types::optional;
 use bootstrap::model::result_type;
 use bootstrap::model::{summary_value,summary_next};
@@ -442,4 +443,21 @@ pub fn external_dependencies(graph:&[StaticNode],values:&[CheckedValue],owner:u6
         }return false;
     }
     values[owner].target!=0 || values[owner].loan_parent!=0 || task_value(ty)
+}
+
+/// Remove reference-slot aliases that disappear at a scope boundary, retaining
+/// the actual referent and every parent reservation that survives that boundary.
+pub fn reduce_loan_aliases(graph: &[StaticNode], values: &mut [CheckedValue], owner: u64, scope: u64) {
+    let ty=values[owner].ty;
+    if !((ty>20 && ty<60) || ty==734 || slice_view(ty)){return;}
+    let root=values[owner].target;
+    let mut parent=values[owner].loan_parent;
+    while parent!=0 && parent<graph.len() as u64 && !scope_contains(&graph[0..graph.len()],graph[parent].scope,scope) {
+        let reference=values[parent].ty;
+        if !((reference>20 && reference<60) || reference==734 || slice_view(reference)) || values[parent].target!=root{break;}
+        parent=values[parent].loan_parent;
+    }
+    let state=values[owner].state;let mutable=values[owner].mutable;
+    let shape=values[owner].origin_call;let writable=values[owner].writable;
+    values[owner]=CheckedValue{ty:ty,state:state,mutable:mutable,target:root,loan_parent:parent,origin_call:shape,writable:writable};record_checked(&values[0..values.len()],owner);
 }

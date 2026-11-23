@@ -1,0 +1,2 @@
+struct Plain { value: i64 }
+fn main() { let value = Plain { value: 1 }; print(*value); }

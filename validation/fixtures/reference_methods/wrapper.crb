@@ -1,0 +1,22 @@
+struct Point { x: i64 }
+impl Point {
+    fn increment(&mut self) { (*self).x += 1; }
+}
+struct Wrapper { value: Point }
+impl Wrapper {
+    fn ref(&self) -> &Point { &(*self).value }
+    fn mut_ref(&mut self) -> &mut Point { &mut (*self).value }
+}
+fn main() {
+    let mut wrapper = Wrapper { value: Point { x: 1 } };
+    (*wrapper).x = 10;
+    (*wrapper).x += 2;
+    (*wrapper).increment();
+    let view = &*wrapper;
+    print((*view).x);
+    let mut writable = &mut *wrapper;
+    (*writable).x = 42;
+    print((*wrapper).x);
+    let read = wrapper.ref();
+    print((*read).x);
+}

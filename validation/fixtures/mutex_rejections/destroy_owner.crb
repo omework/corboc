@@ -4,6 +4,6 @@ fn main() {
     let mutex = Mutex::new(0);
     let guard = mutex.lock();
     drop(mutex); // The active guard still depends on its owner.
-    let view = guard.get();
+    let view = guard.ref();
     print(*view);
 }

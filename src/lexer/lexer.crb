@@ -1,0 +1,855 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Shared lexical tokenization for the frontend and nested expression verification.
+use bootstrap::model::{Token, hex_digit};
+use bootstrap::lowering_types::signed as source_offset;
+use bootstrap::diagnostics::diagnostic_emit;
+
+pub fn name_start(byte: u8) -> bool {
+    (byte >= 97 && byte <= 122) || (byte >= 65 && byte <= 90) || byte == 95
+}
+
+pub fn digit(byte: u8) -> bool {
+    byte >= 48 && byte <= 57
+}
+
+// Decode one UTF-8 scalar. A zero width signals invalid input.
+pub fn utf8_scalar(source: &[u8], start: usize) -> (usize, u32) {
+    let lead = source[start];
+    if lead >> 7 == 0 { return (1, lead as u32); }
+
+    let mut width: usize = 0;
+    if lead >= 194 && lead <= 223 { width = 2; }
+    if lead >= 224 && lead <= 239 { width = 3; }
+    if lead >= 240 && lead <= 244 { width = 4; }
+    if width == 0 || width > source.len() - start { return (0, 0); }
+
+    let second = source[start + 1];
+    if lead == 224 && second < 160 { return (0, 0); }
+    if lead == 237 && second >= 160 { return (0, 0); }
+    if lead == 240 && second < 144 { return (0, 0); }
+    if lead == 244 && second >= 144 { return (0, 0); }
+    let mut scalar = (lead & (127 / (1 << width))) as u32;
+    let mut offset: usize = 1;
+    while offset < width {
+        let byte = source[start + offset];
+        if byte >> 6 != 2 { return (0, 0); }
+        scalar = (scalar << 6) | ((byte & 63) as u32);
+        offset = offset + 1;
+    }
+    (width, scalar)
+}
+
+// Read four hexadecimal digits. 65536 signals an invalid UTF-16 unit.
+pub fn hex_unit(source: &[u8], start: usize) -> u32 {
+    if source.len() - start < 4 { return 65536; }
+    let mut unit: u32 = 0;
+    let mut offset: usize = 0;
+    while offset < 4 {
+        let value = hex_digit(source[start + offset]);
+        if value == 16 { return 65536; }
+        unit = (unit << 4) | value;
+        offset = offset + 1;
+    }
+    unit
+}
+
+// Return the next escape position, or its diagnostic code and byte.
+pub fn scan_escape(source: &[u8], start: usize) -> (usize, i64, usize) {
+    let marker = start + 1;
+    if marker == source.len() { return (0, 4, marker); }
+    let byte = source[marker];
+    if byte == 34 || byte == 92 || byte == 47 || byte == 98 || byte == 102
+        || byte == 110 || byte == 114 || byte == 116 { return (start + 2, 0, 0); }
+    if byte != 117 { return (0, 4, marker); }
+
+    let unit = hex_unit(&source[0..source.len()], marker + 1);
+    if unit == 65536 { return (0, 5, marker); }
+    if unit >= 56320 && unit <= 57343 { return (0, 6, marker + 4); }
+    if unit < 55296 || unit > 56319 { return (start + 6, 0, 0); }
+    if source.len() - start < 8 || source[start + 6] != 92 || source[start + 7] != 117 {
+        return (0, 7, marker + 4);
+    }
+    let low = hex_unit(&source[0..source.len()], start + 8);
+    if low == 65536 { return (0, 5, marker + 6); }
+    if low < 56320 || low > 57343 { return (0, 8, marker + 6); }
+    return (start + 12, 0, 0);
+}
+
+pub fn name_kind(spelling: &[u8]) -> i64 {
+    let for_word = "for";
+    let in_word = "in";
+    let for_bytes=for_word.as_bytes();
+    if spelling.content_eq(for_bytes) { return 85; }
+    let in_bytes=in_word.as_bytes();
+    if spelling.content_eq(in_bytes) { return 86; }
+    let fn_word: [u8; 2] = [102, 110];
+    let let_word: [u8; 3] = [108, 101, 116];
+    let mut_word: [u8; 3] = [109, 117, 116];
+    let return_word: [u8; 6] = [114, 101, 116, 117, 114, 110];
+    let true_word: [u8; 4] = [116, 114, 117, 101];
+    let false_word: [u8; 5] = [102, 97, 108, 115, 101];
+    if spelling.content_eq(&fn_word[..]) { return 7; }
+    if spelling.content_eq(&let_word[..]) { return 15; }
+    if spelling.content_eq(&mut_word[..]) { return 16; }
+    if spelling.content_eq(&return_word[..]) { return 17; }
+    if spelling.content_eq(&true_word[..]) || spelling.content_eq(&false_word[..]) { return 18; }
+    let as_word: [u8; 2] = [97, 115];
+    if spelling.content_eq(&as_word[..]) { return 41; }
+    let word_44: [u8; 2] = [105, 102];
+    if spelling.content_eq(&word_44[..]) { return 44; }
+    let word_45: [u8; 4] = [101, 108, 115, 101];
+    if spelling.content_eq(&word_45[..]) { return 45; }
+    let word_46: [u8; 5] = [119, 104, 105, 108, 101];
+    if spelling.content_eq(&word_46[..]) { return 46; }
+    let word_47: [u8; 5] = [98, 114, 101, 97, 107];
+    if spelling.content_eq(&word_47[..]) { return 47; }
+    let word_48: [u8; 8] = [99, 111, 110, 116, 105, 110, 117, 101];
+    if spelling.content_eq(&word_48[..]) { return 48; }
+    let word_49: [u8; 4] = [108, 111, 111, 112];
+    if spelling.content_eq(&word_49[..]) { return 49; }
+    let word_50: [u8; 5] = [121, 105, 101, 108, 100];
+    if spelling.content_eq(&word_50[..]) { return 50; }
+    let await_word: [u8; 5] = [97, 119, 97, 105, 116];
+    if spelling.content_eq(&await_word[..]) { return 61; }
+    let async_word: [u8; 5] = [97, 115, 121, 110, 99];
+    if spelling.content_eq(&async_word[..]) { return 60; }
+    let enum_word: [u8; 4] = [101, 110, 117, 109];
+    if spelling.content_eq(&enum_word[..]) { return 59; }
+    let struct_word: [u8; 6] = [115, 116, 114, 117, 99, 116];
+    if spelling.content_eq(&struct_word[..]) { return 58; }
+    let pub_word: [u8; 3] = [112, 117, 98];
+    if spelling.content_eq(&pub_word[..]) { return 57; }
+    let use_word: [u8; 3] = [117, 115, 101];
+    if spelling.content_eq(&use_word[..]) { return 56; }
+    let match_word: [u8; 5] = [109, 97, 116, 99, 104];
+    if spelling.content_eq(&match_word[..]) { return 62; }
+    let const_word: [u8; 5] = [99, 111, 110, 115, 116];
+    if spelling.content_eq(&const_word[..]) { return 81; }
+    let impl_word: [u8; 4] = [105, 109, 112, 108];
+    if spelling.content_eq(&impl_word[..]) { return 65; }
+    let self_word: [u8; 4] = [115, 101, 108, 102];
+    if spelling.content_eq(&self_word[..]) { return 66; }
+    let unchecked_word: [u8; 9] = [117, 110, 99, 104, 101, 99, 107, 101, 100];
+    if spelling.content_eq(&unchecked_word[..]) { return 70; }
+    let move_word: [u8; 4] = [109, 111, 118, 101];
+    if spelling.content_eq(&move_word[..]) { return 72; }
+    let extern_word: [u8; 6] = [101, 120, 116, 101, 114, 110];
+    if spelling.content_eq(&extern_word[..]) { return 73; }
+    let unsafe_word: [u8; 6] = [117, 110, 115, 97, 102, 101];
+    if spelling.content_eq(&unsafe_word[..]) { return 76; }
+    1
+}
+
+// The expression parser uses these same token numbers to determine precedence.
+// Keep right angle brackets separate so nested generic types can end next to '='.
+pub fn assignment_width(tokens: &[Token], index: u64) -> u64 {
+    let kind = tokens[index].kind;
+    if kind == 13 || (kind >= 51 && kind <= 55) || (kind >= 77 && kind <= 80) { return 1; }
+    if kind == 24 && tokens[index + 1].kind == 24 && tokens[index + 2].kind == 13
+        && tokens[index].end == tokens[index + 1].start
+        && tokens[index + 1].end == tokens[index + 2].start { return 3; }
+    0
+}
+
+pub fn punctuation(byte: u8, next: u8) -> (i64, usize) {
+    if byte == 46 && next == 46 { return (42, 2); }
+    if byte == 58 && next == 58 { return (43, 2); }
+    if next == 61 {
+        if byte == 43 { return (51, 2); }
+        if byte == 45 { return (52, 2); }
+        if byte == 42 { return (53, 2); }
+        if byte == 47 { return (54, 2); }
+        if byte == 37 { return (55, 2); }
+        if byte == 38 { return (77, 2); }
+        if byte == 124 { return (78, 2); }
+        if byte == 94 { return (79, 2); }
+    }
+    if byte == 61 && next == 62 { return (63, 2); }
+    if byte == 45 && next == 62 { return (12, 2); }
+    if byte == 124 && next == 124 { return (30, 2); }
+    if byte == 38 && next == 38 { return (31, 2); }
+    if byte == 61 && next == 61 { return (32, 2); }
+    if byte == 33 && next == 61 { return (33, 2); }
+    if byte == 60 && next == 61 { return (34, 2); }
+    if byte == 60 && next == 60 { return (36, 2); }
+    if byte == 40 { return (2, 1); }
+    if byte == 41 { return (3, 1); }
+    if byte == 123 { return (4, 1); }
+    if byte == 125 { return (5, 1); }
+    if byte == 47 { return (6, 1); }
+    if byte == 58 { return (10, 1); }
+    if byte == 44 { return (11, 1); }
+    if byte == 61 { return (13, 1); }
+    if byte == 59 { return (14, 1); }
+    if byte == 43 { return (19, 1); }
+    if byte == 45 { return (20, 1); }
+    if byte == 42 { return (21, 1); }
+    if byte == 37 { return (22, 1); }
+    if byte == 60 { return (23, 1); }
+    if byte == 62 { return (24, 1); }
+    if byte == 38 { return (25, 1); }
+    if byte == 94 { return (26, 1); }
+    if byte == 124 { return (27, 1); }
+    if byte == 33 { return (28, 1); }
+    if byte == 126 { return (29, 1); }
+    if byte == 46 { return (38, 1); }
+    if byte == 91 { return (39, 1); }
+    if byte == 93 { return (40, 1); }
+    if byte == 64 { return (67, 1); }
+    if byte == 35 { return (71, 1); }
+    if byte == 63 { return (84, 1); }
+    return (0, 1);
+}
+
+
+pub fn annotation_word(word: &[u8]) -> i64 {
+    let key_1: [u8; 9] = [100, 97, 116, 97, 115, 116, 97, 99, 107];
+    if word.content_eq(&key_1[..]) { return 1; }
+    let key_2: [u8; 12] = [115, 116, 97, 99, 107, 95, 114, 101, 103, 105, 111, 110];
+    if word.content_eq(&key_2[..]) { return 2; }
+    let key_3: [u8; 10] = [102, 114, 101, 101, 95, 112, 97, 103, 101, 115];
+    if word.content_eq(&key_3[..]) { return 3; }
+    let key_4: [u8; 4] = [108, 111, 99, 107];
+    if word.content_eq(&key_4[..]) { return 4; }
+    let key_5: [u8; 6] = [98, 114, 97, 110, 99, 104];
+    if word.content_eq(&key_5[..]) { return 5; }
+    let key_6: [u8; 2] = [111, 110];
+    if word.content_eq(&key_6[..]) { return 6; }
+    let key_7: [u8; 14] = [116, 104, 114, 111, 117, 103, 104, 95, 114, 101, 115, 117, 108, 116];
+    if word.content_eq(&key_7[..]) { return 7; }
+    let key_8: [u8; 4] = [106, 111, 105, 110];
+    if word.content_eq(&key_8[..]) { return 8; }
+    let key_9: [u8; 6] = [114, 101, 115, 117, 108, 116];
+    if word.content_eq(&key_9[..]) { return 9; }
+    let key_10: [u8; 4] = [115, 105, 122, 101];
+    if word.content_eq(&key_10[..]) { return 10; }
+    let key_11: [u8; 17] = [114, 101, 103, 105, 111, 110, 95, 115, 116, 97, 99, 107, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_11[..]) { return 11; }
+    let key_12: [u8; 11] = [114, 101, 103, 105, 111, 110, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_12[..]) { return 12; }
+    let key_13: [u8; 17] = [114, 101, 99, 108, 97, 105, 109, 95, 116, 104, 114, 101, 115, 104, 111, 108, 100];
+    if word.content_eq(&key_13[..]) { return 13; }
+    let key_14: [u8; 24] = [114, 101, 103, 105, 111, 110, 95, 114, 101, 99, 108, 97, 105, 109, 95, 116, 104, 114, 101, 115, 104, 111, 108, 100];
+    if word.content_eq(&key_14[..]) { return 14; }
+    let key_15: [u8; 8] = [109, 97, 120, 95, 115, 105, 122, 101];
+    if word.content_eq(&key_15[..]) { return 15; }
+    let key_16: [u8; 5] = [99, 111, 117, 110, 116];
+    if word.content_eq(&key_16[..]) { return 16; }
+    let key_17: [u8; 1] = [75];
+    if word.content_eq(&key_17[..]) { return 17; }
+    let key_18: [u8; 1] = [77];
+    if word.content_eq(&key_18[..]) { return 18; }
+    let key_19: [u8; 1] = [71];
+    if word.content_eq(&key_19[..]) { return 19; }
+    let pool_key: [u8; 4] = [80, 111, 111, 108];
+    if word.content_eq(&pool_key[..]) { return 20; }
+    let new_key: [u8; 3] = [110, 101, 119];
+    if word.content_eq(&new_key[..]) { return 21; }
+    let try_key: [u8;3]=[116,114,121];
+    if word.content_eq(&try_key[..]) { return 33; }
+    let annotation_27: [u8; 4] = [116, 114, 117, 101];
+    if word.content_eq(&annotation_27[..]) { return 27; }
+    let annotation_26: [u8; 1] = [67];
+    if word.content_eq(&annotation_26[..]) { return 26; }
+    let annotation_25: [u8; 16] = [97, 115, 121, 110, 99, 95, 112, 111, 111, 108, 95, 115, 105, 122, 101, 115];
+    if word.content_eq(&annotation_25[..]) { return 25; }
+    let annotation_24: [u8; 9] = [100, 105, 114, 101, 99, 116, 105, 118, 101];
+    if word.content_eq(&annotation_24[..]) { return 24; }
+    let annotation_23: [u8; 4] = [119, 105, 116, 104];
+    if word.content_eq(&annotation_23[..]) { return 23; }
+    let annotation_22: [u8; 4] = [116, 121, 112, 101];
+    if word.content_eq(&annotation_22[..]) { return 22; }
+    let try_slice_key: [u8; 9] = [116, 114, 121, 95, 115, 108, 105, 99, 101];
+    if word.content_eq(&try_slice_key[..]) { return 28; }
+    let configurable_key: [u8; 12] = [99,111,110,102,105,103,117,114,97,98,108,101];
+    if word.content_eq(&configurable_key[..]) { return 31; }
+    let override_key: [u8; 8] = [111,118,101,114,114,105,100,101];
+    if word.content_eq(&override_key[..]) { return 32; }
+    let thread_key: [u8; 6] = [116,104,114,101,97,100];
+    if word.content_eq(&thread_key[..]) { return 34; }
+    let transfer_key: [u8; 8] = [116,114,97,110,115,102,101,114];
+    if word.content_eq(&transfer_key[..]) { return 35; }
+    let false_key: [u8; 5] = [102,97,108,115,101];
+    if word.content_eq(&false_key[..]) { return 36; }
+    let historical_region: [u8; 21] = [115,116,97,99,107,95,114,101,103,105,111,110,95,109,97,120,95,115,105,122,101];
+    if word.content_eq(&historical_region[..]) { return 30; }
+    0
+}
+
+pub fn builtin_or_placeholder(word: &[u8]) -> bool {
+    let word_0: [u8; 1] = [95];
+    if word.content_eq(&word_0[..]) { return true; }
+    let word_1: [u8; 7] = [114,117,110,116,105,109,101];
+    if word.content_eq(&word_1[..]) { return true; }
+    let word_2: [u8; 4] = [98,111,111,108];
+    if word.content_eq(&word_2[..]) { return true; }
+    let word_3: [u8; 4] = [86,111,105,100];
+    if word.content_eq(&word_3[..]) { return true; }
+    let word_4: [u8; 3] = [105,51,50];
+    if word.content_eq(&word_4[..]) { return true; }
+    let word_5: [u8; 3] = [105,54,52];
+    if word.content_eq(&word_5[..]) { return true; }
+    let word_6: [u8; 2] = [117,56];
+    if word.content_eq(&word_6[..]) { return true; }
+    let word_7: [u8; 3] = [117,49,54];
+    if word.content_eq(&word_7[..]) { return true; }
+    let word_8: [u8; 3] = [117,51,50];
+    if word.content_eq(&word_8[..]) { return true; }
+    let word_9: [u8; 3] = [117,54,52];
+    if word.content_eq(&word_9[..]) { return true; }
+    let word_10: [u8; 5] = [117,115,105,122,101];
+    if word.content_eq(&word_10[..]) { return true; }
+    let word_11: [u8; 4] = [97,100,100,114];
+    if word.content_eq(&word_11[..]) { return true; }
+    let word_12: [u8; 3] = [102,51,50];
+    if word.content_eq(&word_12[..]) { return true; }
+    let word_13: [u8; 3] = [102,54,52];
+    if word.content_eq(&word_13[..]) { return true; }
+    let word_14: [u8; 3] = [115,116,114];
+    if word.content_eq(&word_14[..]) { return true; }
+    let word_15: [u8; 4] = [99,104,97,114];
+    if word.content_eq(&word_15[..]) { return true; }
+    let word_16: [u8; 6] = [83,116,114,105,110,103];
+    if word.content_eq(&word_16[..]) { return true; }
+    let word_17: [u8; 22] = [78,117,109,101,114,105,99,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114];
+    if word.content_eq(&word_17[..]) { return true; }
+    let word_18: [u8; 1] = [65];
+    if word.content_eq(&word_18[..]) { return true; }
+    let word_19: [u8; 4] = [80,111,111,108];
+    if word.content_eq(&word_19[..]) { return true; }
+    let word_20: [u8; 6] = [86,101,99,116,111,114];
+    if word.content_eq(&word_20[..]) { return true; }
+    let word_21: [u8; 6] = [79,112,116,105,111,110];
+    if word.content_eq(&word_21[..]) { return true; }
+    let word_22: [u8; 6] = [82,101,115,117,108,116];
+    if word.content_eq(&word_22[..]) { return true; }
+    let word_25: [u8; 7] = [72,97,115,104,77,97,112];
+    if word.content_eq(&word_25[..]) { return true; }
+    let adapter: [u8; 3] = [73,116,101];
+    word.content_eq(&adapter[..])
+}
+
+pub fn lexical_name(kind: i64) -> bool {
+    kind == 1 || kind == 7 || (kind >= 15 && kind <= 18) || kind == 41
+        || (kind >= 44 && kind <= 50) || (kind >= 56 && kind <= 62)
+        || kind == 65 || kind == 66 || kind == 70 || kind == 72 || kind == 73 || kind == 76
+}
+
+pub fn declaration_name(token: &Token) -> bool {
+    let kind = (*token).kind;
+    (*token).annotation >= 0 && (kind == 1 || kind == 50 || kind == 56 || kind == 57
+        || kind == 60 || kind == 61 || kind == 70 || kind == 72 || kind == 73 || kind == 76)
+}
+
+// A leading-dot float is allowed only where a new operand can begin.
+// After a value, the same dot starts a tuple/member projection.
+pub fn ends_operand(kind: i64) -> bool {
+    kind == 1 || kind == 3 || kind == 5 || kind == 8 || kind == 9
+        || kind == 18 || kind == 40 || kind == 61 || kind == 64
+        || kind == 66 || kind == 84
+}
+
+pub fn whitespace(byte: u8) -> bool {
+    byte == 32 || byte == 10 || byte == 9 || byte == 13 || byte == 12
+}
+
+// The reference lexer permits Unicode whitespace between @asm and its brace.
+pub fn asm_open(source: &[u8], after_name: usize) -> usize {
+    let mut cursor = after_name;
+    while cursor < source.len() {
+        if source[cursor] == 123 { return cursor; }
+        let (width, scalar) = utf8_scalar(&source[0..source.len()], copy(cursor));
+        if !((scalar >= 9 && scalar <= 13) || scalar == 32 || scalar == 133
+            || scalar == 160 || scalar == 5760 || (scalar >= 8192 && scalar <= 8202)
+            || scalar == 8232 || scalar == 8233 || scalar == 8239 || scalar == 8287 || scalar == 12288) {
+            break;
+        }
+        cursor = cursor + width;
+    }
+    0
+}
+
+// Each operand receives its own parser token after the opaque assembly token.
+struct AssemblyLex {
+    end: u64,
+    used: u64,
+    error: i64,
+    offset: u64,
+}
+
+pub fn lex_assembly(source: &[u8], tokens: &mut [Token], open: usize, position: usize) -> AssemblyLex {
+    let mut cursor = open + 1;
+    let mut count = position + 1;
+    while cursor < source.len() {
+        let byte = source[cursor];
+        if byte == 125 { return AssemblyLex { end: (cursor + 1) as u64, used: count as u64, error: 0, offset: 0 }; }
+        if byte == 47 && cursor + 1 < source.len() && source[cursor + 1] == 47 {
+            while cursor < source.len() && source[cursor] != 10 { cursor = cursor + 1; }
+            continue;
+        }
+        if byte == 36 && cursor + 1 < source.len() && source[cursor + 1] == 123 {
+            let dollar = copy(cursor);
+            cursor = cursor + 2;
+            let start = copy(cursor);
+            let mut valid = cursor < source.len() && name_start(source[cursor]);
+            while cursor < source.len() && source[cursor] != 125 {
+                if !(name_start(source[cursor]) || digit(source[cursor])) { valid = false; }
+                cursor = cursor + 1;
+            }
+            if cursor == source.len() { return AssemblyLex { end: 0, used: 0, error: 9, offset: dollar as u64 }; }
+            if !valid { return AssemblyLex { end: 0, used: 0, error: 10, offset: start as u64 }; }
+            if count >= tokens.len() - 3 { return AssemblyLex { end: 0, used: 0, error: 13, offset: start as u64 }; }
+            tokens[count] = Token { nominal: false, annotation: 0, kind: 69, start: start as u64, end: cursor as u64 };
+            count = count + 1;
+        }
+        cursor = cursor + 1;
+    }
+    AssemblyLex { end: 0, used: 0, error: 11, offset: cursor as u64 }
+}
+
+// Foreign C remains opaque to the Corbo grammar. Only header paths and ${bindings} cross the boundary.
+pub fn c_space(source:&[u8], after:usize)->usize {
+    let mut at=after; while at<source.len() && whitespace(source[at]) { at=at+1; } at
+}
+
+pub fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)->AssemblyLex {
+    let mut at=c_space(&source[0..source.len()],after_name); let mut count=position+1;
+    if at<source.len() && source[at]==40 {
+        at=c_space(&source[0..source.len()],at+1);
+        let keyword:[u8;8]=[105,110,99,108,117,100,101,115];
+        if source.len()-at<8 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        let key=&source[at..at+8]; if !key.content_eq(&keyword[..]) { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+8);
+        if at==source.len() || source[at]!=61 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        if at==source.len() || source[at]!=123 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        while at<source.len() && source[at]!=125 {
+            if source[at]!=34 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            let start=at+1;at=copy(start);
+            while at<source.len() && source[at]!=34 {
+                let b=source[at];
+                if !(name_start(copy(b)) || digit(copy(b)) || b==46 || b==47 || b==45 || b==58) {
+                    return AssemblyLex{end:0,used:0,error:14,offset:at as u64};
+                } at=at+1;
+            }
+            if at==source.len() || at==start || count>=tokens.len()-3 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            tokens[count]=Token{nominal:false,annotation:0,kind:83,start:start as u64,end:at as u64};count=count+1;
+            at=c_space(&source[0..source.len()],at+1);
+            if at<source.len() && source[at]==125 { break; }
+            if at==source.len() || source[at]!=44 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+            at=c_space(&source[0..source.len()],at+1);
+        }
+        if at==source.len() { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+        if at==source.len() || source[at]!=41 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+        at=c_space(&source[0..source.len()],at+1);
+    }
+    if at==source.len() || source[at]!=123 { return AssemblyLex{end:0,used:0,error:14,offset:at as u64}; }
+    let open=copy(at);at=at+1;let mut depth:u64=1;
+    while at<source.len() {
+        let b=source[at];
+        if b==34 || b==39 {
+            let quote=copy(b);at=at+1;
+            while at<source.len() && source[at]!=quote {
+                if source[at]==92 { at=at+1; } if at<source.len(){at=at+1;}
+            }
+            if at==source.len(){break;}at=at+1;continue;
+        }
+        if b==47 && at+1<source.len() && source[at+1]==47 {
+            while at<source.len() && source[at]!=10 {at=at+1;}continue;
+        }
+        if b==47 && at+1<source.len() && source[at+1]==42 {
+            at=at+2;while at+1<source.len() && !(source[at]==42 && source[at+1]==47){at=at+1;}
+            if at+1>=source.len(){break;}at=at+2;continue;
+        }
+        if b==36 && at+1<source.len() && source[at+1]==123 {
+            let start=at+2;at=copy(start);
+            if at==source.len() || !name_start(source[at]) { return AssemblyLex{end:0,used:0,error:10,offset:at as u64}; }
+            while at<source.len() && (name_start(source[at]) || digit(source[at])) {at=at+1;}
+            if at==source.len() || source[at]!=125 || count>=tokens.len()-3 { return AssemblyLex{end:0,used:0,error:10,offset:at as u64}; }
+            tokens[count]=Token{nominal:false,annotation:0,kind:69,start:start as u64,end:at as u64};count=count+1;at=at+1;continue;
+        }
+        if b==123{depth=depth+1;}if b==125{depth=depth-1;}
+        at=at+1;
+        if depth==0 {tokens[position]=Token{nominal:false,annotation:source_offset((open+1) as u64),kind:82,start:0,end:at as u64};return AssemblyLex{end:at as u64,used:count as u64,error:0,offset:0};}
+    }
+    AssemblyLex{end:0,used:0,error:11,offset:at as u64}
+}
+
+// The compiler selects these functions using the target of the bootstrap binary.
+#(if: target.family == "unix")
+    fn target_family() -> i64 { 1 }
+#(endif)
+#(if: target.family == "windows")
+    fn target_family() -> i64 { 2 }
+#(endif)
+#(if: target.os == "macos")
+    fn target_os() -> i64 { 3 }
+#(endif)
+#(if: target.os == "linux")
+    fn target_os() -> i64 { 4 }
+#(endif)
+#(if: target.os == "windows")
+    fn target_os() -> i64 { 2 }
+#(endif)
+#(if: target.arch == "aarch64")
+    fn target_arch() -> i64 { 5 }
+#(endif)
+#(if: target.arch == "x86_64")
+    fn target_arch() -> i64 { 6 }
+#(endif)
+#(if: target.pointer_width == "32")
+    fn target_pointer_width() -> i64 { 7 }
+#(endif)
+#(if: target.pointer_width == "64")
+    fn target_pointer_width() -> i64 { 8 }
+#(endif)
+
+
+pub fn target_key(key: &[u8]) -> i64 {
+    let os: [u8; 2] = [111, 115];
+    if key.content_eq(&os[..]) { return target_os(); }
+    let family: [u8; 6] = [102, 97, 109, 105, 108, 121];
+    if key.content_eq(&family[..]) { return target_family(); }
+    let arch: [u8; 4] = [97, 114, 99, 104];
+    if key.content_eq(&arch[..]) { return target_arch(); }
+    let pointer_width: [u8; 13] = [112, 111, 105, 110, 116, 101, 114, 95, 119, 105, 100, 116, 104];
+    if key.content_eq(&pointer_width[..]) { return target_pointer_width(); }
+    return 0;
+}
+
+pub fn target_text_eq(text: &[u8], expected: &[u8]) -> bool {
+    let mut index: usize = 1;
+    let mut position: usize = 0;
+    while index < text.len() - 1 {
+        if position == expected.len() { return false; }
+        let byte = text[index];
+        if byte == 92 {
+            // Target names contain only ASCII letters, digits and underscores.
+            if text[index + 1] != 117 || hex_unit(&text[0..text.len()], index + 2)
+                != expected[position] as u32 { return false; }
+            index = index + 6;
+        } else {
+            if byte != expected[position] { return false; }
+            index = index + 1;
+        }
+        position = position + 1;
+    }
+    position == expected.len()
+}
+
+pub fn target_value_matches(text: &[u8], key: i64) -> bool {
+    if key == 1 {
+        let value: [u8; 4] = [117, 110, 105, 120];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 2 {
+        let value: [u8; 7] = [119, 105, 110, 100, 111, 119, 115];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 3 {
+        let value: [u8; 5] = [109, 97, 99, 111, 115];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 4 {
+        let value: [u8; 5] = [108, 105, 110, 117, 120];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 5 {
+        let value: [u8; 7] = [97, 97, 114, 99, 104, 54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 6 {
+        let value: [u8; 6] = [120, 56, 54, 95, 54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 7 {
+        let value: [u8; 2] = [51, 50];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 8 {
+        let value: [u8; 2] = [54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    false
+}
+
+// Compact the selected token stream in place. Keeping source spans intact
+// preserves the byte locations of declarations and assembly operands.
+pub fn select_target(source: &[u8], tokens: &mut [Token]) -> usize {
+    let mut index: u64 = 0;
+    let mut count: usize = 0;
+    let mut active: [bool;128] = [false;128];
+    let mut depth: u64 = 0;
+    while tokens[index].kind != 0 {
+        let enabled = if depth == 0 { true } else { active[depth - 1] };
+        if tokens[index].kind == 71 && tokens[index + 1].kind == 2 {
+            let end_word: [u8;5] = [101,110,100,105,102];
+            let word = &source[tokens[index + 2].start..tokens[index + 2].end];
+            if word.content_eq(&end_word[..]) {
+                if depth == 0 || tokens[index + 3].kind != 3 { return 0; }
+                depth = depth - 1; index = index + 4; continue;
+            }
+            if tokens[index + 2].kind == 44 {
+                if tokens[index + 3].kind != 10 || depth == 128 { return 0; }
+                index = index + 4;
+                let mut include = false; let mut conjunction = true;
+                loop {
+                    if tokens[index].kind != 1 || tokens[index + 1].kind != 38 || tokens[index + 2].kind != 1 { return 0; }
+                    if tokens[index + 3].kind != 32 || tokens[index + 4].kind != 9 { return 0; }
+                    let target_word: [u8;6] = [116,97,114,103,101,116];
+                    let marker = &source[tokens[index].start..tokens[index].end];
+                    if !marker.content_eq(&target_word[..]) { return 0; }
+                    let key = target_key(&source[tokens[index + 2].start..tokens[index + 2].end]);
+                    if key == 0 { return 0; }
+                    let value = target_value_matches(&source[tokens[index + 4].start..tokens[index + 4].end], key);
+                    conjunction = conjunction && value; index = index + 5;
+                    if tokens[index].kind == 30 { include = include || conjunction; conjunction = true; }
+                    else if tokens[index].kind != 31 { break; }
+                    index = index + 1;
+                }
+                let selected = enabled && (include || conjunction);
+                if tokens[index].kind != 3 {return 0;}
+                active[depth]=selected;depth=depth+1;index=index+1;continue;
+            }
+        }
+        if enabled {
+            tokens[count] = Token { nominal:tokens[index].nominal,annotation:tokens[index].annotation,
+                kind:tokens[index].kind,start:tokens[index].start,end:tokens[index].end }; count = count + 1;
+        }
+        index = index + 1;
+    }
+    if depth != 0 { return 0; }
+    let end = tokens[index].end;
+    tokens[count] = Token { nominal:false,annotation:0,kind:0,start:copy(end),end:end };
+    tokens[count + 1] = Token { nominal:false,annotation:0,kind:0,start:0,end:0 };
+    tokens[count + 2] = Token { nominal:false,annotation:0,kind:0,start:0,end:0 };
+    count + 3
+}
+
+pub fn mark_nominal_names(source: &[u8], tokens: &mut [Token]) {
+    let mut declaration: u64 = 0;
+    while tokens[declaration].kind != 0 {
+        let kind = tokens[declaration].kind;
+        if (kind == 58 || kind == 59) && lexical_name(tokens[declaration + 1].kind)
+            && !tokens[declaration + 1].nominal {
+            let name = &source[tokens[declaration + 1].start..tokens[declaration + 1].end];
+            let mut index: u64 = 0;
+            while tokens[index].kind != 0 {
+                let candidate = &source[tokens[index].start..tokens[index].end];
+                if lexical_name(tokens[index].kind) && candidate.content_eq(&name[0..name.len()]) {
+                    let token = Token { nominal: true, annotation: tokens[index].annotation,
+                        kind: tokens[index].kind, start: tokens[index].start, end: tokens[index].end };
+                    tokens[index] = token;
+                }
+                index = index + 1;
+            }
+        }
+        declaration = declaration + 1;
+    }
+    mark_enum_paths(&source[0..source.len()],&mut tokens[0..tokens.len()]);
+}
+
+/// A known enum constructor has the same AST shape for :: and legacy dot syntax.
+/// Token spans stay unchanged, so linking and original-source maps retain their coordinates.
+pub fn mark_enum_paths(source:&[u8],tokens:&mut [Token]) {
+    let mut declaration:u64=0;
+    while tokens[declaration].kind!=0 {
+        if tokens[declaration].kind==59 && lexical_name(tokens[declaration+1].kind) {
+            let name=&source[tokens[declaration+1].start..tokens[declaration+1].end];
+            let mut body=declaration+2;
+            while tokens[body].kind!=0 && tokens[body].kind!=4{body+=1;}
+            if tokens[body].kind==4 {
+                let mut variant=body+1;let mut depth:u64=1;let mut expect=true;
+                while depth!=0 && tokens[variant].kind!=0 {
+                    let kind=tokens[variant].kind;
+                    if depth==1 && expect && lexical_name(kind) {
+                        let arm=&source[tokens[variant].start..tokens[variant].end];
+                        let mut use_at:u64=0;
+                        while tokens[use_at].kind!=0 {
+                            if lexical_name(tokens[use_at].kind) && tokens[use_at+1].kind==43 && lexical_name(tokens[use_at+2].kind) {
+                                let owner=&source[tokens[use_at].start..tokens[use_at].end];
+                                let member=&source[tokens[use_at+2].start..tokens[use_at+2].end];
+                                if owner.content_eq(&name[0..name.len()]) && member.content_eq(&arm[0..arm.len()]) {
+                                    tokens[use_at+1]=Token{nominal:tokens[use_at+1].nominal,annotation:tokens[use_at+1].annotation,kind:38,start:tokens[use_at+1].start,end:tokens[use_at+1].end};
+                                }
+                            }
+                            use_at+=1;
+                        }
+                        expect=false;
+                    }
+                    if depth==1 && kind==11{expect=true;}
+                    if kind==4 || kind==2 || kind==39{depth+=1;}
+                    if kind==5 || kind==3 || kind==40{depth-=1;}
+                    variant+=1;
+                }
+            }
+        }
+        declaration+=1;
+    }
+}
+
+pub fn valid_utf8(source: &[u8]) -> bool {
+    let mut cursor: usize = 0;
+    while cursor < source.len() {
+        let (width, scalar) = utf8_scalar(&source[0..source.len()], copy(cursor));
+        drop(scalar);
+        if width == 0 { return false; }
+        cursor = cursor + width;
+    }
+    true
+}
+
+// Common token classes match the Rust lexer (keywords keep their internal
+// parser codes, and operand spans remain children of the assembly token).
+pub fn dump_lex(tokens: &[Token], source: &[u8]) {
+    let mut index: usize = 0;
+    while index < tokens.len() {
+        let kind = tokens[index].kind;
+        if kind != 69 {
+            let start = tokens[index].start;
+            let class: i64 = if kind == 0 { 0 }
+                else if kind == 8 { 2 }
+                else if kind == 64 { 3 }
+                else if kind == 9 { 4 }
+                else if kind == 68 { 6 }
+                else if name_start(source[start]) { 1 }
+                else { 5 };
+            print(class);
+            print(start);
+            print(tokens[index].end);
+        }
+        index = index + 1;
+    }
+}
+
+pub fn lex_error(mode: i32, diagnostic: i64, offset: usize) -> i32 {
+    drop(diagnostic_emit(3,diagnostic,offset as u64));
+    if mode == 3 { print(diagnostic); print(offset); }
+    3
+}
+
+pub fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) {
+    if !valid_utf8(&source[0..source.len()]) { return (3, 0); }
+    if tokens.len() < 3 { return (4, 0); }
+    let mut count: usize = 0;
+    let mut cursor: usize = 0;
+    while cursor < source.len() {
+        let start = copy(cursor);
+        let byte = source[cursor];
+        cursor = cursor + 1;
+
+        if whitespace(copy(byte)) { continue; }
+        if byte == 47 && cursor < source.len() && source[cursor] == 47 {
+            while cursor < source.len() && source[cursor] != 10 {
+                cursor = cursor + 1;
+            }
+            continue;
+        }
+
+        if count >= tokens.len() - 3 { return (4, 0); }
+        if byte == 64 && source.len() - cursor >= 3
+            && source[cursor] == 97 && source[cursor + 1] == 115 && source[cursor + 2] == 109 {
+            let open = asm_open(&source[0..source.len()], cursor + 3);
+            if open != 0 {
+                let assembly = lex_assembly(&source[0..source.len()], &mut tokens[0..tokens.len()],
+                    open, copy(count));
+                if assembly.error == 13 { return (4, 0); }
+                if assembly.error != 0 { return (lex_error(copy(check), assembly.error, assembly.offset as usize), 0); }
+                tokens[count] = Token { nominal: false, annotation: 0, kind: 68, start: start as u64, end: assembly.end };
+                cursor = assembly.end as usize;
+                count = assembly.used as usize;
+                continue;
+            }
+        }
+
+        if byte==64 && cursor<source.len() && source[cursor]==99
+            && (cursor+1==source.len() || !(name_start(source[cursor+1]) || digit(source[cursor+1]))) {
+            let native=lex_c(&source[0..source.len()],&mut tokens[0..tokens.len()],cursor+1,copy(count));
+            if native.error!=0 {return (lex_error(copy(check),native.error,native.offset as usize),0);}
+            let body=tokens[count].annotation;
+            tokens[count]=Token{nominal:false,annotation:body,kind:82,start:start as u64,end:native.end};
+            cursor=native.end as usize;count=native.used as usize;continue;
+        }
+        let mut kind: i64 = 0;
+        let mut annotation: i64 = 0;
+        let mut nominal = false;
+        let after_value = count != 0 && ends_operand(tokens[count - 1].kind);
+        let tuple_index = count != 0 && tokens[count - 1].kind == 38;
+        if name_start(copy(byte)) {
+            while cursor < source.len() {
+                let next = source[cursor];
+                if !(name_start(copy(next)) || digit(next)) { break; }
+                cursor = cursor + 1;
+            }
+            nominal = byte >= 65 && byte <= 90;
+            kind = name_kind(&source[start..cursor]);
+            annotation = annotation_word(&source[start..cursor]);
+            if annotation == 0 && builtin_or_placeholder(&source[start..cursor]) {
+                let addr_name: [u8; 4] = [97, 100, 100, 114];
+                let spelling = &source[start..cursor];
+                annotation = if spelling.content_eq(&addr_name[..]) { -2 } else { -1 };
+            }
+        } else if digit(copy(byte)) || (byte == 46 && !after_value && cursor < source.len() && digit(source[cursor])) {
+            if byte == 48 && cursor < source.len() && (source[cursor] == 120 || source[cursor] == 88) {
+                cursor = cursor + 1;
+                let first = copy(cursor);
+                while cursor < source.len() && hex_digit(source[cursor]) < 16 {
+                    cursor = cursor + 1;
+                }
+                if first == cursor { return (lex_error(copy(check), 2, copy(start)), 0); }
+                kind = 8;
+            } else {
+                while cursor < source.len() && digit(source[cursor]) { cursor = cursor + 1; }
+                kind = 8;
+                let mut digit_index = copy(start);
+                while digit_index < cursor {
+                    if source[digit_index] != 48 { annotation = 29; break; }
+                    digit_index = digit_index + 1;
+                }
+                if byte == 46 { kind = 64; }
+                if byte != 46 && !tuple_index && cursor < source.len() && source[cursor] == 46
+                    && !(cursor + 1 < source.len() && source[cursor + 1] == 46) {
+                    kind = 64;
+                    cursor = cursor + 1;
+                    while cursor < source.len() && digit(source[cursor]) { cursor = cursor + 1; }
+                }
+            }
+        } else if byte == 34 {
+            // The whole source has already been checked for valid UTF-8.
+            while cursor < source.len() && source[cursor] != 34 {
+                let current = source[cursor];
+                if current < 32 { return (lex_error(copy(check), 3, copy(cursor)), 0); }
+                if current == 92 {
+                    let (end, error, offset) = scan_escape(&source[0..source.len()], copy(cursor));
+                    if error == 13 { return (4, 0); }
+                if error != 0 { return (lex_error(copy(check), error, offset), 0); }
+                    cursor = end;
+                } else {
+                    cursor = cursor + 1;
+                }
+            }
+            if cursor == source.len() { return (lex_error(copy(check), 12, copy(start)), 0); }
+            cursor = cursor + 1;
+            kind = 9;
+            if cursor - start == 3 && source[start + 1] == 67 { annotation = 26; }
+        } else {
+            let next: u8 = if cursor < source.len() { source[cursor] } else { 0 };
+            let (mark, width) = punctuation(byte, next);
+            kind = mark;
+            cursor = cursor + (width - 1);
+            if kind == 36 && cursor < source.len() && source[cursor] == 61 {
+                kind = 80;
+                cursor = cursor + 1;
+            }
+            if kind == 0 { return (lex_error(copy(check), 1, copy(start)), 0); }
+        }
+        tokens[count] = Token { nominal: nominal, annotation: annotation, kind: kind, start: start as u64, end: cursor as u64 };
+        count = count + 1;
+    }
+    // Keep two initialized guard tokens for lookahead on malformed input.
+    tokens[count] = Token { nominal: false, annotation: 0, kind: 0, start: cursor as u64, end: cursor as u64 };
+    (0, count)
+}
+

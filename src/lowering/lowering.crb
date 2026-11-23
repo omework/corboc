@@ -277,6 +277,14 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
             let binding = graph[place].binding;
             let ty = types[binding];
             let payload = pool_type(copy(ty));
+            if ty >= 6000000 && ty < 7000000 && payload > 0 && payload <= 9 {
+                let pointer=scalar_reference(payload,graph[node].mutable);
+                if emit {
+                    declaration(pointer,node);character(61);character(40);c_type(pointer);character(41);
+                    local(binding);let slot:[u8;7]=[46,115,108,111,116,59,10];byte_text(&slot[..]);
+                }
+                return pointer;
+            }
             if ty >= 6000000 && ty < 7000000 && payload >= 3000000 && payload < 4000000 {
                 let pointer = payload + 1000000;
                 if emit {

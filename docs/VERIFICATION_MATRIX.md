@@ -398,3 +398,11 @@ Postfix `!` shares the existing successful-payload ownership/borrow representati
 with `?`; numeric `as` shares the value-exact checks with `try_from`.
 Twenty-one focused native/fatal-UBSan observations pass, plus semantic/category
 regressions and raw-protocol comparisons. See [evidence and platform limits](CHECKED_EXTRACTION_CYCLE.md).
+
+## Declared reference methods and general dereferencing
+
+Explicit ref/mut_ref methods precede universal shorthand. A<T>'s helpers borrow
+T; nominal * selects the method by access mode and uses ordinary local scope
+and loan summaries. Six native/fatal-UBSan programs and eight focused refusals
+pass, plus 13 mutex regression cases, diagnostic audits and raw-protocol checks.
+[Evidence, observed existing limits and platform scope](REFERENCE_METHODS_CYCLE.md).

@@ -1,3 +1,4 @@
+use bootstrap::value_dependencies::reduce_loan_aliases;
 use bootstrap::scalar::{value_enum,primitive_enum};
 use bootstrap::places::scalar_place;
 use bootstrap::semantic_diagnostics::{enter as semantic_enter,leave as semantic_leave,statement as semantic_statement};
@@ -470,7 +471,7 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
                 values[node] = CheckedValue{ ty: outcome - 4, state: 1, mutable: graph[node].mutable,
                     target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],node);
             } else {
-                if outcome != 4 || expected != 0 || values[node].ty < 200 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
+                if outcome != 4 || expected != 0 || (values[node].ty < 200 && !(values[node].ty>20 && values[node].ty<60)) { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
                 if nominal != 0 && (values[node].ty != 300 || nominal_declaration(&source[0..source.len()],
                     &nodes[0..nodes.len()], &graph[0..graph.len()], values[node].origin_call) != nominal) {
                     return (violation_site(1, start, 897), 0);
@@ -619,6 +620,17 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
                 loan_parent = graph[operand].binding;
                 if loan_parent == 0 || values[loan_parent].state != 1 {
                     return (violation_site(4, start, 910), 0);
+                }
+                let allocation = values[loan_parent].ty >= 201 && values[loan_parent].ty <= 209;
+                if allocation {
+                    let element=values[loan_parent].ty-200;
+                    if !live_roots(&values[0..values.len()],&graph[0..graph.len()],loan_parent){return (violation_site(4,start,910),0);}
+                    if exclusive && !values[loan_parent].mutable{return (violation_site(5,start,911),0);}
+                    if annotated && !compatible_loan_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],child,element,exclusive){return (violation_site(1,start,918),0);}
+                    let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],loan_parent,node,exclusive);
+                    if conflict>0{return (violation_site(5,start,920),0);}if conflict<0{return (unsupported_statement(&nodes[0..nodes.len()],node),0);}
+                    values[node]=CheckedValue{ty:(if exclusive{40}else{20})+element,state:1,mutable:graph[node].mutable,target:loan_parent,loan_parent:0,origin_call:0,writable:exclusive};record_checked(&values[0..values.len()],node);
+                    node=graph[node].next_sibling;continue;
                 }
                 if values[loan_parent].ty >= 100 || values[loan_parent].target == loan_parent || values[loan_parent].origin_call != 0 {
                     return (unsupported_statement(&nodes[0..nodes.len()], node), 0);
@@ -1176,7 +1188,7 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
             }
             return (unsupported_statement(&nodes[0..nodes.len()], node), 0);
         } else if kind == 10 && destination != 0 && (nodes[child].kind == 16 || nodes[child].kind == 15
-            || (nodes[child].kind == 7 && values[graph[child].binding].ty >= 200)) {
+            || (nodes[child].kind == 7 && (values[graph[child].binding].ty >= 200 || (values[graph[child].binding].ty>20 && values[graph[child].binding].ty<60)))) {
             let mut pool: u64 = 0;
             let mut ty: i64 = 0;
             let mut constructor: u64 = 0;
@@ -1270,8 +1282,9 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
                 pool = values[binding].target;
                 constructor = values[binding].origin_call;
                 let mutable = values[binding].mutable;
+                reduce_loan_aliases(&graph[0..graph.len()],&mut values[0..values.len()],binding,graph[destination].scope);
                 let member = values[binding].loan_parent;
-                if (ty == 300 && member != 0) || task_value(copy(ty)) || optional(copy(ty)) || result_type(copy(ty)) || ty == 734 {
+                if (ty == 300 && member != 0) || task_value(copy(ty)) || optional(copy(ty)) || result_type(copy(ty)) || ty == 734 || (ty>20 && ty<60) {
                     let survives = if !task_value(copy(ty)) {
                         owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(binding), graph[destination].scope)
                     } else {
