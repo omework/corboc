@@ -2173,8 +2173,12 @@ fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
 fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
     free: u64, available: u64, parent: u64, item_start: u64, function_kind: i64) -> (u64, u64) {
     let method_addr = parent != 0 && tokens[first + 1].annotation == -2;
-    if tokens[first].kind != 7 || !method_addr && !declaration_name(&tokens[first + 1])
-    || tokens[first + 2].kind != 2 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
+    if tokens[first].kind != 7 || !method_addr && !declaration_name(&tokens[first + 1]) {
+        diagnostic_parse_expected(tokens[first + 1].start,113,item_start); return (0,0);
+    }
+    if tokens[first + 2].kind != 2 {
+        diagnostic_parse_expected(tokens[first + 2].start,114,item_start); return (0,0);
+    }
     let function = free;
     let name_start = tokens[first + 1].start;
     let name_end = tokens[first + 1].end;
@@ -2187,12 +2191,12 @@ fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
         if tokens[index].kind == 16 { index = index + 1; }
         let name = copy(index);
         let mark = tokens[index].kind;
-        if mark != 66 && !declaration_name(&tokens[index]) { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        if mark != 66 && !declaration_name(&tokens[index]) { diagnostic_parse_expected(tokens[index].start,115,item_start); return (0, 0); }
         let parameter = copy(count);
         count = count + 1;
         index = index + 1;
         if !receiver || mark != 66 {
-            if tokens[index].kind != 10 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+            if tokens[index].kind != 10 { diagnostic_parse_expected(tokens[index].start,116,item_start); return (0, 0); }
             let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                 index + 1, copy(count), copy(parameter));
             if next == 0 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
@@ -2203,7 +2207,7 @@ fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
             end: tokens[index - 1].end, name_start: tokens[name].start, name_end: tokens[name].end, public: false,
         };
         if tokens[index].kind != 3 {
-            if tokens[index].kind != 11 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+            if tokens[index].kind != 11 { diagnostic_parse_expected(tokens[index].start,117,item_start); return (0, 0); }
             index = index + 1;
         }
     }
@@ -2212,18 +2216,18 @@ fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
         index = index + 1;
         let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
             copy(index), copy(count), copy(function));
-        if next == 0 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        if next == 0 { diagnostic_parse_expected(tokens[index].start,118,item_start); return (0, 0); }
         index = next;
         count = used;
     }
     if function_kind == 71 {
-        if tokens[index].kind != 14 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        if tokens[index].kind != 14 { diagnostic_parse_expected(tokens[index].start,119,item_start); return (0, 0); }
         nodes[function] = AstNode { kind: 1, parent: parent, start: item_start,
             end: tokens[index - 1].end, name_start: name_start, name_end: name_end, public: false };
         return (index + 1, count);
     }
     if function_kind == 64 {
-        if tokens[index].kind != 14 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        if tokens[index].kind != 14 { diagnostic_parse_expected(tokens[index].start,119,item_start); return (0, 0); }
         nodes[function] = AstNode { kind: function_kind, parent: parent, start: item_start,
             end: tokens[index].end, name_start: name_start, name_end: name_end, public: false };
         return (index + 1, count);
@@ -2835,8 +2839,9 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
             }
             index = index + 2;
         }
-        if (tokens.len() as u64) - index < 4 || tokens[index].kind != 7
-            || !declaration_name(&tokens[index + 1]) || tokens[index + 2].kind != 2 { diagnostic_parse_point(tokens[index].start); return 0; }
+        if (tokens.len() as u64) - index < 4 || tokens[index].kind != 7 { diagnostic_parse_point(tokens[index].start); return 0; }
+        if !declaration_name(&tokens[index+1]) { diagnostic_parse_expected(tokens[index+1].start,113,item_start); return 0; }
+        if tokens[index+2].kind != 2 { diagnostic_parse_expected(tokens[index+2].start,114,item_start); return 0; }
 
         if count == item { count = count + 1; }
         let (next, used) = parse_function(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],

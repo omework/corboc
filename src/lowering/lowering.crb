@@ -1,3 +1,4 @@
+use bootstrap::diagnostics::diagnostic_limitation;
 use bootstrap::socket_runtime::{channel_wait_call, emit_channel_wait};
 use bootstrap::socket_runtime::{mutex_wait_call, emit_mutex_wait};
 use bootstrap::process_arguments::is_utf8_call;
@@ -2040,13 +2041,13 @@ fn drop_visible(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], point: u
 
 pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
     ctx: &Lowering, body: u64, expected: i64, slot: u64) -> i64 {
-    if nodes[body].kind != 2 { return -1; }
+    if nodes[body].kind != 2 { return lowering_failure(&nodes[0..nodes.len()],body); }
     let emit = (*ctx).emit;
     let mut statement = graph[body].first_child;
     let regional = stack_region(&source[0..source.len()], &nodes[0..nodes.len()], copy(statement));
     if regional {
         if !enter_region(&source[0..source.len()], &nodes[0..nodes.len()],
-            &graph[0..graph.len()], copy(body), copy(emit), (*ctx).poll_body != 0) { return -1; }
+            &graph[0..graph.len()], copy(body), copy(emit), (*ctx).poll_body != 0) { return lowering_failure(&nodes[0..nodes.len()],statement); }
         statement = graph[statement].next_sibling;
     }
     let release_pages = free_pages(&source[0..source.len()], &nodes[0..nodes.len()], copy(statement));
@@ -2062,19 +2063,19 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
         let child = graph[statement].first_child;
         if kind == 50 {
             if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return -1; }
+                &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
         } else if kind == 77 {
             if !lower_c(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],
-                &types[0..types.len()],copy(statement),copy(emit)){return -1;}
+                &types[0..types.len()],copy(statement),copy(emit)){return lowering_failure(&nodes[0..nodes.len()],statement);}
         } else if kind == 51 {
             if (*ctx).poll_body != 0 || !lower_asm(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &types[0..types.len()], copy(statement), if emit { 1 } else { 0 }) {
-                return -1;
+                return lowering_failure(&nodes[0..nodes.len()],statement);
             }
         } else if kind == 57 && (*ctx).function == body && types[statement] > 0 {
             // The native prologue already initialized the frame binding.
         } else if kind == 25 {
-            if (*ctx).poll_body == 0 { return -1; }
+            if (*ctx).poll_body == 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             if emit {
                 { let code: [u8;9] = [116,97,115,107,45,62,112,99,61]; byte_text(&code[..]); } number(copy(statement)); { let code: [u8;19] = [59,114,101,116,117,114,110,32,102,97,108,115,101,59,99,97,115,101,32]; byte_text(&code[..]); } number(copy(statement)); { let code: [u8;3] = [58,59,10]; byte_text(&code[..]); }
             }
@@ -2082,9 +2083,9 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             let annotation = if nodes[child].kind == 4 { copy(child) } else { 0 };
             let value = if annotation == 0 { child } else { graph[annotation].next_sibling };
             let want = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
-            if want < 0 { return -1; }
+            if want < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(value), copy(want));
-            if ty <= 0 || (annotation != 0 && ty != want) { return -1; }
+            if ty <= 0 || (annotation != 0 && ty != want) { return lowering_failure(&nodes[0..nodes.len()],statement); }
             if emit {
                 if (*ctx).poll_body == 0 { c_type(copy(ty)); character(32); }
                 local(copy(statement)); character(61);
@@ -2094,11 +2095,11 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             types[statement] = ty;
         } else if kind == 47 {
             if !tuple_bind(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-                &mut types[0..types.len()], ctx, copy(statement)) { return -1; }
+                &mut types[0..types.len()], ctx, copy(statement)) { return lowering_failure(&nodes[0..nodes.len()],statement); }
         } else if kind == 21 {
             if nodes[statement].name_end - nodes[statement].name_start != 1 {
                 if !compound_assignment(&source[0..source.len()], &nodes[0..nodes.len()],
-                    &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(statement)) { return -1; }
+                    &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(statement)) { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 if emit && graph[statement].next_sibling == 0 {
                     drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
                         copy(statement), copy(body), false, copy(storage));
@@ -2109,11 +2110,11 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             if nodes[child].kind == 18 {
                 let element = indexed(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     &mut types[0..types.len()], ctx, copy(child));
-                if element <= 0 || uses_pool(copy(element)) { return -1; }
+                if element <= 0 || uses_pool(copy(element)) { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 let value = graph[child].next_sibling;
                 let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                     &mut types[0..types.len()], ctx, copy(value), copy(element));
-                if ty != element { return -1; }
+                if ty != element { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 if emit { { let code: [u8;2] = [42,112]; byte_text(&code[..]); } number(child); character(61); temporary(value); { let code: [u8;2] = [59,10]; byte_text(&code[..]); } }
                 if emit && graph[statement].next_sibling == 0 {
                     drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
@@ -2127,9 +2128,9 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             let name = if indirect { graph[child].first_child } else { copy(child) };
             let binding = graph[name].binding;
             let want = if field {
-                if !prepare_member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(child)){return -1;}
+                if !prepare_member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(child)){return lowering_failure(&nodes[0..nodes.len()],statement);}
                 let ty=member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(child),false);
-                if ty<=0{return -1;}
+                if ty<=0{return lowering_failure(&nodes[0..nodes.len()],statement);}
                 if emit{c_type(copy(ty));character(32);character(42);character(112);number(copy(child));character(61);character(38);let lowered=member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(child),true);drop(lowered);character(59);character(10);}
                 ty
             } else if indirect {
@@ -2138,17 +2139,17 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                     &mut types[0..types.len()], ctx, copy(name), 0);
                 scalar_referent(address)
             } else {
-                if nodes[name].kind != 7 { return -1; }
+                if nodes[name].kind != 7 { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 types[binding]
             };
-            if want <= 0 || uses_pool(copy(want)) { return -1; }
+            if want <= 0 || uses_pool(copy(want)) { return lowering_failure(&nodes[0..nodes.len()],statement); }
             let value = graph[child].next_sibling;
             // A saved assignment place must have a frame slot before an await.
             // Keep this backend limitation explicit until plain-place spilling
             // shares the compound-assignment frame path.
-            if field && (*ctx).poll_body!=0 && suspends(&nodes[0..nodes.len()],copy(value)){return -1;}
+            if field && (*ctx).poll_body!=0 && suspends(&nodes[0..nodes.len()],copy(value)){return lowering_failure(&nodes[0..nodes.len()],statement);}
             let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(value), copy(want));
-            if ty != want { return -1; }
+            if ty != want { return lowering_failure(&nodes[0..nodes.len()],statement); }
             if emit {
                 // Evaluate the replacement before destroying the old value. A
                 // moved record has already been cleared by expression lowering.
@@ -2165,22 +2166,22 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
         } else if kind == 22 {
             if emit { { let code: [u8;9] = [102,111,114,40,59,59,41,123,10]; byte_text(&code[..]); } }
             let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), 3);
-            if ty != 3 { return -1; }
+            if ty != 3 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             if emit { { let code: [u8;4] = [105,102,40,33]; byte_text(&code[..]); } temporary(copy(child)); { let code: [u8;8] = [41,98,114,101,97,107,59,10]; byte_text(&code[..]); } }
             let loop_ctx = Lowering { emit: copy(emit), function: (*ctx).function,
                 result: (*ctx).result, loop_result: 0, loop_slot: 0, loop_node: copy(statement), storage: (*ctx).storage, poll_body: (*ctx).poll_body };
-            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], &loop_ctx, graph[child].next_sibling, 0, 0) < 0 { return -1; }
+            if block(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], &loop_ctx, graph[child].next_sibling, 0, 0) < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             if emit { { let code: [u8;2] = [125,10]; byte_text(&code[..]); } }
         } else if kind == 23 || kind == 24 {
             if child != 0 {
                 let receiving = (*ctx).loop_slot;
-                if kind != 23 || receiving == 0 { return -1; }
+                if kind != 23 || receiving == 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 let prior = types[receiving];
                 let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child),
                     if (*ctx).loop_result == 0 { copy(prior) } else { (*ctx).loop_result });
-                if ty <= 0 || (prior != 0 && ty != prior) { return -1; }
+                if ty <= 0 || (prior != 0 && ty != prior) { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 types[receiving] = copy(ty);
-                if outcome(ctx, receiving, child, (*ctx).loop_result, ty) < 0 { return -1; }
+                if outcome(ctx, receiving, child, (*ctx).loop_result, ty) < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             }
             if emit {
                 let jump = (*ctx).loop_node;
@@ -2198,7 +2199,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
             }
         } else if kind == 6 || kind == 8 || kind == 10 {
             if child == 0 {
-                if kind != 6 || (*ctx).result != 0 { return -1; }
+                if kind != 6 || (*ctx).result != 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 if emit {
                     if (*ctx).poll_body != 0 {
                         drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
@@ -2216,7 +2217,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                 }
             } else if (nodes[child].kind == 2 || nodes[child].kind == 26 || nodes[child].kind == 27 || nodes[child].kind == 39)
                 && (kind == 8 || (kind == 10 && expected == 0 && slot == 0 && (*ctx).function != body)) {
-                if flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return -1; }
+                if flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, child, 0, 0) < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
             } else {
                 let want = if kind == 6 { (*ctx).result } else if kind == 10 { copy(expected) } else { 0 };
                 let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &mut types[0..types.len()], ctx, copy(child), copy(want));
@@ -2239,7 +2240,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                         if storage { { let code: [u8;18] = [109,101,109,111,114,121,95,99,117,114,115,111,114,40,109,97,114,107]; byte_text(&code[..]); } number(root); { let code: [u8;3] = [41,59,10]; byte_text(&code[..]); } }
                     }
                     if (*ctx).poll_body != 0 && (kind == 6 || (body == (*ctx).poll_body && slot == 0)) {
-                        if want != ty || ty <= 0 { return -1; }
+                        if want != ty || ty <= 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
                         if emit {
                             drop_visible(&nodes[0..nodes.len()], &graph[0..graph.len()], &types[0..types.len()],
                                 copy(statement), (*ctx).function, true, copy(storage));
@@ -2250,10 +2251,10 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
                             }
                             character(61); temporary(child); { let code: [u8;14] = [59,114,101,116,117,114,110,32,116,114,117,101,59,10]; byte_text(&code[..]); }
                         }
-                    } else if outcome(ctx, if kind == 6 { 0 } else { copy(slot) }, child, want, ty) < 0 { return -1; }
+                    } else if outcome(ctx, if kind == 6 { 0 } else { copy(slot) }, child, want, ty) < 0 { return lowering_failure(&nodes[0..nodes.len()],statement); }
                 }
             }
-        } else { return -1; }
+        } else { return lowering_failure(&nodes[0..nodes.len()],statement); }
         if emit && graph[statement].next_sibling == 0 {
             if kind == 5 {
                 let ty = types[statement];
@@ -2275,7 +2276,10 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
 pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], function: u64) -> bool {
     let result = function_result(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
     let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
-    if ty < 0 || vector_type(copy(ty)) { return false; }
+    if ty < 0 || vector_type(copy(ty)) {
+        drop(diagnostic_limitation(&nodes[0..nodes.len()],if result==0{function}else{result},"C lowering of this return type is not implemented"));
+        return false;
+    }
     types[function] = ty;
     let mut formal = graph[function].first_child;
     if borrowed_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function)) {
@@ -2287,9 +2291,18 @@ pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
     }
     while nodes[formal].kind == 3 {
         let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[formal].first_child);
-        if ty <= 0 || vector_type(copy(ty)) { return false; }
+        if ty <= 0 || vector_type(copy(ty)) {
+            drop(diagnostic_limitation(&nodes[0..nodes.len()],graph[formal].first_child,"C lowering of this parameter type is not implemented"));
+            return false;
+        }
         types[formal] = ty;
         formal = graph[formal].next_sibling;
     }
     nodes[formal].kind == 2 || (nodes[formal].kind == 4 && nodes[graph[formal].next_sibling].kind == 2)
+}
+
+/// Called only when block lowering has failed, never during expression probing.
+fn lowering_failure(nodes:&[AstNode],point:u64)->i64 {
+    drop(diagnostic_limitation(&nodes[0..nodes.len()],point,"C lowering of this statement or its operand form is not implemented"));
+    -1
 }

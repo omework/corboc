@@ -2,7 +2,7 @@ use bootstrap::scalar::{value_enum,primitive_enum};
 use bootstrap::places::scalar_place;
 use bootstrap::semantic_diagnostics::{enter as semantic_enter,leave as semantic_leave,statement as semantic_statement};
 use bootstrap::checked_state::record as record_checked;
-use bootstrap::diagnostics::diagnostic_emit;
+use bootstrap::diagnostics::{diagnostic_emit,diagnostic_limitation};
 use bootstrap::scalar::{is_primitive_value, implicit_copy, primitive_envelope};
 use bootstrap::pool_results::{pool_try,check_pool_try};
 use bootstrap::lowering_types::optional;
@@ -48,7 +48,7 @@ pub fn check_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
 }
 
 fn unsupported_statement(nodes: &[AstNode], point: u64) -> i64 {
-    if diagnostic_emit(4,9,nodes[point].start) {return 9;}
+    if diagnostic_limitation(&nodes[0..nodes.len()],point,"the checker does not implement this operand or dependency form") {return 9;}
     print(9);
     print(nodes[point].start);
     9

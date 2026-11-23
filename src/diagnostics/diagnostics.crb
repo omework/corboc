@@ -1,3 +1,4 @@
+use bootstrap::model::AstNode;
 use bootstrap::semantic_diagnostics::end as semantic_end;
 use bootstrap::semantic_diagnostics::describe as semantic_describe;
 // SPDX-License-Identifier: MIT OR Apache-2.0
@@ -187,6 +188,13 @@ do {
         else if(code==111)message="Self is only valid inside an impl block";
         else if(code==112)message="Self already includes the enclosing impl type arguments";
         else if(code==110)message="put mut on an individual tuple binding, as in for (mut first, second)";
+        else if(code==113)message="expected a function name after fn";
+        else if(code==114)message="expected '(' after the function name";
+        else if(code==115)message="expected a parameter name or a receiver such as &self";
+        else if(code==116)message="expected ':' and an explicit parameter type";
+        else if(code==117)message="expected ',' or ')' after this parameter";
+        else if(code==118)message="expected a return type after '->'";
+        else if(code==119)message="expected ';' after this function signature";
         else if(code==103)message="expected ';' after this expression, or '}' to return its value";
         else message="invalid syntax near this token";
     }
@@ -195,10 +203,13 @@ do {
     else if(code==13)message="cannot resolve this import or qualified name";
     else if(code==14)message="duplicate declaration or import name";
     else if(code==15)message="invalid declaration or missing synchronous main entry point";
+    else if(code==4)message="frontend source, token or workspace capacity exceeded";
+    else if(code==8)message="a language-rule check failed; detailed failure context was not retained";
     const char *semantic_detail=NULL;
-    bool semantic=kind==1&&state.semantic[0]&&state.semantic_at==point;
+    bool semantic=(kind==1||kind==4)&&state.semantic[0]&&state.semantic_at==point;
     if(semantic){message=state.semantic;char *newline=strchr(state.semantic,'\n');if(newline){*newline=0;semantic_detail=newline+1;}}
-    if(!state.files){fprintf(stderr,"corboc: error[E%04d]: %s\n",code,message);break;}
+    const char *category=kind==1?"rule violation":(kind==2||kind==3)?"syntax error":kind==4?"compiler limitation":code==8?"rule violation":(code==3||code==7)?"syntax error":(code==9||code==4)?"compiler limitation":code==12?"configuration error":(code==13||code==14)?"resolution error":"compilation error";
+    if(!state.files){fprintf(stderr,"corboc: error[E%04d]: %s: %s\n",code,category,message);break;}
     size_t start=state.starts[unit],end=state.ends[unit],line=1,column=1,line_start=start;
     if(original<start||original>=end){original=start;approximate=true;}
     for(size_t i=start;i<original;++i){unsigned char ch=state.original[i];
@@ -207,8 +218,8 @@ do {
         else if((ch&0xc0)!=0x80)++column;
     }
     size_t line_end=original;while(line_end<end&&state.original[line_end]!='\n'&&state.original[line_end]!='\r')++line_end;
-    if(kind==1)fprintf(stderr,"%s:%zu:%zu: error[N%d]: %s\n",state.paths[unit],line,column,code,message);
-    else fprintf(stderr,"%s:%zu:%zu: error[E%04d]: %s\n",state.paths[unit],line,column,kind==4?9:code,message);
+    if(kind==1)fprintf(stderr,"%s:%zu:%zu: error[N%d]: %s: %s\n",state.paths[unit],line,column,code,category,message);
+    else fprintf(stderr,"%s:%zu:%zu: error[E%04d]: %s: %s\n",state.paths[unit],line,column,kind==4?9:code,category,message);
     fprintf(stderr," %5zu | ",line);size_t shown=1;
     for(size_t i=line_start;i<line_end;++i){unsigned char ch=state.original[i];
         if(ch=='\t'){size_t spaces=4-((shown-1)%4);while(spaces--){fputc(' ',stderr);++shown;}}
@@ -220,6 +231,18 @@ do {
         fputc('~',stderr);++width;
     }
     fputc('\n',stderr);
+    if(kind==2||kind==3){
+        if(point>=state.current_len)fputs("       = found: end of input\n",stderr);
+        else if(original<end){
+            size_t token_end=original+1;
+            unsigned char initial=state.original[original];
+            if((initial>='a'&&initial<='z')||(initial>='A'&&initial<='Z')||(initial>='0'&&initial<='9')||initial=='_')
+                while(token_end<line_end&&token_end-original<64){unsigned char ch=state.original[token_end];if(!((ch>='a'&&ch<='z')||(ch>='A'&&ch<='Z')||(ch>='0'&&ch<='9')||ch=='_'))break;++token_end;}
+            if(initial=='\n'||initial=='\r')fputs("       = found: end of line\n",stderr);
+            else fprintf(stderr,"       = found: `%.*s`\n",(int)(token_end-original),state.original+original);
+        }
+    }
+    if(kind==4||(kind==5&&code==9))fputs("       = note: this is a compiler implementation limit, not a demonstrated language-rule violation\n",stderr);
     if(semantic_detail&&*semantic_detail)fprintf(stderr,"%s\n",semantic_detail);
     if(semantic&&state.type_approximate)fputs("       = note: an inferred type name uses a generated-source anchor\n",stderr);
     if(semantic){
@@ -338,3 +361,38 @@ pub fn diagnostic_parse_expected(offset:u64, expected:usize, statement:u64) {
 
 /// Query the diagnostic mode without changing raw frontend protocols.
 pub fn diagnostic_enabled()->bool {scalar(15,0,0,0,0)}
+
+/// Preserve the unsupported construct and declaration owner before returning E0009.
+/// This is diagnostic context only: it neither changes a verdict nor claims validity.
+pub fn diagnostic_limitation(nodes:&[AstNode],point:u64,reason:&str)->bool {
+    if !diagnostic_enabled() { return false; }
+    if point>=nodes.len() { return diagnostic_emit(4,9,0); }
+    let mut message:[u8;2048]=[0;2048];
+    let bytes=reason.as_bytes();
+    let mut written:usize=0;
+    let output=&mut message[..];
+    @unchecked { @c(includes={"stdio.h","stdint.h"}) {
+        size_t node=${point},count=(${nodes}).len;
+        if(node>=count)node=0;
+        int kind=(${nodes}).data[node].f_kind;
+        const char *construct=kind==1?"function":kind==35?"async function":kind==3?"parameter":kind==4?"type annotation":kind==5?"binding":kind==6?"return":kind==8?"expression statement":kind==10?"block result":kind==15?"function call":kind==16?"method call":kind==17?"field access":kind==18?"indexed access":kind==21?"assignment":kind==26?"conditional expression":kind==27?"loop":kind==28?"struct":kind==29?"enum":kind==39?"match":kind==49?"implementation":kind==58?"annotation":"expression";
+        int length=snprintf((char*)(${output}).data,(${output}).len,"cannot compile this %s: %.*s",construct,(int)(${bytes}).len,(${bytes}).data);
+        size_t pos=length>0?(size_t)length:0;if(pos>=(${output}).len)pos=(${output}).len-1;
+        size_t owner=node,steps=0;
+        while(owner<count&&owner&&steps++<128){
+            int owner_kind=(${nodes}).data[owner].f_kind;
+            if(owner_kind==1||owner_kind==35||owner_kind==49){
+                size_t start=(${nodes}).data[owner].f_name_start,end=(${nodes}).data[owner].f_name_end;
+                if(end>start){
+                    length=snprintf((char*)(${output}).data+pos,(${output}).len-pos,"\n       = context: %s '\037%llu:%llu\037'",owner_kind==49?"implementation":"function",(unsigned long long)start,(unsigned long long)end);
+                    if(length>0){size_t room=(${output}).len-pos;pos+=(size_t)length<room?(size_t)length:room-1;}
+                }
+            }
+            owner=(${nodes}).data[owner].f_parent;
+        }
+        ${written}=pos;
+    } }
+    let empty:[u8;0]=[];let notes:[u64;0]=[];
+    drop(control(30,nodes[point].start as usize,0,0,0,&message[..written],&empty[..],&notes[..]));
+    diagnostic_emit(4,9,nodes[point].start)
+}

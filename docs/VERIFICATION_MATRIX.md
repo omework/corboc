@@ -373,3 +373,12 @@ borrowed matches and resource cleanup. It also covers generic structs/enums.
 This is focused compiler integration coverage, not new normative rules or proof
 of general safety. See [the cycle report](ENUM_METHODS_CYCLE.md) and its checklist
 for execution/install status.
+
+## Diagnostic classification and context retention
+
+Syntax expectations, normative refusals and compiler limitations have distinct
+human-readable categories. `scripts/validate_diagnostic_categories.py` compares
+verdicts/raw output with the pre-change baseline and checks precise original
+locations, type and move details, unsupported signature reasons and an accepted
+program. Existing source/semantic diagnostic suites supply directly related
+regressions. [Scope and limitations](DIAGNOSTIC_CATEGORIES_CYCLE.md).

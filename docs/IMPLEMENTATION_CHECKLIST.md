@@ -439,3 +439,15 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild and install at the existing PATH location.
 
 [Implementation and validation scope](ENUM_METHODS_CYCLE.md).
+
+## Diagnostic categories and retained implementation context
+
+- [x] Commit/push enum methods and selected-file checking as Jabar (`14e3053`).
+- [x] Rebuild/install that committed baseline at the existing PATH.
+- [x] Distinguish syntax, rule and compiler-limitation messages.
+- [x] Retain unsupported construct, signature/statement and enclosing declaration.
+- [x] Add function-parser expectations and report the found token.
+- [x] Pass focused category/provenance checks and diagnostic regressions.
+- [x] Rebuild and install the new diagnostics at the same PATH.
+
+[Scope and evidence](DIAGNOSTIC_CATEGORIES_CYCLE.md).

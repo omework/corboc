@@ -112,7 +112,7 @@ failure. `check`, `check --watch` and `build` report the original file, line and
 column, a source excerpt and a caret:
 
 ```text
-src/main.crb:2:22: error[N1]: type mismatch for this expression or binding
+src/main.crb:2:22: error[N1]: rule violation: type mismatch for this expression or binding
      2 |     let value: i64 = true;
        |                      ^~~~
        = expected: i64
@@ -131,8 +131,18 @@ when available, and related declaration, move, destruction or borrow locations.
 These notes use original source locations, including imported modules.
 Tuple field selectors (`item.0`) and tuple patterns in `for` loops are supported;
 borrowed patterns bind field references. See [tuple iteration](docs/TUPLE_ITERATION_CYCLE.md).
+Diagnostics distinguish **syntax errors**, **rule violations** and **compiler
+limitations** in the error message. Syntax diagnostics report an expected form
+and the token found when available. Rule diagnostics retain expected/actual types
+and relevant move, destruction or borrow locations. Limitations identify the
+unsupported construct, checking/lowering stage and enclosing declaration when
+that context is available; they do not claim the program violates a language
+rule. Import/configuration failures keep their own messages. Original-source
+anchors remain explicitly labelled when rewriting prevents an exact location.
+
 See [source diagnostic validation](docs/DIAGNOSTICS_CYCLE.md) and
-[semantic diagnostic validation](docs/SEMANTIC_DIAGNOSTICS_CYCLE.md).
+[semantic diagnostic validation](docs/SEMANTIC_DIAGNOSTICS_CYCLE.md), and
+[diagnostic categories](docs/DIAGNOSTIC_CATEGORIES_CYCLE.md).
 
 A file below a package's `src/` is the primary check target, using its enclosing
 `package.toml`, module companions and transitive imports. Its source is processed
