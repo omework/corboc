@@ -1,0 +1,18 @@
+enum First { Empty }
+struct Point { x: i64 }
+impl Point {
+    fn increment(&mut self) { (*self).x += 1; }
+    fn read(&self) -> i64 { (*self).x }
+}
+#(type: T)
+struct Wrapper<T> { value: T }
+impl Wrapper<T> {
+    fn new(value: T) -> Wrapper<T> { Wrapper { value: value } }
+    fn ref(&self) -> &T { &(*self).value }
+    fn mut_ref(&mut self) -> &mut T { &mut (*self).value }
+}
+fn main() {
+    let mut wrapper = Wrapper::new(Point { x: 41 });
+    (*wrapper).increment();
+    print((*wrapper).read());
+}

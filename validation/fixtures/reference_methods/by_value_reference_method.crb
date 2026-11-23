@@ -1,0 +1,8 @@
+struct Wrapper { value: i64 }
+impl Wrapper {
+    fn ref(self: Wrapper) -> &i64 { &self.value }
+}
+fn main() {
+    let wrapper = Wrapper { value: 1 };
+    print(*wrapper);
+}

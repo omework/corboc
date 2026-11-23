@@ -490,3 +490,13 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild, commit/push as Jabar, update the pin and install at the same PATH.
 
 [Mechanism and evidence](REFERENCE_METHODS_CYCLE.md).
+
+## Dereference-analysis crash on unresolved receivers
+
+- [x] Reproduce the WAL crash and isolate an unknown-method regression.
+- [x] Guard missing/non-instance method receivers and reference annotations.
+- [x] Defer wrapper dereferencing until generic target methods are concrete.
+- [x] Make borrow-prefix classification safe for empty/by-value receiver prefixes.
+- [x] Pass 18 focused cases and watch recovery; install at the existing PATH.
+
+[Cause and execution evidence](DEREFERENCE_CRASH_CYCLE.md).

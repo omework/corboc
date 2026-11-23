@@ -406,3 +406,11 @@ T; nominal * selects the method by access mode and uses ordinary local scope
 and loan summaries. Six native/fatal-UBSan programs and eight focused refusals
 pass, plus 13 mutex regression cases, diagnostic audits and raw-protocol checks.
 [Evidence, observed existing limits and platform scope](REFERENCE_METHODS_CYCLE.md).
+
+## Unresolved dereference receiver robustness
+
+Missing or non-reference receivers no longer cause invalid source slicing or
+unsigned borrow-prefix subtraction. Generic wrapper classification waits for
+specialization. Eighteen focused cases and watch failure-to-success recovery
+pass; the actual unchanged WAL reaches a normal diagnostic without leaving
+watch. [Cause, installation and evidence](DEREFERENCE_CRASH_CYCLE.md).

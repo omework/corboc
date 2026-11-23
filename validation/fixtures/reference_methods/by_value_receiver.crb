@@ -1,0 +1,13 @@
+struct Point { x: i64 }
+impl Point {
+    fn consume(self: Point) { print(self.x); }
+}
+struct Wrapper { value: Point }
+impl Wrapper {
+    fn ref(&self) -> &Point { &(*self).value }
+    fn mut_ref(&mut self) -> &mut Point { &mut (*self).value }
+}
+fn main() {
+    let wrapper = Wrapper { value: Point { x: 1 } };
+    (*wrapper).consume();
+}

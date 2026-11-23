@@ -104,11 +104,15 @@ fn mutation_consumer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 &graph[0..graph.len()], &tokens[0..tokens.len()], current, 0));
             let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
             let function = method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, parent);
+            if function == 0 { return false; }
             let mut receiver = graph[function].first_child;
             while nodes[receiver].kind == 58 { receiver = graph[receiver].next_sibling; }
+            if nodes[receiver].kind != 3 { return false; }
             let annotation = graph[receiver].first_child;
+            let referent = graph[annotation].first_child;
             return borrow_mutable(&source[nodes[receiver].start..nodes[receiver].name_start])
-                || (annotation != 0 && borrow_mutable(&source[nodes[annotation].start..nodes[graph[annotation].first_child].start]));
+                || (annotation != 0 && referent != 0 && source[nodes[annotation].start] == 38
+                    && borrow_mutable(&source[nodes[annotation].start..nodes[referent].start]));
         }
         return false;
     }
@@ -125,6 +129,9 @@ pub fn dereference_mode(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if ty.reference != 0 { return 0; }
     let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
     if owner == 0 { return 0; }
+    // A template's ref target can still be T. Access-mode classification must
+    // wait for the concrete target methods, rather than guessing a shared read.
+    if is_template(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],owner){return 0;}
     let shared = named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, 1);
     let mutable = named_reference_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner, 2);
     if shared == 0 && mutable == 0 { return 0; }

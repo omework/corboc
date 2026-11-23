@@ -745,6 +745,9 @@ fn linear_sequence(nodes: &[AstNode], graph: &[StaticNode], first: u64, last: u6
 }
 
 pub fn borrow_mutable(prefix: &[u8]) -> bool {
+    // Unresolved and by-value receivers have no borrow prefix. Do not subtract
+    // the leading '&' width unless that token is actually present.
+    if prefix.len()==0 || prefix[0]!=38{return false;}
     let mut at: usize = 1;
     while at < prefix.len() && (prefix[at] == 32 || (prefix[at] >= 9 && prefix[at] <= 13)) {
         at = at + 1;

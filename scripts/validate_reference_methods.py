@@ -14,7 +14,7 @@ p.add_argument('--case', action='append', help='Run only selected fixture names'
 p.add_argument('--out', type=Path, default=ROOT / 'build/reference-methods/results.json')
 a = p.parse_args()
 compiler, stdlib = a.compiler.resolve(), a.stdlib.resolve()
-expected = {'wrapper': '13 42 42', 'generic': '42 true', 'allocation': '42 7',
+expected = {'generic_receiver': '42', 'wrapper': '13 42 42', 'generic': '42 true', 'allocation': '42 7',
             'native': '42 2', 'once': '99 42 false 12', 'mutex_deref': '42 42 42'}
 fixtures = ROOT / 'validation/fixtures/reference_methods'
 work = a.out.resolve().parent
@@ -28,8 +28,9 @@ for source in sorted(fixtures.glob('*.crb')):
     (package / 'package.toml').write_text('[package]\nname="reference_methods"\n')
     (package / 'src/main.crb').write_text(source.read_text())
     emitted = subprocess.run([compiler, '--emit-package-c', package, '--stdlib-dir', stdlib], text=True, capture_output=True, timeout=60)
+    assert 'corbo: ' not in emitted.stderr, (name, emitted.stderr)
     if name not in expected:
-        assert emitted.returncode != 0, (name, 'unexpected acceptance')
+        assert emitted.returncode in (8, 9), (name, 'unexpected acceptance')
         results.append({'case': name, 'status': 'refused', 'exit': emitted.returncode, 'diagnostic': emitted.stdout + emitted.stderr})
     else:
         assert emitted.returncode == 0, (name, emitted)

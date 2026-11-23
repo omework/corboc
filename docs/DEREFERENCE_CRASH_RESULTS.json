@@ -1,0 +1,114 @@
+{
+  "platform": "macOS ARM64",
+  "reference_cases": [
+    {
+      "case": "allocation",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n7\n"
+    },
+    {
+      "case": "allocation_lifetime",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n121\n"
+    },
+    {
+      "case": "bad_signature",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "1\n162\n"
+    },
+    {
+      "case": "borrow_escape",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n426\n9\n314\n"
+    },
+    {
+      "case": "by_value_receiver",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n455\n9\n323\n"
+    },
+    {
+      "case": "by_value_reference_method",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "1\n191\n"
+    },
+    {
+      "case": "enum_bad_signature",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n141\n9\n88\n"
+    },
+    {
+      "case": "generic",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\ntrue\n"
+    },
+    {
+      "case": "generic_receiver",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n"
+    },
+    {
+      "case": "guard_lifetime",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n132\n"
+    },
+    {
+      "case": "move_payload",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n382\n9\n243\n"
+    },
+    {
+      "case": "mutex_deref",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n42\n42\n"
+    },
+    {
+      "case": "native",
+      "status": "passed, fatal UBSan",
+      "stdout": "42\n2\n"
+    },
+    {
+      "case": "no_declared_method",
+      "status": "refused",
+      "exit": 9,
+      "diagnostic": "9\n92\n9\n38\n"
+    },
+    {
+      "case": "no_mut_permission",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "5\n421\n"
+    },
+    {
+      "case": "once",
+      "status": "passed, fatal UBSan",
+      "stdout": "99\n42\nfalse\n12\n"
+    },
+    {
+      "case": "unresolved_method",
+      "status": "refused",
+      "exit": 8,
+      "diagnostic": "8\n401\n"
+    },
+    {
+      "case": "wrapper",
+      "status": "passed, fatal UBSan",
+      "stdout": "13\n42\n42\n"
+    }
+  ],
+  "watch": {
+    "failure_to_success": "passed; watcher remained alive",
+    "observed_file": "normal diagnostic; watcher remained alive; source unchanged"
+  },
+  "installed": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "binary_sha256": "da1c032eabbe78ffb07eeb02a5aa2329dfaabadd3691195950cbc4d3c69855e7",
+  "source_pin": "d4e5ead90bcb0f5a75df334dc6764f82e3ef9e6b",
+  "audit": "1017 sites and 353 observed state writes passed"
+}
