@@ -1487,7 +1487,7 @@ fn direct_await(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
             && form != 11 && !(form == 21 && nodes[statement].name_end - nodes[statement].name_start != 1
                 && graph[graph[statement].first_child].next_sibling == boundary)
             && !(form == 39 && graph[statement].first_child == boundary)
-            && !(form == 15 && graph[boundary].next_sibling == 0 && graph[graph[statement].first_child].next_sibling == boundary)) { return -1; }
+            && !((form == 15 || form == 16) && graph[boundary].next_sibling == 0 && graph[graph[statement].first_child].next_sibling == boundary)) { return -1; }
     let operand = graph[node].first_child;
     let future = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut types[0..types.len()], ctx, copy(operand), 0);
@@ -1551,7 +1551,7 @@ fn async_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
             { let code: [u8;7] = [40,40,70,114,97,109,101]; byte_text(&code[..]); } number(copy(function)); { let code: [u8;2] = [42,41]; byte_text(&code[..]); } temporary(copy(node)); { let code: [u8;9] = [46,115,116,97,116,101,41,45,62]; byte_text(&code[..]); }
             character(102); number(copy(param)); character(61);
             if types[receiver] < 4000000 { character(38); }
-            local(receiver); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            emit_method_receiver(&nodes[0..nodes.len()],ctx,receiver); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
             param = graph[param].next_sibling;
         }
         while nodes[param].kind == 3 {

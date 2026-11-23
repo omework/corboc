@@ -1,3 +1,4 @@
+use bootstrap::semantic_diagnostics::missing_field as diagnostic_missing_field;
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
 use bootstrap::verify::{violation_site};
@@ -459,9 +460,12 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
                     &graph[0..graph.len()], parameter);
                 if actual != expected_nominal { return 0 - violation_site(1, nodes[given].start, 287); }
             }
-        } else if nodes[expression].kind == 37 {
+        } else if nodes[expression].kind == 37 || (nodes[expression].kind==17
+            && nodes[nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation))].kind==29) {
             let declared=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
-            let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
+            let base=graph[expression].first_child;
+            let actual=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],
+                if nodes[base].kind==7 && graph[base].binding==0{base}else{copy(expression)});
             if declared==0 || declared!=actual{return 0-violation_site(1, nodes[given].start, 288);}
             let ty = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &mut values[0..values.len()], expression, copy(given));
@@ -532,7 +536,7 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
             given = graph[given].next_sibling;
         }
         if given == 0 {
-            if !defaults { return 0 - violation_site(1, nodes[initializer].start, 295); }
+            if !defaults { diagnostic_missing_field(field); return 0 - violation_site(1, nodes[initializer].start, 295); }
             if private_socket_field(&source[nodes[field].name_start..nodes[field].name_end]) {
                 return 0 - violation_site(1, nodes[initializer].start, 296);
             }

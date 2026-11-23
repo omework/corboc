@@ -323,3 +323,11 @@ fn main() {
 ```
 
 See the language repository's `docs/ITERATION_SYNTAX.md` for ownership semantics.
+
+## Enum paths and field receivers
+
+Use `Enum::Variant` in constructors, `match` and `if let`; the legacy dot spelling
+remains accepted for STD/source compatibility. Associated functions retain
+`Type::method(...)`. Instance methods can use nested field receivers, including
+`self.tracker.lock().await`, with the existing ownership, borrowing and lock
+contracts. See [implementation and focused evidence](docs/ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).

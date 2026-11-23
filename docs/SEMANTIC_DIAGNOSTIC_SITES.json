@@ -2365,7 +2365,7 @@
     "function": "check_structure_fields",
     "rule": "1",
     "condition": "if !defaults",
-    "message": "expression does not satisfy the required ownership type or value constraint"
+    "message": "missing required field in struct initializer"
   },
   {
     "id": 296,
@@ -3335,7 +3335,7 @@
     "function": "check_propagation",
     "rule": "1",
     "condition": "if !scalar_option(outer)",
-    "message": "expression does not satisfy the required propagation type or value constraint"
+    "message": "? requires a Result or Option; await a Future before applying ?"
   },
   {
     "id": 417,
@@ -5503,7 +5503,7 @@
     "function": "verify_task",
     "rule": "8",
     "condition": "if !in_async(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(expression))",
-    "message": "call does not satisfy the required tasks contract"
+    "message": ".await is only allowed inside an async function"
   },
   {
     "id": 688,

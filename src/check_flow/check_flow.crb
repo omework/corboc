@@ -739,9 +739,9 @@ fn set_state(values: &mut [CheckedValue], binding: u64, state: i64) {
 pub fn pattern_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pattern: u64, nominal: u64) -> u64 {
     let mut start = nodes[pattern].name_end;
     let limit = nodes[pattern].end;
-    while start < limit && source[start] != 46 { start = start + 1; }
+    while start < limit && source[start] != 46 && !(source[start]==58 && start+1<limit && source[start+1]==58) { start = start + 1; }
     if start == limit { return 0; }
-    start = start + 1;
+    start = start + (if source[start]==58{2}else{1});
     while start < limit && (source[start] == 32 || (source[start] >= 9 && source[start] <= 13)) { start = start + 1; }
     let mut end = copy(start);
     while end < limit {

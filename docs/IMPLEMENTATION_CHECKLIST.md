@@ -451,3 +451,17 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild and install the new diagnostics at the same PATH.
 
 [Scope and evidence](DIAGNOSTIC_CATEGORIES_CYCLE.md).
+
+## Enum qualification, field method receivers and actionable diagnostics
+
+- [x] Parse Enum::Variant into the existing enum construction/pattern AST.
+- [x] Preserve qualified/aliased names, generic enums, associated functions and Self.
+- [x] Retain dot spelling for STD/source compatibility.
+- [x] Resolve field receiver types and apply the existing root/borrow permissions.
+- [x] Materialize receiver pointers once and retain them across async arguments.
+- [x] Explain Future propagation, synchronous await and missing fields by name.
+- [x] Update language grammar, English/French docs and enum examples.
+- [x] Execute focused native/UBSan and diagnostic/lifetime regression checks.
+- [x] Install the rebuilt compiler at the existing PATH.
+
+[Implementation and evidence](ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).

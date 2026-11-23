@@ -25,7 +25,7 @@ static struct {
     bool enabled;const uint8_t *source;size_t length,count,vcount;
     const SDNode *nodes;const SDGraph *graph;const SDValue *values;
     struct {uint64_t node;int64_t expected,mode;const SDValue *previous;size_t count;} frames[SD_DEPTH];
-    size_t depth,overflow;uint64_t statement,site,override_at,conflict,invalid_root;
+    size_t depth,overflow;uint64_t statement,site,override_at,conflict,invalid_root,missing_field;
     int64_t expected,actual;
     struct {uint64_t move,drop,borrow,prior_move;int64_t state;uint64_t target;bool moved,dropped,borrowed,explicit_drop;} history[SD_LIMIT];
 } sd;
@@ -336,7 +336,7 @@ static const char *const reasons[]={
 "borrow or contained dependency no longer has a live storage root",
 "type mismatch for this expression or binding",
 "type mismatch for this expression or binding",
-"expression does not satisfy the required ownership type or value constraint",
+"missing required field in struct initializer",
 "member is private outside its declaring module",
 "expression does not satisfy the required package link type or value constraint",
 "expression does not satisfy the required package link type or value constraint",
@@ -457,7 +457,7 @@ static const char *const reasons[]={
 "type mismatch for this expression or binding",
 "call does not satisfy the required propagation contract",
 "expression does not satisfy the required propagation type or value constraint",
-"expression does not satisfy the required propagation type or value constraint",
+"? requires a Result or Option; await a Future before applying ?",
 "type mismatch for this expression or binding",
 "type mismatch for this expression or binding",
 "value ownership form is incompatible with this operation; copying requires an eligible type",
@@ -728,7 +728,7 @@ static const char *const reasons[]={
 "type mismatch for this expression or binding",
 "arguments do not match the callable parameter contract",
 "access does not satisfy its mutation-permission or same-lock contract",
-"call does not satisfy the required tasks contract",
+".await is only allowed inside an async function",
 "arguments do not match the callable parameter contract",
 "call does not satisfy the required tasks contract",
 "arguments do not match the callable parameter contract",
@@ -1057,7 +1057,7 @@ static const char *const reasons[]={
 };
 // END FAILURE SITES
 if(op==0){
-    sd.enabled=b!=0;sd.depth=sd.overflow=0;sd.statement=sd.site=sd.conflict=sd.invalid_root=0;sd.expected=sd.actual=0;sd.override_at=UINT64_MAX;
+    sd.enabled=b!=0;sd.depth=sd.overflow=0;sd.statement=sd.site=sd.conflict=sd.invalid_root=sd.missing_field=0;sd.expected=sd.actual=0;sd.override_at=UINT64_MAX;
     sd.source=(${source}).data;sd.length=(${source}).len;sd.nodes=(const SDNode*)(${nodes}).data;
     sd.graph=(const SDGraph*)(${graph}).data;sd.values=(const SDValue*)(${values}).data;
     sd.count=(${nodes}).len;sd.vcount=(${values}).len;
@@ -1114,6 +1114,7 @@ if(op==0){
     else if(op==7){sd.override_at=a;sd.expected=b;sd.actual=c;}
     else if(op==8){sd.conflict=a;}
     else if(op==10){if(!sd.invalid_root)sd.invalid_root=a;}
+    else if(op==12){sd.missing_field=a;}
     else if(op==9&&capacity){
         uint64_t point=a,node=0;int rule=(int)b;
         // Prefer the active expression, then the smallest source span. This
@@ -1209,8 +1210,13 @@ if(op==0){
         }
         if(rule==7&&binding&&SD_VALUE(binding)&&sd.values[binding].state==3)reason="this value was already destroyed";
         if(!reason||!reason[0])reason="semantic constraint is not satisfied by this operation";
-        SD_APPEND(reason);
-        uint64_t named=sd.site==722?0:(binding?binding:node);
+        if(sd.site==295 && sd.missing_field && SD_VALID(sd.missing_field)){
+            uint64_t field=sd.missing_field,owner=sd.nodes[field].parent;
+            SD_APPEND("missing required field '");SD_NAME(sd.nodes[field].name_start,sd.nodes[field].name_end);SD_APPEND("'");
+            if(SD_VALID(owner)){SD_APPEND(" when constructing '");SD_NAME(sd.nodes[owner].name_start,sd.nodes[owner].name_end);SD_APPEND("'");}
+            SD_LABEL(sd.nodes[field].start,13);
+        }else SD_APPEND(reason);
+        uint64_t named=(sd.site==722||sd.site==295||sd.site==416||sd.site==687)?0:(binding?binding:node);
         if(SD_VALID(named)&&sd.nodes[named].name_end>sd.nodes[named].name_start&&
             (sd.nodes[named].kind==7||sd.nodes[named].kind==5||sd.nodes[named].kind==3||sd.nodes[named].kind==17)){
             SD_APPEND(" '");SD_NAME(sd.nodes[named].name_start,sd.nodes[named].name_end);SD_APPEND("'");
@@ -1322,7 +1328,7 @@ if(op==0){
             else SD_LABEL(sd.nodes[reference].start,6);
         }
         if(label_count<label_capacity)labels[label_count]=UINT64_MAX;
-        sd.site=sd.conflict=sd.invalid_root=0;sd.override_at=UINT64_MAX;sd.expected=sd.actual=0;
+        sd.site=sd.conflict=sd.invalid_root=sd.missing_field=0;sd.override_at=UINT64_MAX;sd.expected=sd.actual=0;
         ${written}=pos;
     }
 }
@@ -1377,3 +1383,6 @@ pub fn describe(offset:u64,rule:i64,out:&mut [u8],related:&mut [u64])->usize {
 
 /// Retain the leaf of a failed dependency walk for a secondary source label.
 pub fn invalid_root(reference:u64){drop(empty(10,reference,0,0));}
+
+/// Retain a missing member before constructor checking discards its declaration.
+pub fn missing_field(field:u64){drop(empty(12,field,0,0));}

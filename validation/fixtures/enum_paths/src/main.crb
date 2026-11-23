@@ -1,0 +1,53 @@
+use enum_paths::items::Imported as Renamed;
+
+enum State {
+    Ready,
+    Value(i64),
+    Pair { x: i64, y: bool }
+}
+
+impl State {
+    fn create() -> Self { Self::Ready }
+
+    fn code(&self) -> i64 {
+        match self {
+            State::Ready => { 0 },
+            State::Value(number) => { number },
+            State::Pair { x: number, y: flag } => { number }
+        }
+    }
+
+    fn finish(self: State) -> i64 { self.code() }
+}
+
+#(type: T)
+enum Generic<T> { Item(T), Empty }
+
+struct Holder { state: State }
+
+fn main() {
+    let value = State::Value(42);
+    print(value.code());
+    let pair = State::Pair { x: 7, y: true };
+    print(pair.code());
+    let ready = State::create();
+    print(ready.code());
+    if let State::Value(number) = value { print(number); }
+
+    // Qualified and aliased paths keep their module/type resolution.
+    let imported = enum_paths::items::Imported::Ready;
+    match imported {
+        enum_paths::items::Imported::Ready => { print(1); },
+        enum_paths::items::Imported::Value(number) => { print(number); }
+    }
+    let renamed = Renamed::Value(9);
+    if let Renamed::Value(number) = renamed { print(number); }
+
+    let generic = Generic::Item(11);
+    if let Generic::Item(number) = generic { print(number); }
+
+    // Primitive-only enum receivers copy when passed by value, including fields.
+    let holder = Holder { state: State::Ready };
+    print(holder.state.finish());
+    print(holder.state.code());
+}

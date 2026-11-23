@@ -680,6 +680,46 @@ fn mark_nominal_names(source: &[u8], tokens: &mut [Token]) {
         }
         declaration = declaration + 1;
     }
+    mark_enum_paths(&source[0..source.len()],&mut tokens[0..tokens.len()]);
+}
+
+/// A known enum constructor has the same AST shape for :: and legacy dot syntax.
+/// Token spans stay unchanged, so linking and original-source maps retain their coordinates.
+fn mark_enum_paths(source:&[u8],tokens:&mut [Token]) {
+    let mut declaration:u64=0;
+    while tokens[declaration].kind!=0 {
+        if tokens[declaration].kind==59 && lexical_name(tokens[declaration+1].kind) {
+            let name=&source[tokens[declaration+1].start..tokens[declaration+1].end];
+            let mut body=declaration+2;
+            while tokens[body].kind!=0 && tokens[body].kind!=4{body+=1;}
+            if tokens[body].kind==4 {
+                let mut variant=body+1;let mut depth:u64=1;let mut expect=true;
+                while depth!=0 && tokens[variant].kind!=0 {
+                    let kind=tokens[variant].kind;
+                    if depth==1 && expect && lexical_name(kind) {
+                        let arm=&source[tokens[variant].start..tokens[variant].end];
+                        let mut use_at:u64=0;
+                        while tokens[use_at].kind!=0 {
+                            if lexical_name(tokens[use_at].kind) && tokens[use_at+1].kind==43 && lexical_name(tokens[use_at+2].kind) {
+                                let owner=&source[tokens[use_at].start..tokens[use_at].end];
+                                let member=&source[tokens[use_at+2].start..tokens[use_at+2].end];
+                                if owner.content_eq(&name[0..name.len()]) && member.content_eq(&arm[0..arm.len()]) {
+                                    tokens[use_at+1]=Token{nominal:tokens[use_at+1].nominal,annotation:tokens[use_at+1].annotation,kind:38,start:tokens[use_at+1].start,end:tokens[use_at+1].end};
+                                }
+                            }
+                            use_at+=1;
+                        }
+                        expect=false;
+                    }
+                    if depth==1 && kind==11{expect=true;}
+                    if kind==4 || kind==2 || kind==39{depth+=1;}
+                    if kind==5 || kind==3 || kind==40{depth-=1;}
+                    variant+=1;
+                }
+            }
+        }
+        declaration+=1;
+    }
 }
 
 fn valid_utf8(source: &[u8]) -> bool {
@@ -1128,12 +1168,19 @@ fn parse_pattern(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64
         name_end = 0;
     } else {
         if !lexical_name(tokens[first].kind) { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        let mut variant_separator:u64=0;
         while tokens[index].kind == 43 {
+            variant_separator=index;
             index = index + 1;
             if !lexical_name(tokens[index].kind) { diagnostic_parse_point(tokens[index].start); return (0, 0); }
             index = index + 1;
         }
-        if tokens[index].kind == 38 {
+        name_end=tokens[index-1].end;
+        if variant_separator!=0 && tokens[index].kind!=38 {
+            name_end=tokens[variant_separator-1].end;
+            index=variant_separator;
+        }
+        if tokens[index].kind == 38 || (variant_separator!=0 && tokens[index].kind==43) {
             index = index + 1;
             if !lexical_name(tokens[index].kind) { diagnostic_parse_point(tokens[index].start); return (0, 0); }
             index = index + 1;

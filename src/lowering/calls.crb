@@ -6,7 +6,7 @@ use bootstrap::tasks::thread_block;
 use bootstrap::lowering_annotations::{annotation_type, same_bytes, word};
 use bootstrap::lowering_types::{
     array_has_owners, c_type, consume, declaration, future_type, handle_type,
-    local, map_type, map_value, nominal_type, number, task_code, task_payload, temporary, optional, option_payload,
+    local, map_type, map_value, nominal_type, signed, number, task_code, task_payload, temporary, optional, option_payload,
 };
 use bootstrap::target_c::{byte_text, character};
 use bootstrap::native_checks::address_argument;
@@ -180,7 +180,7 @@ fn compile_function_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         character(102); number(callee); character(40);
         if receiver != 0 {
             if types[receiver] < 4000000 { character(38); }
-            local(receiver);
+            emit_method_receiver(&nodes[0..nodes.len()],ctx,receiver);
             if first != 0 { character(44); }
         }
         arg = first;
@@ -196,9 +196,13 @@ fn compile_function_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
     ctx: &Lowering, node: u64) -> i64 {
     let receiver = graph[node].first_child;
-    let binding = graph[receiver].binding;
-    let ty = types[binding];
-    if nodes[receiver].kind != 7 || ty < 3000000 || ty >= 5000000 { return -2; }
+    let projected=nodes[receiver].kind!=7;
+    let mut binding = graph[receiver].binding;
+    let ty = if projected {
+        if !prepare_member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,receiver){return -1;}
+        member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],receiver,false)
+    }else{types[binding]};
+    if ty < 3000000 || ty >= 5000000 { return -2; }
     let record = nominal_type(ty);
     if nodes[record].kind != 28 && nodes[record].kind != 29 { return -2; }
     let owner = &source[nodes[record].name_start..nodes[record].name_end];
@@ -206,6 +210,19 @@ fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
     let method = lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &owner[0..owner.len()], &name[0..name.len()], true);
     if method == 0 { return -2; }
+    if projected && !value_receiver(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],method) {
+        let pointer=4000000+signed(record);types[receiver]=pointer;binding=receiver;
+        if (*ctx).emit {
+            c_type(pointer);character(32);local(receiver);character(61);
+            if ty<4000000{character(38);}
+            let place=member_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],receiver,true);drop(place);
+            character(59);character(10);
+            if (*ctx).poll_body!=0 {
+                let prefix:[u8;15]=[102,114,97,109,101,45,62,114,101,99,101,105,118,101,114];
+                byte_text(&prefix[..]);number(receiver);character(61);local(receiver);character(59);character(10);
+            }
+        }
+    }
     if nodes[method].kind == 35 {
         let by_value = value_receiver(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(method));
         let first = if by_value { copy(receiver) } else { graph[receiver].next_sibling };
@@ -219,4 +236,12 @@ fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
     }
     compile_function_call(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut types[0..types.len()], ctx, node, method, graph[receiver].next_sibling, binding)
+}
+
+fn emit_method_receiver(nodes:&[AstNode],ctx:&Lowering,receiver:u64) {
+    let projected=nodes[receiver].kind==17 || nodes[receiver].kind==18 || nodes[receiver].kind==19 || nodes[receiver].kind==14;
+    if projected && (*ctx).poll_body!=0 {
+        let prefix:[u8;15]=[102,114,97,109,101,45,62,114,101,99,101,105,118,101,114];
+        byte_text(&prefix[..]);number(receiver);
+    }else{local(receiver);}
 }

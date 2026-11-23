@@ -143,25 +143,42 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     734
 }
 
+/// Resolve only nominal identity here; access/permission checks happen on reservation.
+fn receiver_shape(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],place:u64,depth:u64)->u64 {
+    if place==0 || depth>=128{return 0;}
+    let kind=nodes[place].kind;let child=graph[place].first_child;
+    if kind==7{return values[graph[place].binding].origin_call;}
+    if kind==19 || kind==14{return receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],child,depth+1);}
+    let mut shape=receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],child,depth+1);
+    if shape==0{return 0;}
+    if source[nodes[shape].start]==38{shape=graph[shape].first_child;}
+    if kind==18 && source[nodes[shape].start]==91{return graph[shape].first_child;}
+    if kind!=17{return 0;}
+    let owner=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],shape);
+    if nodes[owner].kind!=28{return 0;}
+    let field=verification_field(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],owner,place);
+    graph[field].first_child
+}
+
 pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &[CheckedValue], call: u64) -> u64 {
     let receiver = graph[call].first_child;
-    if nodes[receiver].kind != 7 { return 0; }
-    let binding = graph[receiver].binding;
-    if values[binding].ty != 300 && values[binding].ty != 310 && values[binding].ty != 734 { return 0; }
-    let shape = values[binding].origin_call;
-    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], shape);
+    let mut shape=receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],receiver,0);
+    if shape==0{return 0;}
+    if source[nodes[shape].start]==38{shape=graph[shape].first_child;}
+    let record = nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],shape);
     if nodes[record].kind != 28 && nodes[record].kind != 29 { return 0; }
     let owner = &source[nodes[record].name_start..nodes[record].name_end];
     let member = &source[nodes[call].name_start..nodes[call].name_end];
-    lookup_record_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-        &owner[0..owner.len()], &member[0..member.len()], true)
+    lookup_record_method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],owner,member,true)
 }
 
 pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], receiver: u64, parameter: u64) -> i64 {
-    let binding = graph[receiver].binding;
+    let projected=nodes[receiver].kind!=7;
+    let (ty,binding,shape)=bootstrap::places::scalar_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],receiver);
+    if ty<0{return ty;}
+    if ty!=300 && ty!=310{return -9;}
     let by_reference = values[binding].ty == 734;
     if values[binding].state != 1
         || (by_reference && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding))) {
@@ -176,7 +193,7 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
     if conflict > 0 { return 0 - violation_site(5, nodes[receiver].start, 385); }
     let target = if by_reference { values[binding].target } else { copy(binding) };
     let parent = if by_reference { copy(binding) } else { 0 };
-    let shape = values[binding].origin_call;
+    let shape = if projected{copy(shape)}else{values[binding].origin_call};
     values[receiver] = CheckedValue{ ty: 734, state: 1, mutable: false, target: target,
         loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],receiver);
     1

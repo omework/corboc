@@ -1,0 +1,26 @@
+use std::sync::asyn::Mutex;
+
+enum SlotState { Available, Busy }
+struct Data {
+    value: i64,
+    slots: [(usize, SlotState); 5],
+}
+struct Holder { mutex: Mutex<Data> }
+
+impl Holder {
+    async fn work(&self) -> i64 {
+        let mut guard = self.mutex.lock().await;
+        let data = guard.get_mut();
+        (*data).value = 42;
+        (*data).value
+    }
+}
+
+fn main() {
+    let holder = Holder { mutex: Mutex::new(Data { value: 1, slots: [(0, SlotState::Available); 5] }) };
+    let execution = runtime::spawn(holder.work());
+    match execution.join() {
+        Ok(number) => { print(number); },
+        Err(error) => { print(-1); }
+    }
+}

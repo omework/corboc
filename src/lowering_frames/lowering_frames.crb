@@ -22,6 +22,10 @@ pub fn emit_frame(nodes: &[AstNode], types: &[i64], function: u64) {
             let kind = nodes[node].kind;
             if kind == 3 || ((kind == 5 || kind == 41) && types[node] > 0) {
                 c_type(types[node]); { let code: [u8;2] = [32,102]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
+            } else if (kind==17 || kind==18 || kind==19 || kind==14) && types[node]>=4000000 && types[node]<5000000
+                && nodes[nodes[node].parent].kind==16 && nodes[nodes[node].parent].start==nodes[node].start {
+                c_type(types[node]);
+                let prefix:[u8;9]=[32,114,101,99,101,105,118,101,114];byte_text(&prefix[..]);number(node);character(59);character(10);
             } else if (kind == 11 || kind == 21) && types[node] > 0 {
                 c_type(types[node]); { let code: [u8;6] = [32,115,112,105,108,108]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
                 if kind == 21 {

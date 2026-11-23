@@ -1,0 +1,36 @@
+struct Item { value: i64 }
+
+impl Item {
+    fn read(&self) -> i64 { (*self).value }
+    fn add(&mut self, number: i64) { (*self).value += number; }
+
+    async fn sum(&self, number: i64) -> i64 {
+        yield;
+        (*self).value + number
+    }
+}
+
+struct Inner { item: Item }
+struct Holder { inner: Inner }
+
+async fn argument() -> i64 {
+    yield;
+    2
+}
+
+async fn work(holder: &mut Holder) -> i64 {
+    (*holder).inner.item.add(2);
+    // The receiver pointer must survive suspension while its argument evaluates.
+    (*holder).inner.item.sum(argument().await).await
+}
+
+fn main() {
+    let mut holder = Holder { inner: Inner { item: Item { value: 40 } } };
+    print(holder.inner.item.read());
+    let execution = runtime::spawn(work(&mut holder));
+    match execution.join() {
+        Ok(number) => { print(number); },
+        Err(error) => { print(-1); }
+    }
+    print(holder.inner.item.read());
+}

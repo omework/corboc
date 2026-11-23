@@ -382,3 +382,12 @@ verdicts/raw output with the pre-change baseline and checks precise original
 locations, type and move details, unsupported signature reasons and an accepted
 program. Existing source/semantic diagnostic suites supply directly related
 regressions. [Scope and limitations](DIAGNOSTIC_CATEGORIES_CYCLE.md).
+
+## Enum qualification and projected method receivers
+
+The enum separator does not alter ownership rules. Field method calls carry
+ordinary root/borrow and lock-result dependencies into code generation.
+`scripts/validate_enum_paths_field_receivers.py` records accepted native/UBSan
+executions and permission/lifetime refusals, plus actionable async/constructor
+diagnostics. Existing enum/copy/move and semantic-diagnostic regressions remain
+applicable. See [scope and evidence](ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).
