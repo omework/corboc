@@ -10,6 +10,7 @@ parser.add_argument('--target',choices=['linux','macos','windows'],required=True
 parser.add_argument('--arch',choices=['x86_64','aarch64'],default='x86_64')
 parser.add_argument('--keep',type=Path,required=True)
 parser.add_argument('--seed',type=Path,required=True)
+parser.add_argument('--stdlib-dir',type=Path,help='Explicit development STD source override')
 args=parser.parse_args();repo=Path(__file__).resolve().parents[1]
 root=repo;corbo=source_root();target=args.target;args.keep.mkdir(parents=True,exist_ok=True);out=args.keep/('compiler-'+target);shutil.copytree(root,out,dirs_exist_ok=True,ignore=shutil.ignore_patterns('.git','.deps','build','__pycache__'))
 def body(path,name,new):
@@ -31,6 +32,6 @@ if args.arch=='x86_64':
  for name in ['valid_register','has_register_class']:body(checks,name,'true')
 generated=args.keep/('emitter-'+target+'.c');binary=args.keep/('emitter-'+target)
 with generated.open('wb')as output:
- subprocess.run([args.seed.resolve(),'--emit-package-c',out,'--stdlib-dir',corbo/'stdlib/src'],stdout=output,check=True,timeout=120)
+ subprocess.run([args.seed.resolve(),'--emit-package-c',out,'--stdlib-dir',(args.stdlib_dir.resolve() if args.stdlib_dir else corbo/'stdlib/src')],stdout=output,check=True,timeout=120)
 subprocess.run(['cc','-std=c11','-pthread','-O1',generated,'-lm','-o',binary],check=True,timeout=180)
 print(binary)

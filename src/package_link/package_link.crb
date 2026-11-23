@@ -602,6 +602,11 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
     while node < nodes.len() as u64 {
         let kind = nodes[node].kind;
         let type_name = kind == 4 || kind == 37 || kind == 49 || kind == 53;
+        // Self is resolved against the enclosing impl after module names have
+        // been linked. It is not an external package or import prefix.
+        let self_name="Self";let self_bytes=self_name.as_bytes();
+        let self_spelling=&source[nodes[node].name_start..nodes[node].name_end];
+        if kind==36 && self_spelling.content_eq(self_bytes){node+=1;continue;}
         if (kind == 7 && graph[node].binding == 0) || kind == 36 || (type_name && nodes[node].name_end != 0) {
             let file = file_at(&files[0..files.len()], nodes[node].start);
             let start = nodes[node].name_start;

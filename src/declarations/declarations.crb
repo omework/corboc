@@ -814,26 +814,9 @@ pub fn validate_standalone_declarations(source: &[u8], nodes: &[AstNode], graph:
                 return report_violation_site(8, nodes[child].start, 114);
             }
         }
-        if kind == 21 && nodes[child].kind == 18 && nodes[at].name_end == nodes[at].name_start + 1 {
-            let place = graph[child].first_child;
-            let nested = nodes[place].kind == 18;
-            let base = if nested { graph[place].first_child } else { place };
-            if nodes[base].kind != 7 { return report_violation_site(1, nodes[child].start, 115); }
-            let binding = graph[base].binding;
-            let annotation = graph[binding].type_node;
-            let slice = slice_parameter(&source[0..source.len()], &nodes[0..nodes.len()],
-                &graph[0..graph.len()], copy(binding));
-            if nested && (slice == 0 || source[nodes[graph[slice].first_child].start] != 91) {
-                return report_violation_site(1, nodes[child].start, 116);
-            }
-            if slice != 0 && !borrow_mutable(&source[nodes[annotation].start..nodes[slice].start]) {
-                return report_violation_site(5, nodes[child].start, 117);
-            }
-            if slice == 0 && nodes[binding].kind == 3 && annotation != 0 && source[nodes[annotation].start] == 38
-                && source[nodes[graph[annotation].first_child].start] == 91 && !graph[binding].mutable {
-                return report_violation_site(5, nodes[child].start, 118);
-            }
-        }
+        // Assignment-place shape, bounds and mutation permission are checked
+        // by the recursive place resolver once symbolic parameters exist.
+        // Declaration validation must not guess these from a bare binding.
         if kind == 47 {
             let invalid = tuple_pattern_error(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], copy(at));

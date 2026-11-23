@@ -10,7 +10,7 @@ use bootstrap::value_dependencies::live_owned_fields;
 use bootstrap::ownership::check_owned_struct;
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, hex_digit};
 use bootstrap::stored::record_loan_array;
-use bootstrap::loans::{loan_conflict, live_roots, borrow_mutable, loan_conflict_after};
+use bootstrap::loans::{loan_conflict, live_roots, borrow_mutable, loan_conflict_after, access_conflict_after};
 use bootstrap::scalar::{verify_primitive, folded_integer, is_integer};
 use bootstrap::verify::{verify_expr, violation, private_layout_violation, scalar_known_type};
 use bootstrap::declarations::{nominal_declaration, verification_field, layout_visible};
@@ -395,7 +395,7 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if !live_roots(&values[0..values.len()],&graph[0..graph.len()],copy(binding)){return (0-violation_site(4,nodes[place].start,342),0,0);}
             return (300,binding,values[binding].origin_call);
         }
-        if !is_scalar_array(copy(ty)) && !slice_view(copy(ty)) && ty != 451 && ty != 300 && ty != 310 && ty != 296 && ty != 475 { return (0, 0, 0); }
+        if !is_scalar_array(copy(ty)) && !slice_view(copy(ty)) && ty != 451 && ty != 470 && ty != 300 && ty != 310 && ty != 296 && ty != 475 { return (0, 0, 0); }
         if values[binding].state != 1 { return (0 - violation_site(6, nodes[place].start, 339), 0, 0); }
         return (ty, copy(binding), values[binding].origin_call);
     }
@@ -581,12 +581,12 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     return (0 - violation_site(1, nodes[place].start, 347), 0, 0);
 }
 
-pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+pub fn check_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) -> (i64, u64) {
     let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     if ty <= 0 { return (ty, 0); }
-    if ty > 9 && !(ty==310 && primitive_enum(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(shape)))) { return (-9, 0); }
+    drop(shape);
     if borrowing && values[binding].ty == 300 && values[binding].target != 0 { return (-9, 0); }
     if write {
         let root = values[binding].ty;
@@ -616,6 +616,21 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
     if conflict > 0 { return (0 - violation_site(5, nodes[place].start, 349), 0); }
     if conflict < 0 { return (-9, 0); }
     return (ty, binding);
+}
+
+/// Scalar clients retain their type restriction; every place uses the same
+/// recursive root, permission and loan checks as aggregate replacement.
+pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) -> (i64, u64) {
+    let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
+    drop(binding);
+    if ty <= 0 { return (ty, 0); }
+    if ty > 9 && !(ty == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], copy(shape)))) { return (-9, 0); }
+    check_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+        &mut values[0..values.len()], place, write, borrowing)
 }
 
 // 710 + element is &array, 720 + element is &mut array. Keep the
@@ -813,38 +828,57 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     1
 }
 
-pub fn replace_record_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, place: u64, binding: u64) -> i64 {
-    let array = values[binding].ty;
-    if array != 451 && array != 748 { return 0; }
-    let (ty, root, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+/// Replace a plain structural value at any resolved field/index projection.
+/// The destination's root and shape survive every projection; nominal types
+/// are consulted only for layout compatibility, not to locate that root.
+pub fn replace_aggregate_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], statement: u64, place: u64) -> i64 {
+    let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     if ty < 0 { return ty; }
-    if ty != 300 || root != binding { return -9; }
-    let mutable = if array == 451 { values[binding].mutable } else { values[binding].writable };
-    if !mutable { return 0 - violation_site(5, nodes[place].start, 364); }
-    let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], shape);
-    if !replicable_record(&source[0..source.len()], &nodes[0..nodes.len()],
+    if ty != 300 { return 0; }
+    let (access, root) = check_projection(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(place), true, false);
+    drop(root);
+    if access < 0 { return access; }
+    let tuple = tuple_shape(&source[0..source.len()], &nodes[0..nodes.len()], copy(shape));
+    let record = if tuple { copy(shape) } else {
+        nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], copy(shape))
+    };
+    // Resource/dependency-bearing replacements keep their existing specialized
+    // analysis; do not silently treat them as freely replicable values.
+    if tuple && nodes[shape].kind == 20 {
+        let mut member = graph[shape].first_child;
+        while member != 0 {
+            let item = values[member].ty;
+            if item < 1 || (item > 9 && item != 310) { return -9; }
+            member = graph[member].next_sibling;
+        }
+    } else if !replicable_record(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(record), 0) { return -9; }
     let replacement = graph[place].next_sibling;
-    if nodes[replacement].kind == 37 {
-        let status = check_owned_struct(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
-            &mut values[0..values.len()], copy(replacement), copy(replacement));
+    if tuple {
+        let annotation = copy(shape);
+        let status = tuple_value(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            &mut values[0..values.len()], copy(replacement), annotation);
         if status < 0 { return status; }
+        if status != 475 { return 0 - type_violation(nodes[replacement].start, 475, status, 365); }
+
     } else {
-        if nodes[replacement].kind != 7 && nodes[replacement].kind != 15 { return -9; }
         let status = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(replacement), 300, 1);
         if status < 0 { return status; }
         if status != 300 || values[replacement].target != 0 { return 0 - violation_site(1, nodes[replacement].start, 365); }
-    }
-    if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
-        &graph[0..graph.len()], values[replacement].origin_call) != record {
-        return 0 - violation_site(1, nodes[replacement].start, 366);
+        if nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], values[replacement].origin_call) != record {
+            return 0 - violation_site(1, nodes[replacement].start, 366);
+        }
     }
     if values[binding].state != 1 { return 0 - violation_site(6, nodes[place].start, 367); }
-    let conflict = loan_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()],
+    // A plain tuple/record replacement preserves its storage and owns no
+    // resources or borrowed targets. Check content access, not reclamation.
+    let conflict = access_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], binding, copy(statement), true, nodes[statement].end);
     if conflict > 0 { return 0 - violation_site(5, nodes[place].start, 368); }
     if conflict < 0 { return -9; }
@@ -852,17 +886,21 @@ pub fn replace_record_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn slice_length(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], call: u64, expected: i64) -> i64 {
+    values: &mut [CheckedValue], call: u64, expected: i64) -> i64 {
     let base = graph[call].first_child;
-    let binding = graph[base].binding;
-    let ty = values[binding].ty;
-    if nodes[base].kind != 7 || (!slice_view(ty) && !is_scalar_array(ty) && ty!=451 && ty!=470) { return 0; }
     let word: [u8; 3] = [108,101,110];
     let spelling = &source[nodes[call].name_start..nodes[call].name_end];
     if !spelling.content_eq(&word[..]) { return 0; }
     if graph[base].next_sibling != 0 { return -9; }
+    let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
+        &graph[0..graph.len()], &mut values[0..values.len()], copy(base));
+    drop(shape);
+    if ty < 0 { return ty; }
+    if !slice_view(copy(ty)) && !is_scalar_array(copy(ty)) && ty != 451 && ty != 470 { return 0; }
     if values[binding].state != 1 { return 0 - violation_site(6, nodes[base].start, 369); }
-    if slice_view(ty) && values[values[binding].target].state != 1 { return 0 - violation_site(4, nodes[base].start, 370); }
+    if slice_view(copy(ty)) && !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(binding)) {
+        return 0 - violation_site(4, nodes[base].start, 370);
+    }
     let pointer: [u8; 5] = [117,115,105,122,101];
     let result = verify_primitive(&pointer[..], 0, 5);
     if expected != 0 && expected != result { return 0 - type_violation(nodes[call].start,expected,result,371); }

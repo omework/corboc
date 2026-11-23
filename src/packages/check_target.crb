@@ -1,3 +1,4 @@
+use bootstrap::package_io::open_file;
 use bootstrap::diagnostics::diagnostic_input;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Resolve check targets without changing package or language semantics.
@@ -62,7 +63,7 @@ pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) -> CheckTarg
         if manifest_end == 0 || manifest_end >= 4096 {
             return CheckTarget { kind: 4, root_end: 0, file_end: 0 };
         }
-        let found = match File::open(&manifest[..manifest_end + 1], FileMode::read_only()) {
+        let found = match open_file(&manifest[..manifest_end], FileMode::read_only()) {
             Ok(opened) => {
                 drop(opened);
                 true
@@ -100,9 +101,7 @@ pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) -> CheckTarg
 /// after the file is deleted. Scope closes the read-only probe automatically.
 pub fn check_file_present(path: &[u8]) -> bool {
     if path.len() == 0 || path.len() >= 4096 { return false; }
-    let mut terminated: [u8;4096] = [0;4096];
-    let length = append(&mut terminated[..],0,path);
-    match File::open(&terminated[..length + 1], FileMode::read_only()) {
+    match open_file(&path[0..path.len()], FileMode::read_only()) {
         Ok(opened) => {
             drop(opened);
             true

@@ -50,6 +50,11 @@ pinned STD beside the compiler, builds two compiler generations, compares their
 emitted C byte for byte, performs a normal package self-build and runs an external
 two-module import program. Artifacts and a machine-readable report are retained
 in `build/bootstrap/`. Omit `--verify-self` for a routine development build.
+When developing the compiler and STD together, pass
+`--stdlib-dir /path/to/corbo-lang/stdlib/src` explicitly. The installed STD and
+its source digest are recorded in `share/corbo/development-stdlib.json`;
+`corbo.lock` remains unchanged until the STD revision is committed and pinned.
+
 Use `--prefix`, `--cc` and `--cflags` to choose the installation and staged C
 compilation. The normal `corboc build` command uses `cc` from `PATH`.
 

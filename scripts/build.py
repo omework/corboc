@@ -24,6 +24,8 @@ def main():
     parser.add_argument("--seed", default=os.environ.get("CORBOC_SEED", "corboc"))
     parser.add_argument("--prefix", type=Path, default=ROOT / "build/install")
     parser.add_argument("--from-repo", type=Path)
+    parser.add_argument("--stdlib-dir", type=Path,
+                        help="Explicit development STD override; recorded without changing corbo.lock")
     parser.add_argument("--cc", default=os.environ.get("CC", "cc"))
     parser.add_argument("--cflags", default="-O1")
     parser.add_argument("--verify-self", action="store_true")
@@ -45,7 +47,21 @@ def main():
     # This is an owned install artifact, replaced to avoid obsolete STD modules.
     if stdlib.exists():
         shutil.rmtree(stdlib)
-    shutil.copytree(source / data["stdlib"], stdlib)
+    stdlib_source = args.stdlib_dir.resolve() if args.stdlib_dir else source / data["stdlib"]
+    if not stdlib_source.is_dir():
+        raise SystemExit("STD source directory does not exist: " + str(stdlib_source))
+    shutil.copytree(stdlib_source, stdlib)
+    stdlib_digest = hashlib.sha256()
+    for path in sorted(stdlib.rglob("*.crb")):
+        stdlib_digest.update(str(path.relative_to(stdlib)).encode())
+        stdlib_digest.update(b"\0")
+        stdlib_digest.update(path.read_bytes())
+    if args.stdlib_dir:
+        (shared / "development-stdlib.json").write_text(json.dumps({
+            "source": str(stdlib_source), "sha256": stdlib_digest.hexdigest(),
+            "base_corbo_revision": data["rev"]}, indent=2) + "\n")
+    else:
+        (shared / "development-stdlib.json").unlink(missing_ok=True)
     shutil.copy2(ROOT / "corbo.lock", shared / "corbo.lock")
     (prefix / "include").mkdir(exist_ok=True)
     shutil.copy2(source / data["runtime"] / "corbo_runtime.h", prefix / "include/corbo_runtime.h")
@@ -64,7 +80,8 @@ def main():
     emit(seed, first_c)
     compile_c(first_c, binary)
     report = {"corbo_revision": data["rev"], "seed": str(seed), "compiler": str(binary),
-              "c_sha256": hashlib.sha256(first_c.read_bytes()).hexdigest(), "self_verified": False}
+              "c_sha256": hashlib.sha256(first_c.read_bytes()).hexdigest(), "self_verified": False, "stdlib_source": str(stdlib_source),
+              "stdlib_override": bool(args.stdlib_dir), "stdlib_sha256": stdlib_digest.hexdigest()}
     if args.verify_self:
         second_c = build / "stage2.c"
         emit(binary, second_c)

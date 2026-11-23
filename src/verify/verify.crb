@@ -34,7 +34,7 @@ use bootstrap::tasks::{complete_task, dependent_handle, envelope_worker, apply_e
 use bootstrap::tasks::{in_async, task_value, pending_task, completion_type, copy_task_summary, task_survives, task_exit, verify_task, task_method, thread_block, check_native_worker, apply_native_contract, native_return_valid, native_entry, scalar_handle_type};
 use bootstrap::check_flow::{LoopEdge, record_loop_edge, check_if, check_while, loop_flow, check_match};
 use bootstrap::stored::{stored_loan_array, bind_stored_loan, stored_array_view, bind_stored_array_view, vector_reference_pool, vector_reference_owner, vector_reference_push};
-use bootstrap::places::{inline_array, is_scalar_array, scalar_array_type, check_array_literal, check_scalar_projection, array_ref_type, dereference_owned_projection, bind_slice, slice_length, slice_view, replace_record_item, slice_parameter};
+use bootstrap::places::{inline_array, is_scalar_array, scalar_array_type, check_array_literal, check_scalar_projection, array_ref_type, dereference_owned_projection, bind_slice, slice_length, slice_view, replace_aggregate_place, slice_parameter};
 use bootstrap::loan_contracts::loan_callee;
 use bootstrap::scalar::{verify_primitive, verify_literal, folded_integer, integer_width, is_integer, is_float, float_zero, exact_numeric_cast, check_constant_arithmetic, check_constant_shift, verify_literal_hint, scalar_hint};
 use bootstrap::declarations::{validate_region_capacities, nonzero_integer, known_constructor, verification_field, nominal_declaration};
@@ -823,12 +823,10 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
             }
         } else if kind == 21 && (nodes[child].kind == 17 || nodes[child].kind == 18) {
             if source[nodes[node].name_start] != 61 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
-            let base = graph[child].first_child;
-            if nodes[child].kind == 18 && nodes[base].kind != 7 && nodes[base].kind != 18 {
-                return (violation_site(1, start, 925), 0);
-            }
-            let record = if nodes[child].kind==18{replace_record_item(&source[0..source.len()], &nodes[0..nodes.len()],
-                &graph[0..graph.len()], &mut values[0..values.len()], copy(node), copy(child), graph[base].binding)}else{0};
+            // Resolve the complete place, including fields, indices and
+            // dereferences, rather than assuming the container is a binding.
+            let record = replace_aggregate_place(&source[0..source.len()], &nodes[0..nodes.len()],
+                &graph[0..graph.len()], &mut values[0..values.len()], copy(node), copy(child));
             if record < 0 {
                 if record == -9 { return (unsupported_statement(&nodes[0..nodes.len()], node), 0); }
                 return (0 - record, 0);

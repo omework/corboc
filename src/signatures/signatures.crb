@@ -678,6 +678,12 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 captures=marker;index=index+1;continue;
             }
             let root = values[capture].target;
+            // A static text view has no caller storage to reserve. Its bytes
+            // remain available independently of the future's lifetime.
+            if values[capture].ty == 2000138 && root == 0 {
+                index = index + 1;
+                continue;
+            }
             // A borrowed parameter is its own symbolic root. Moving its
             // descriptor into the future leaves the caller's referent live.
             let moved_parameter = nodes[root].kind == 3 && graph[capture].binding == root

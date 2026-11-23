@@ -28,6 +28,9 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         return scalar_tuple_if(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], expression, annotation);
     }
+    // An inferred tuple element carries a value-shape instead of a written
+    // annotation. Both supply the same positional contextual types.
+    let inferred = annotation != 0 && nodes[annotation].kind == 20;
     let mut member = graph[expression].first_child;
     let mut field: u64 = if annotation == 0 { 0 } else { graph[annotation].first_child };
     if nodes[expression].kind == 20 {
@@ -36,7 +39,7 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if annotation != 0 && field == 0 { return 0 - violation_site(1, nodes[expression].start, 713); }
             if nodes[member].kind == 7 && values[graph[member].binding].ty == 310 {
                 let owner = graph[member].binding;
-                if field != 0 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], field)
+                if field != 0 && nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], if inferred { values[field].origin_call } else { field })
                     != value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], owner) {
                     return 0 - violation_site(1, nodes[member].start, 714);
                 }
@@ -47,10 +50,10 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 member = graph[member].next_sibling;
                 continue;
             }
-            let ty = if field == 0 { 0 } else {
+            let ty = if field == 0 { 0 } else if inferred && values[field].ty <= 9 { values[field].ty } else {
                 verify_primitive(&source[0..source.len()], nodes[field].name_start, nodes[field].name_end)
             };
-            let declared=if field==0{0}else{annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field))};
+            let declared=if field==0{0}else if inferred{values[field].ty}else{annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field))};
             if declared==734 || (declared>=741 && declared<=749) || (declared>20 && declared<60) {
                 let actual=if declared==734 {
                     let record=record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field),false);
@@ -70,8 +73,8 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 exclusive=exclusive || values[member].writable;
                 if field!=0{field=graph[field].next_sibling;}member=graph[member].next_sibling;continue;
             }
-            if field != 0 && graph[field].first_child != 0 { return -9; }
-            let enumeration=if field!=0{nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field))}else{0};
+            if field != 0 && !inferred && graph[field].first_child != 0 { return -9; }
+            let enumeration=if field!=0{nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],if inferred { values[field].origin_call } else { copy(field) })}else{0};
             if enumeration!=0 && primitive_enum(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(enumeration)){
                 let checked=verify_expr(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(member),310,1);if checked<0{return checked;}
                 if value_enum(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(member))!=enumeration{return 0-violation_site(1,nodes[member].start,714);}
@@ -127,11 +130,11 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     while member != 0 && field != 0 {
         let marker=values[expression].loan_parent;
         let actual_member=if constructor_arguments(values[marker].ty){constructor_field_value(&graph[0..graph.len()],&values[0..values.len()],marker,copy(member))}else{copy(member)};
-        let expected=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field));
+        let expected=if inferred { values[field].ty } else { annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field)) };
         if expected==0{return -9;}
         if values[actual_member].ty!=expected{return 0-type_violation(nodes[expression].start,expected,values[actual_member].ty,719);}
         if expected==300 || expected==310 || expected==734 {
-            let annotation=if expected==734{graph[field].first_child}else{copy(field)};
+            let annotation=if inferred { values[field].origin_call } else if expected==734{graph[field].first_child}else{copy(field)};
             let nominal=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
             if nominal==0 || nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],values[actual_member].origin_call)!=nominal{return 0-violation_site(1, nodes[expression].start, 720);}
         }

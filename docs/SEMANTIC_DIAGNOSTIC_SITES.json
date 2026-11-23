@@ -917,7 +917,9 @@
     "function": "validate_standalone_declarations",
     "rule": "1",
     "condition": "if nodes[base].kind != 7",
-    "message": "expression does not satisfy the required declaration shape"
+    "message": "expression does not satisfy the required declaration shape",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 116,
@@ -925,7 +927,9 @@
     "function": "validate_standalone_declarations",
     "rule": "1",
     "condition": "if nested && (slice == 0 || source[nodes[graph[slice].first_child].start] != 91)",
-    "message": "expression does not satisfy the required declaration shape"
+    "message": "expression does not satisfy the required declaration shape",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 117,
@@ -933,7 +937,9 @@
     "function": "validate_standalone_declarations",
     "rule": "5",
     "condition": "if slice != 0 && !borrow_mutable(&source[nodes[annotation].start..nodes[slice].start])",
-    "message": "binding is immutable and cannot be modified"
+    "message": "binding is immutable and cannot be modified",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 118,
@@ -941,7 +947,9 @@
     "function": "validate_standalone_declarations",
     "rule": "5",
     "condition": "if slice == 0 && nodes[binding].kind == 3 && annotation != 0 && source[nodes[annotation].start] == 38                 && source[nodes[graph[annotation].first_child].start] == 91 && !graph[binding].mutable",
-    "message": "binding is immutable and cannot be modified"
+    "message": "binding is immutable and cannot be modified",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 119,
@@ -2909,7 +2917,9 @@
     "function": "replace_record_item",
     "rule": "5",
     "condition": "if !mutable",
-    "message": "binding is immutable and cannot be modified"
+    "message": "binding is immutable and cannot be modified",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 365,
@@ -7397,7 +7407,9 @@
     "function": "check_block_with_destination",
     "rule": "1",
     "condition": "if nodes[child].kind != 18 || (nodes[base].kind != 7 && nodes[base].kind != 18)",
-    "message": "expression does not satisfy the required verify type or value constraint"
+    "message": "expression does not satisfy the required verify type or value constraint",
+    "retired": true,
+    "retirement_reason": "Projection validation now uses the recursive place resolver and its root/permission checks."
   },
   {
     "id": 926,
@@ -8086,5 +8098,13 @@
     "rule": "3",
     "condition": "tuple item extraction through a borrowed source",
     "message": "cannot move a tuple item out of borrowed storage; borrow its fields instead"
+  },
+  {
+    "id": 1012,
+    "file": "src/verify/expressions.crb",
+    "function": "verify_expr",
+    "rule": "3",
+    "condition": "array field projection requested by value",
+    "message": "cannot move an array field out of its containing value; borrow it with ref() or mut_ref()"
   }
 ]

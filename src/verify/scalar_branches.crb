@@ -21,7 +21,10 @@ pub fn readonly_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], n
         let spelling = &source[nodes[node].name_start..nodes[node].name_end];
         if !spelling.content_eq(&len[..]) { return false; }
         let receiver = graph[node].first_child;
-        if nodes[receiver].kind != 7 || graph[receiver].next_sibling != 0 { return false; }
+        // A pure field/index/dereference receiver is the same read-only
+        // length query as a bare array name. Recursion below validates its
+        // receiver and index expressions; normal checking resolves the type.
+        if graph[receiver].next_sibling != 0 { return false; }
     }
     if kind == 15 && !readonly_scalar_call(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(node)) { return false; }

@@ -1,3 +1,4 @@
+use bootstrap::self_type::{has_self_type,expand_self_type};
 use bootstrap::semantic_diagnostics::begin as semantic_begin;
 use bootstrap::iteration::{has_iteration_syntax, expand_iteration_syntax};
 use bootstrap::diagnostics::{diagnostic_enable,diagnostic_enabled,diagnostic_begin,diagnostic_stage,diagnostic_stage_idle,diagnostic_linked,diagnostic_rewritten,diagnostic_parse_point,diagnostic_parse_expected,diagnostic_parse_root,diagnostic_parse_reset,diagnostic_parse_error,diagnostic_emit,diagnostic_finish};
@@ -2880,7 +2881,7 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         return parse_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()]);
     }
-    if check != 0 && has_iteration_syntax(&source[0..source.len()], &nodes[..node]) {
+    if check != 0 && (has_iteration_syntax(&source[0..source.len()], &nodes[..node]) || has_self_type(&source[0..source.len()],&tokens[0..tokens.len()])) {
         return parse_callables(&source[0..source.len()],check,env_call,package,visibility);
     }
     let generic = generic_recipes(&source[0..source.len()], &nodes[..node]);
@@ -3001,8 +3002,11 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
         diagnostic_stage(&current[..length]);
         let mut rewrite_status: i32 = 0;
         let mut rewrite_length: u64 = 0;
-        let (syntax_status, syntax_length) = expand_iteration_syntax(&current[..length], &syntax[..used], &graph[..used],
-            &tokens[..selected], &mut expanded[..], &mut offsets[..]);
+        let (self_status,self_length)=expand_self_type(&current[..length],&syntax[..used],&graph[..used],&tokens[..selected],&mut expanded[..],&mut offsets[..]);
+        if self_status!=0{return self_status;}
+        let no_error:i32=0;
+        let (syntax_status, syntax_length) = if self_length!=0{(no_error,self_length)}else{expand_iteration_syntax(&current[..length], &syntax[..used], &graph[..used],
+            &tokens[..selected], &mut expanded[..], &mut offsets[..])};
         if syntax_status != 0 { return syntax_status; }
         rewrite_length = syntax_length;
         if rewrite_length == 0 && (generic || factory != 0 || has_pipeline(&current[..length], &tokens[..selected])) {

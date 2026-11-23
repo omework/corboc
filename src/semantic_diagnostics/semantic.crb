@@ -1052,7 +1052,8 @@ static const char *const reasons[]={
 "tuple fields require a decimal integer index after the dot",
 "cannot destructure a tuple reference that is no longer available",
 "cannot destructure a tuple reference whose target is no longer valid",
-"cannot move a tuple item out of borrowed storage; borrow its fields instead"
+"cannot move a tuple item out of borrowed storage; borrow its fields instead",
+"cannot move an array field out of its containing value; borrow it with ref() or mut_ref()"
 };
 // END FAILURE SITES
 if(op==0){
@@ -1180,7 +1181,11 @@ if(op==0){
         }
         if((rule==4||rule==7)&&sd.invalid_root&&SD_VALUE(sd.invalid_root)&&SD_VALID(sd.invalid_root))binding=sd.invalid_root;
         if(rule==1&&SD_VALID(node)&&sd.nodes[node].kind==7&&!binding)reason="cannot find this value in the current scope";
-        else if(rule==1&&binding&&SD_VALUE(binding)&&sd.values[binding].state==0)reason="use of a value that has not been initialized";
+        // A rejected projection can point at an as-yet-unchecked symbolic
+        // parameter. State zero alone is not evidence of a source-level read
+        // before initialization: only an initialization failure site says so.
+        else if(rule==1&&binding&&SD_VALUE(binding)&&sd.values[binding].state==0
+            &&strstr(reason,"initialized"))reason="use of a value that has not been initialized";
         else if(rule==6&&binding&&SD_VALUE(binding)){
             if(sd.values[binding].state==3)reason=sd.history[binding].explicit_drop?"use of a value after it was explicitly destroyed":"use of a value after it was consumed";
             else if(sd.values[binding].state==2)reason="use of a value after its ownership was moved";

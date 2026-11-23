@@ -48,7 +48,8 @@ def audit_sites():
             writes+=1
         if path.parent.name!='verify' or path.name!='diagnostics.crb':
             assert not re.search(r'\b(?:violation|report_violation)\s*\(',text),path
-    assert found==set(range(1,len(catalog)+1)),sorted(set(range(1,len(catalog)+1))-found)
+    active={entry['id'] for entry in catalog if not entry.get('retired',False)}
+    assert found==active,{'missing':sorted(active-found),'unexpected':sorted(found-active)}
     return {'failure_sites':len(catalog),'observed_state_writes':writes,'status':'passed'}
 
 

@@ -1,3 +1,4 @@
+use bootstrap::package_io::create_file;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Creates an isolated package scaffold without overwriting an existing path.
 use std::io::File;
@@ -34,7 +35,7 @@ pub fn usage() -> i32 {
 
 /// Writes a complete file, retrying partial writes and closing on scope exit.
 fn write_file(path: &[u8], bytes: &[u8]) -> bool {
-    let mut file = match File::create(path, FileMode::WRITE_ONLY, FilePerm.DefaultMode) {
+    let mut file = match create_file(&path[0..path.len()], FileMode::WRITE_ONLY | FileMode::CREATE_NEW, FilePerm.DefaultMode) {
         Ok(file) => { file },
         Err(_error) => { return false; },
     };

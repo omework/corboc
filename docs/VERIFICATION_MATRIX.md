@@ -332,3 +332,24 @@ Corbo ABI witnesses with three concurrent allocators/read sampling. Fatal UBSan
 is enabled on host tests. Target API execution: macOS ARM64/x86-64, Linux x86-64,
 Windows x86-64 under Wine; Windows ARM64 compile-only. Independent fields are
 samples of adjacent instants, not a transactional snapshot. [Report](MEMORY_METRICS_CYCLE.md).
+
+## Self aliases and File text-path integration
+
+Four native alias executions and two specific parser refusals pass. File API
+sync/async probes execute on macOS ARM64/x86-64, Linux x86-64 and Windows x86-64
+under Wine; Windows ARM64 compiles/links only. Host positioned-I/O regressions
+pass under fatal UBSan. The compiler rebuild and package new/check pass.
+Exact Windows ACLs are not validated in Wine; default permissions are used for
+that target. No frozen Rust frontend or general rule audit was replayed.
+See [the report](SELF_FILE_CYCLE.md).
+
+## Recursive places and projected aggregate writes
+
+N1/N3/N5: eleven accepted projected-write programs execute under fatal UBSan;
+one dynamic bounds witness traps before access and five invalid programs reject.
+The existing tuple-iteration suite passes six executions and seven refusals.
+Recursive root, permission and shape checking replaces early AST-shape guesses.
+Plain-value replacement uses existing content-access checks; ownership-bearing
+replacement rules are not bypassed. Installed compiler smoke checks pass.
+Host: macOS ARM64; target ABI/runtime unchanged. No platform matrix replay.
+[Focused report](PROJECTED_WRITES_CYCLE.md).

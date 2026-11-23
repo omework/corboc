@@ -422,14 +422,27 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
         }
         let size: [u8;3] = [108,101,110];
         if !word(&source[0..source.len()], &nodes[0..nodes.len()], copy(node), &size[..])
-            || nodes[child].kind != 7 || graph[child].next_sibling != 0 { return -1; }
+            || graph[child].next_sibling != 0 { return -1; }
         let binding = graph[child].binding;
-        let shape = types[binding];
+        let projected = nodes[child].kind != 7;
+        let shape = if projected {
+            if !prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &mut types[0..types.len()], ctx, copy(child)) { return -1; }
+            member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                &types[0..types.len()], copy(child), false)
+        } else { types[binding] };
         if shape < 10000 { return -1; }
         if emit {
             declaration(7, node); character(61);
             if wide_array(copy(shape)){number(array_length(shape));}
-            else if shape >= 2000000 { local(binding); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
+            else if shape >= 2000000 {
+                if projected {
+                    let resolved = member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                        &types[0..types.len()], copy(child), true);
+                    drop(resolved);
+                } else { local(binding); }
+                { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); }
+            }
             else { number(unsigned((array_shape(shape) - 10000) / 100)); }
             { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
         }

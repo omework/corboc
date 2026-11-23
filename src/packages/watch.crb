@@ -1,3 +1,4 @@
+use bootstrap::package_io::open_file;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Content snapshots for project watching; watch local dependency inputs without fetching Git checkouts.
 use bootstrap::package_io::read_source;
@@ -22,7 +23,7 @@ fn watched_file(name: &[u8]) -> bool {
 
 /// Hashes a path and full contents. Streaming reads keep the working buffer bounded.
 fn watched_digest(path: &[u8], digest: &mut [u8]) -> i32 {
-    let mut file = match File::open(&path[0..path.len()], FileMode::read_only()) {
+    let mut file = match open_file(&path[0..path.len()], FileMode::read_only()) {
         Ok(file) => { file }, Err(error) => { drop(error); return 11; },
     };
     let mut hash = Sha256::new();

@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Resolve Self to the enclosing impl target before generic specialization.
+use bootstrap::model::{AstNode, StaticNode, Token, token_at};
+use bootstrap::packages::append;
+use bootstrap::diagnostics::diagnostic_emit;
+
+/// Self is a scoped type alias; lowercase self remains the receiver binding.
+fn self_word(source: &[u8], start: u64, end: u64) -> bool {
+    let word = "Self";
+    let bytes = word.as_bytes();
+    let spelling = &source[start..end];
+    spelling.content_eq(bytes)
+}
+
+pub fn has_self_type(source: &[u8], tokens: &[Token]) -> bool {
+    let mut token: usize = 0;
+    while token < tokens.len() && tokens[token].kind != 0 {
+        if tokens[token].kind == 1 && self_word(&source[0..source.len()], tokens[token].start, tokens[token].end) { return true; }
+        token += 1;
+    }
+    false
+}
+
+/// Rewrite one alias and retain the source mapping used by all normalizers.
+pub fn expand_self_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    let mut token: u64 = 0;
+    while token < tokens.len() as u64 && tokens[token].kind != 0 {
+        if tokens[token].kind == 1 && self_word(&source[0..source.len()], tokens[token].start, tokens[token].end) { break; }
+        token += 1;
+    }
+    if token == tokens.len() as u64 || tokens[token].kind == 0 { return (0, 0); }
+    let start = tokens[token].start;
+    let end = tokens[token].end;
+    let mut owner: u64 = 0;
+    let mut node: u64 = 1;
+    let mut typed = false;
+    while node < nodes.len() as u64 {
+        if nodes[node].start <= start && end <= nodes[node].end {
+            if nodes[node].kind == 49 { owner = node; }
+            if nodes[node].kind == 4 { typed = true; }
+        }
+        node += 1;
+    }
+    if owner == 0 || self_word(&source[0..source.len()], nodes[owner].name_start, nodes[owner].name_end) {
+        drop(diagnostic_emit(2, 111, start));
+        return (7, 0);
+    }
+    if tokens[token + 1].kind == 23 {
+        drop(diagnostic_emit(2, 112, start));
+        return (7, 0);
+    }
+    let first = token_at(&tokens[0..tokens.len()], nodes[owner].name_start);
+    let mut after = first + 1;
+    while tokens[after].kind == 43 { after += 2; }
+    let mut target_end = tokens[after - 1].end;
+    // A constructor literal infers its arguments as usual; type positions and
+    // associated calls retain the enclosing impl's explicit generic arguments.
+    if (typed || tokens[token + 1].kind == 43) && tokens[after].kind == 23 {
+        let mut depth: u64 = 0;
+        loop {
+            if tokens[after].kind == 23 { depth += 1; }
+            if tokens[after].kind == 24 { depth -= 1; }
+            target_end = tokens[after].end;
+            after += 1;
+            if depth == 0 { break; }
+            if tokens[after].kind == 0 { return (7, 0); }
+        }
+    }
+    let target_start = tokens[first].start;
+    let replacement = target_end - target_start;
+    let length = source.len() as u64 - (end - start) + replacement;
+    if length >= output.len() as u64 { return (4, 0); }
+    let prefix = append(&mut output[0..output.len()], 0, &source[0..start]);
+    let next = append(&mut output[0..output.len()], prefix, &source[target_start..target_end]);
+    drop(append(&mut output[0..output.len()], next, &source[end..source.len()]));
+    let mut at: u64 = 0;
+    while at <= source.len() as u64 && at < offsets.len() as u64 {
+        offsets[at] = if at <= start { at } else if at < end { start }
+            else { at - (end - start) + replacement };
+        at += 1;
+    }
+    (0, length)
+}

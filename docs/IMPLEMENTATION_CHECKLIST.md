@@ -392,3 +392,27 @@ release remain unchanged; the development compiler is `build/thread-transfer/cor
 Development compiler: `build/memory-metrics/corboc`. The installed release
 remains unchanged. The STD/runtime source lock now pins the
 committed metrics implementation. [Integration report](MEMORY_METRICS_CYCLE.md).
+
+## Self and text-path File integration
+
+- [x] Resolve impl-scoped Self, including generic arguments, with mapped diagnostics.
+- [x] Execute four alias programs and reject two invalid alias forms.
+- [x] Adapt compiler byte paths to the public string-path File API.
+- [x] Retain non-static async text dependencies; accept static text captures.
+- [x] Rebuild corboc against the explicit development STD override.
+- [x] Complete target validation and install the rebuilt compiler with matching STD.
+
+See [the focused report](SELF_FILE_CYCLE.md).
+
+## Recursive projected writes
+
+- [x] Remove binding-only declaration and assignment guards.
+- [x] Preserve roots, permissions, bounds and shapes through projected writes.
+- [x] Replace tuples/records through fields and aliases with contextual typing.
+- [x] Resolve projected `.len()` in checking, conditions and lowering.
+- [x] Distinguish field moves from borrows and remove false initialization claims.
+- [x] Execute eleven accepted programs and one runtime bounds trap under UBSan.
+- [x] Check five refusals and the related tuple-iteration regressions.
+- [x] Rebuild/install corboc and retain stable diagnostic identities.
+
+[Report and scope](PROJECTED_WRITES_CYCLE.md).
