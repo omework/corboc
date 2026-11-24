@@ -1,0 +1,37 @@
+// The target index is evaluated once, before the RHS suspends.
+fn index(calls: &mut i64) -> usize {
+    *calls += 1;
+    0
+}
+
+async fn delayed(fail: bool) -> Result<u64, i64> {
+    yield;
+    if fail { Err(7) } else { Ok(2) }
+}
+
+async fn add(values: &mut [u64], calls: &mut i64, fail: bool) -> Result<u64, i64> {
+    values[index(calls)] += delayed(fail).await?;
+    Ok(values[0])
+}
+
+async fn scenario(fail: bool) -> Result<u64, i64> {
+    let mut values: [u64; 1] = [40];
+    let mut calls: i64 = 0;
+    let result = add(&mut values[..], &mut calls, fail).await;
+    print(calls);
+    print(values[0]);
+    result
+}
+
+fn main() {
+    let success = runtime::spawn(scenario(false));
+    match success.join() {
+        Ok(result) => { match result { Ok(value) => { print(value); }, Err(error) => { print(error); } } },
+        Err(_) => { print(-1); }
+    }
+    let failure = runtime::spawn(scenario(true));
+    match failure.join() {
+        Ok(result) => { match result { Ok(value) => { print(value); }, Err(error) => { print(error); } } },
+        Err(_) => { print(-1); }
+    }
+}

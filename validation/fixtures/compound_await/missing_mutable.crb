@@ -1,0 +1,5 @@
+use std::encoding::binary;
+fn main() {
+    let mut buffer: [u8; 2] = [0; 2];
+    binary::write_u16_be(42, buffer[..]);
+}

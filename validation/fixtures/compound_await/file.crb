@@ -1,0 +1,31 @@
+use std::io::asyn::{File, FileError};
+use std::io::{FileMode, FilePerm};
+use std::sync::asyn::Mutex;
+
+struct Tracker { cursor: u64 }
+struct WAL { tracker: Mutex<Tracker>, file: File }
+
+impl WAL {
+    async fn write(&mut self) -> Result<usize, FileError> {
+        let mut guard = self.tracker.lock().await;
+        let data: [u8; 2] = [65, 66];
+        let mut cursor = (*guard).cursor;
+        cursor += self.file.write_at(&data[..], cursor).await?;
+        (*guard).cursor = cursor;
+        Ok(cursor as usize)
+    }
+}
+
+async fn run() -> Result<usize, FileError> {
+    let file = File::create("/tmp/corboc-compound-await-file", FileMode::READ | FileMode::WRITE | FileMode::TRUNCATE, FilePerm.DefaultMode).await?;
+    let mut wal = WAL { tracker: Mutex::new(Tracker { cursor: 0 }), file: file };
+    wal.write().await
+}
+
+fn main() {
+    let execution = runtime::spawn(run());
+    match execution.join() {
+        Ok(result) => { match result { Ok(written) => { print(written); }, Err(_) => { print(-1); } } },
+        Err(_) => { print(-2); }
+    }
+}

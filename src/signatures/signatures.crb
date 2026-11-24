@@ -1,3 +1,4 @@
+use bootstrap::semantic_diagnostics::slice_argument as semantic_slice_argument;
 use bootstrap::loans::{disjoint_dependencies, place_projection};
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
@@ -115,6 +116,19 @@ pub fn move_slice_argument(nodes: &[AstNode], graph: &[StaticNode], values: &mut
 
 pub fn check_slice_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], input: u64, slice: i64, element: u64, exclusive: bool) -> i64 {
+    // An unborrowed range is not an unsupported operand: this signature
+    // requires an explicit shared or mutable slice reference.
+    let mut expression = input;
+    while nodes[expression].kind == 19 { expression = graph[expression].first_child; }
+    if nodes[expression].kind == 18 {
+        let base = graph[expression].first_child;
+        let index = graph[base].next_sibling;
+        if nodes[index].kind == 46 {
+            semantic_slice_argument(input, slice, element);
+            if exclusive { return 0 - violation_site(1, nodes[input].start, 1019); }
+            return 0 - violation_site(1, nodes[input].start, 1018);
+        }
+    }
     let checked = if nodes[input].kind == 7 {
         move_slice_argument(&nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(input), copy(slice))

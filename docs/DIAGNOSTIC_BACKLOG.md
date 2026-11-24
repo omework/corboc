@@ -2,14 +2,14 @@
 
 ## Borrow required for a slice argument
 
-Status: recorded; not implemented. This is diagnostic work, not a language-rule
-or implicit-borrowing change.
+Status: implemented. This is diagnostic work, not a language-rule
+or implicit-borrowing change. See [the focused report](COMPOUND_AWAIT_DIAGNOSTICS_CYCLE.md).
 
-Given an API parameter `output: &mut [u8]`, a call with `buf[..]` currently
-produces E0009, claiming an unsupported operand/dependency form. The same call
+Given an API parameter `output: &mut [u8]`, a call with `buf[..]` previously
+produced E0009, claiming an unsupported operand/dependency form. The same call
 with `&mut buf[..]` is accepted, including when its Result is discarded.
 
-Expected diagnostic:
+Implemented diagnostic:
 
 - Point at the buffer argument, not the beginning of the complete statement.
 - Explain that the argument requires an explicit mutable borrow.

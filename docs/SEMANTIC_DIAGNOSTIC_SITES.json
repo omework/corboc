@@ -8146,5 +8146,21 @@
     "rule": "4",
     "condition": "expression block result depends on local storage that cannot survive",
     "message": "expression block result retains a reference or resource that does not survive the block"
+  },
+  {
+    "id": 1018,
+    "file": "src/signatures/signatures.crb",
+    "function": "check_slice_argument",
+    "rule": "1",
+    "condition": "unborrowed range supplied to a shared slice parameter",
+    "message": "slice argument requires an explicit shared borrow"
+  },
+  {
+    "id": 1019,
+    "file": "src/signatures/signatures.crb",
+    "function": "check_slice_argument",
+    "rule": "1",
+    "condition": "unborrowed range supplied to a mutable slice parameter",
+    "message": "slice argument requires an explicit mutable borrow"
   }
 ]

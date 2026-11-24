@@ -503,7 +503,9 @@ See [the focused report](SELF_FILE_CYCLE.md).
 
 ## Recorded diagnostic work
 
-- [ ] Report missing explicit slice borrows as argument/type diagnostics, with expected/actual forms and a targeted suggestion; no implicit borrowing.
+- [x] Report missing explicit slice borrows as argument/type diagnostics, with expected/actual forms and a targeted suggestion; no implicit borrowing.
+
+[Cause and focused validation](COMPOUND_AWAIT_DIAGNOSTICS_CYCLE.md).
 
 [Recorded behavior and separate sibling-field analysis finding](DIAGNOSTIC_BACKLOG.md).
 
@@ -517,3 +519,10 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Validate the actual async File call across the task-launch boundary and install the final rebuild at the existing PATH.
 
 [Implementation and validation](FIELD_DEPENDENCIES_CYCLE.md).
+
+## Compound assignment with awaited propagation
+
+- [x] Separate valid compound await propagation from unborrowed slice arguments.
+- [x] Execute real async File and once-evaluated indexed-target observations, including early error propagation, with fatal UBSan.
+- [x] Add targeted shared/mutable slice argument failures instead of E0009.
+- [x] Validate all four focused observations and semantic-diagnostic regressions; install the rebuilt compiler at the existing PATH.

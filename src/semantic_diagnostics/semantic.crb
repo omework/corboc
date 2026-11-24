@@ -27,6 +27,7 @@ static struct {
     struct {uint64_t node;int64_t expected,mode;const SDValue *previous;size_t count;} frames[SD_DEPTH];
     size_t depth,overflow;uint64_t statement,site,override_at,conflict,invalid_root,missing_field;
     int64_t expected,actual;
+    uint64_t argument,argument_element;int64_t argument_slice;
     struct {uint64_t move,drop,borrow,prior_move;int64_t state;uint64_t target;bool moved,dropped,borrowed,explicit_drop;} history[SD_LIMIT];
 } sd;
 int op=(int)${op};uint64_t a=${a};int64_t b=${b},c=${c};
@@ -37,6 +38,8 @@ uint64_t *labels=(${related}).data;size_t label_capacity=(${related}).len,label_
 #define SD_APPEND(s) do{const char *part=(s);size_t size=strlen(part);if(pos<capacity){size_t room=capacity-pos;if(size>=room)size=room-1;memcpy(output+pos,part,size);pos+=size;output[pos]=0;}}while(0)
 #define SD_NUMBER(n) do{char number[32];snprintf(number,sizeof number,"%llu",(unsigned long long)(n));SD_APPEND(number);}while(0)
 #define SD_NAME(start,end) do{SD_APPEND("\037");SD_NUMBER(start);SD_APPEND(":");SD_NUMBER(end);SD_APPEND("\037");}while(0)
+// Preserve punctuation while mapping identifier tokens back from generated source.
+#define SD_SOURCE(start,end) do{uint64_t sd_span_i=(start),sd_span_end=(end);while(sd_span_i<sd_span_end&&sd_span_i<sd.length){uint8_t ch=sd.source[sd_span_i];if((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||ch=='_'){uint64_t sd_span_start=sd_span_i++;while(sd_span_i<sd_span_end&&sd_span_i<sd.length){ch=sd.source[sd_span_i];if(!((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='_'))break;++sd_span_i;}SD_NAME(sd_span_start,sd_span_i);}else{char one[2]={(char)ch,0};SD_APPEND(one);++sd_span_i;}}}while(0)
 #define SD_LABEL(point,kind) do{if(label_count+2<=label_capacity){labels[label_count++]=(point);labels[label_count++]=(kind);}}while(0)
 #define SD_PRIMITIVE(t) ((t)==1?"i32":(t)==2?"i64":(t)==3?"bool":(t)==4?"u8":(t)==5?"u16":(t)==6?"u32":(t)==7?"u64":(t)==8?"f32":(t)==9?"f64":(t)==10?"()":NULL)
 // BEGIN FAILURE SITES
@@ -1058,11 +1061,13 @@ static const char *const reasons[]={
 "as requires numeric primitive types; bool and references are not numeric conversions",
 "dereference requires ref(&self) -> &T for reading or mut_ref(&mut self) -> &mut T for writing, with the same target type and no additional arguments",
 "expression block result does not match the expected type",
-"expression block result retains a reference or resource that does not survive the block"
+"expression block result retains a reference or resource that does not survive the block",
+    "slice argument requires an explicit shared borrow",
+    "slice argument requires an explicit mutable borrow"
 };
 // END FAILURE SITES
 if(op==0){
-    sd.enabled=b!=0;sd.depth=sd.overflow=0;sd.statement=sd.site=sd.conflict=sd.invalid_root=sd.missing_field=0;sd.expected=sd.actual=0;sd.override_at=UINT64_MAX;
+    sd.enabled=b!=0;sd.depth=sd.overflow=0;sd.statement=sd.site=sd.conflict=sd.invalid_root=sd.missing_field=0;sd.expected=sd.actual=0;sd.override_at=UINT64_MAX;sd.argument=0;sd.argument_element=0;sd.argument_slice=0;
     sd.source=(${source}).data;sd.length=(${source}).len;sd.nodes=(const SDNode*)(${nodes}).data;
     sd.graph=(const SDGraph*)(${graph}).data;sd.values=(const SDValue*)(${values}).data;
     sd.count=(${nodes}).len;sd.vcount=(${values}).len;
@@ -1120,6 +1125,7 @@ if(op==0){
     else if(op==8){sd.conflict=a;}
     else if(op==10){if(!sd.invalid_root)sd.invalid_root=a;}
     else if(op==12){sd.missing_field=a;}
+    else if(op==14){sd.argument=a;sd.argument_slice=b;sd.argument_element=(uint64_t)c;}
     else if(op==9&&capacity){
         uint64_t point=a,node=0;int rule=(int)b;
         // Prefer the active expression, then the smallest source span. This
@@ -1129,6 +1135,7 @@ if(op==0){
             uint64_t width=UINT64_MAX;
             for(uint64_t i=1;i<sd.count;++i)if(sd.nodes[i].start<=point&&point<sd.nodes[i].end&&sd.nodes[i].end-sd.nodes[i].start<width){node=i;width=sd.nodes[i].end-sd.nodes[i].start;}
         }
+        if((sd.site==1018||sd.site==1019)&&sd.argument&&SD_VALID(sd.argument))node=sd.argument;
         uint64_t binding=SD_VALID(node)?sd.graph[node].binding:0;
         uint64_t expression=node;
         if(SD_VALID(node)&&(sd.nodes[node].kind==8||sd.nodes[node].kind==10||sd.nodes[node].kind==6))expression=sd.graph[node].first_child;
@@ -1221,12 +1228,22 @@ if(op==0){
             if(SD_VALID(owner)){SD_APPEND(" when constructing '");SD_NAME(sd.nodes[owner].name_start,sd.nodes[owner].name_end);SD_APPEND("'");}
             SD_LABEL(sd.nodes[field].start,13);
         }else SD_APPEND(reason);
-        uint64_t named=(sd.site==722||sd.site==295||sd.site==416||sd.site==687)?0:(binding?binding:node);
+        uint64_t named=(sd.site==1018||sd.site==1019||sd.site==722||sd.site==295||sd.site==416||sd.site==687)?0:(binding?binding:node);
         if(SD_VALID(named)&&sd.nodes[named].name_end>sd.nodes[named].name_start&&
             (sd.nodes[named].kind==7||sd.nodes[named].kind==5||sd.nodes[named].kind==3||sd.nodes[named].kind==17)){
             SD_APPEND(" '");SD_NAME(sd.nodes[named].name_start,sd.nodes[named].name_end);SD_APPEND("'");
         }
-        if(rule==1&&sd.site!=722&&sd.site!=1007&&sd.site!=1008&&(expected>0||expected_syntax)&&(actual>0||sd.override_at==point)){
+        if(sd.site==1018||sd.site==1019){
+            SD_APPEND("\n       = expected: ");
+            SD_APPEND(sd.site==1019?"&mut [":"&[");
+            if(sd.argument_element&&SD_VALID(sd.argument_element))SD_SOURCE(sd.nodes[sd.argument_element].start,sd.nodes[sd.argument_element].end);
+            else {const char *element=SD_PRIMITIVE(sd.argument_slice-740);SD_APPEND(element?element:"T");}
+            SD_APPEND("]");
+            SD_APPEND("\n       = actual: unborrowed slice expression");
+            SD_APPEND(sd.site==1019?"\n       = help: pass an explicit mutable borrow: &mut ":"\n       = help: pass an explicit shared borrow: &");
+            if(SD_VALID(expression))SD_SOURCE(sd.nodes[expression].start,sd.nodes[expression].end);
+        }
+        if(rule==1&&sd.site!=1018&&sd.site!=1019&&sd.site!=722&&sd.site!=1007&&sd.site!=1008&&(expected>0||expected_syntax)&&(actual>0||sd.override_at==point)){
             SD_APPEND("\n       = expected: ");
             // Prefer signature/annotation spelling over compact checker codes.
             // A bounded work stack handles nested references and containers.
@@ -1344,6 +1361,7 @@ if(op==0){
 #undef SD_APPEND
 #undef SD_NUMBER
 #undef SD_NAME
+#undef SD_SOURCE
 #undef SD_LABEL
 #undef SD_PRIMITIVE
     } }
@@ -1391,3 +1409,6 @@ pub fn invalid_root(reference:u64){drop(empty(10,reference,0,0));}
 
 /// Retain a missing member before constructor checking discards its declaration.
 pub fn missing_field(field:u64){drop(empty(12,field,0,0));}
+
+/// Preserve the exact failing range and slice element; the active frame can be the containing call.
+pub fn slice_argument(node:u64,slice:i64,element:u64){drop(empty(14,node,slice,element as i64));}

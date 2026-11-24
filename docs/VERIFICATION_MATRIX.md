@@ -424,3 +424,12 @@ prototype again rejects overlapping active mutable borrows while permitting
 proven disjoint fields and last-use release. Focused observations, directly
 related regressions and platform scope are recorded in
 [the field-dependency report](FIELD_DEPENDENCIES_CYCLE.md).
+
+## Explicit slice arguments in compound await propagation
+
+N1/N3 retain explicit slice borrowing. An unborrowed range supplied to a slice
+parameter is a source-level mismatch, not an unsupported compiler construct.
+The diagnostic points at that argument, preserves the expected signature and
+suggests the explicit shared or mutable borrow. Compound assignments across
+`.await?` retain their existing once-evaluated place and early-return behavior.
+[Focused execution evidence and limitations](COMPOUND_AWAIT_DIAGNOSTICS_CYCLE.md).
