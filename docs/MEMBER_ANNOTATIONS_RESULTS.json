@@ -1,0 +1,72 @@
+[
+  {
+    "case": "associated_configuration",
+    "status": "executed, fatal UBSan",
+    "output": "4\n6\n9\n9\n11\n11\n12\n11\n9\n4\n6\n"
+  },
+  {
+    "case": "generic_members",
+    "status": "executed, fatal UBSan",
+    "output": "21\ntrue\n42\nfalse\n7\n8\n"
+  },
+  {
+    "case": "method_lock_contracts",
+    "status": "executed, fatal UBSan",
+    "output": "3\n5\n"
+  },
+  {
+    "case": "conditional_members",
+    "status": "executed, fatal UBSan",
+    "output": "3\n"
+  },
+  {
+    "case": "branch_members",
+    "status": "executed, fatal UBSan",
+    "output": "8\n9\n"
+  },
+  {
+    "case": "async_generic_members",
+    "status": "executed, fatal UBSan",
+    "output": "49\n"
+  },
+  {
+    "case": "imported_members",
+    "status": "executed, fatal UBSan",
+    "output": "9\n42\n4\n"
+  },
+  {
+    "case": "configurable_method",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/configurable_method.crb:1:28: error[E0007]: syntax error: invalid syntax near this token\n     1 | struct X { #(configurable) fn bad() {} } fn main() {}\n       |                            ^~\n       = found: `fn`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "lock_constant",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/lock_constant.crb:1:35: error[E0113]: syntax error: expected a function name after fn\n     1 | struct X { #(lock: on=self) const BAD: i64=1; } fn main() {}\n       |                                   ^~~\n       = found: `BAD`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "type_constant",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/type_constant.crb:1:32: error[E0113]: syntax error: expected a function name after fn\n     1 | enum X { End; #(type: T) const BAD: i64=1; } fn main() {}\n       |                                ^~~\n       = found: `BAD`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "configurable_field",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/configurable_field.crb:1:28: error[E0007]: syntax error: invalid syntax near this token\n     1 | struct X { #(configurable) value: i64; } fn main() {}\n       |                            ^~~~~\n       = found: `value`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "unknown_member_annotation",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/unknown_member_annotation.crb:1:15: error[E0007]: syntax error: invalid syntax near this token\n     1 | enum X { End; #(unknown) fn bad() {} } fn main() {}\n       |               ^\n       = found: `#`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "unmarked_override",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/unmarked_override.crb:1:62: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | struct X { pub const LIMIT: i64=1; } fn main() { #(override: X::LIMIT=2) { print(X::LIMIT); } }\n       |                                                              ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "out_of_range_override",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-u625isbm/out_of_range_override.crb:1:89: error[N1]: rule violation: literal cannot be represented by the required type\n     1 | enum X { End; #(configurable) pub const LIMIT: u8=1; } fn main() { #(override: X::LIMIT=256) { print(X::LIMIT); } }\n       |                                                                                         ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

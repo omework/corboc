@@ -1,3 +1,4 @@
+use bootstrap::doc_server::{serve as serve_docs, usage as doc_usage, port as doc_port};
 use bootstrap::definition_syntax::{definition_input, has_typed_receivers, expand_typed_receivers};
 use bootstrap::packages::append;
 use bootstrap::self_type::{has_self_type,expand_self_type};
@@ -2014,17 +2015,27 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) u64 {
             if tokens[index].kind != 4 { diagnostic_parse_point(tokens[index].start); return 0; }
             index = index + 1;
             while tokens[index].kind != 5 {
+                // Associated constants use the same marker and source span as
+                // package constants. Keep it for configuration specialization.
+                let member_start = tokens[index].start;
+                let configurable_member = tokens[index].kind == 71 && tokens[index + 2].annotation == 31;
+                if configurable_member {
+                    if tokens[index + 1].kind != 2 || tokens[index + 3].kind != 3 {
+                        diagnostic_parse_point(tokens[index].start); return 0;
+                    }
+                    index += 4;
+                }
                 if tokens[index].kind == 81 || (tokens[index].kind == 57 && tokens[index + 1].kind == 81) {
                     let member_public = tokens[index].kind == 57;
                     if member_public { index += 1; }
-                    let start = tokens[index].start;
                     let (next, used) = parse_constant(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                        copy(index), copy(count), copy(implementation), start, member_public);
+                        copy(index), copy(count), copy(implementation), member_start, member_public);
                     if next == 0 { diagnostic_parse_point(tokens[index].start); return 0; }
                     index = next;
                     count = used;
                     continue;
                 }
+                if configurable_member { diagnostic_parse_point(tokens[index].start); return 0; }
                 let method = copy(count);
                 let method_start = tokens[index].start;
                 count = count + 1;
@@ -2417,6 +2428,31 @@ fn main() i32 {
             if arguments.len() != 0 {
                 let command = arguments[0];
                 let bytes = command.as_bytes();
+                let doc_flag = "doc";
+                let doc_bytes = doc_flag.as_bytes();
+                if bytes.content_eq(doc_bytes) {
+                    let mut port: u16 = 0;
+                    let mut launch = true;
+                    let mut at: usize = 1;
+                    while at < arguments.len() {
+                        let option = arguments[at];
+                        let option_bytes = option.as_bytes();
+                        let port_flag = "--port"; let no_open = "--no-open";
+                        let port_bytes = port_flag.as_bytes(); let no_open_bytes = no_open.as_bytes();
+                        if option_bytes.content_eq(port_bytes) {
+                            at += 1;
+                            if at >= arguments.len() { return doc_usage(); }
+                            let value = arguments[at];
+                            let number = doc_port(value);
+                            if number < 0 { return doc_usage(); }
+                            port = number as u16;
+                        } else if option_bytes.content_eq(no_open_bytes) {
+                            launch = false;
+                        } else { return doc_usage(); }
+                        at += 1;
+                    }
+                    return serve_docs(port, launch);
+                }
                 let new_flag: [u8; 3] = [110,101,119];
                 if bytes.content_eq(&new_flag[..]) {
                     if arguments.len() != 2 { return new_usage(); }

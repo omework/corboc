@@ -32,7 +32,7 @@ pub fn message(text: &str) {
 }
 
 /// Resolves the bundled STD using the same executable-relative layout as build.
-pub fn installed_stdlib(output: &mut [u8]) usize {
+fn installed_resource(output: &mut [u8], suffix: &str) usize {
     let length = executable_path(&mut output[0..output.len()]);
     if length == 0 { return 0; }
     let mut last: usize = 0;
@@ -41,11 +41,20 @@ pub fn installed_stdlib(output: &mut [u8]) usize {
         if output[at] == 47 || output[at] == 92 { last = at + 1; }
         at += 1;
     }
-    let suffix = "../share/corbo/stdlib/src";
     let bytes = suffix.as_bytes();
     if last == 0 || last + bytes.len() >= output.len() { return 0; }
     let mut index: usize = 0;
     while index < bytes.len() { output[last + index] = bytes[index]; index += 1; }
     output[last + index] = 0;
     last + index
+}
+
+/// Resolves the bundled STD using the established executable-relative layout.
+pub fn installed_stdlib(output: &mut [u8]) usize {
+    installed_resource(output, "../share/corbo/stdlib/src")
+}
+
+/// Resolves static documentation assets installed beside the STD.
+pub fn installed_docs(output: &mut [u8]) usize {
+    installed_resource(output, "../share/corbo/docs")
 }

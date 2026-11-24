@@ -567,3 +567,24 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Install compiler and explicitly recorded development STD snapshot at the existing PATH.
 
 [Focused evidence and platform scope](BINARY_ORDERS_CYCLE.md).
+
+## Offline HTML reference
+
+- [x] Bundle source-defined APIs and compiler-owned type documentation.
+- [x] Add offline search, linked signatures, source views and feature examples.
+- [x] Add the Corbo loopback documentation server and browser launcher.
+- [x] Rebuild and validate links, HTTP behavior and browser layout on macOS ARM64.
+- [x] Install the candidate and bundled reference at the existing PATH.
+
+[Evidence and platform limits](OFFLINE_REFERENCE_CYCLE.md).
+
+## Struct and enum member annotations
+
+- [x] Parse configurable associated constants and specialize their qualified lexical overrides.
+- [x] Support annotated generic associated functions and instance methods, including async.
+- [x] Preserve lock/branch effects and normalized enum identity through specialization.
+- [x] Update grammar, specification, editor highlighting and rendered annotation signatures.
+- [x] Pass 14 focused observations and six existing definition-method regressions.
+- [x] Rebuild and install at the existing PATH.
+
+[Evidence and platform scope](MEMBER_ANNOTATIONS_CYCLE.md).

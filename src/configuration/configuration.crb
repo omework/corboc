@@ -177,6 +177,31 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         if at < cursor { token += 1; continue; }
         copy_span(&source[0..source.len()], copy(cursor), copy(at),&mut output[0..output.len()],&mut offsets[0..offsets.len()],&mut state[0..state.len()]);
         if tokens[token].kind == 71 && tokens[token + 2].annotation == 31 {
+            // An associated configurable constant keeps its member name. Its
+            // enclosing nominal type is the environment-specific identity.
+            let mut associated: u64 = 0;
+            let mut entry: u64 = 0;
+            while entry < constants.len() as u64 {
+                let constant = constants[entry];
+                if nodes[constant].parent != 0 && nodes[constant].start == at { associated = constant; break; }
+                entry += 1;
+            }
+            if associated != 0 && env != 0 {
+                let initializer = graph[graph[associated].first_child].next_sibling;
+                let value = environments[env * 256 + entry];
+                let after_marker = tokens[token + 3].end;
+                skip_span(copy(at), copy(after_marker), &mut offsets[0..offsets.len()], state[1]);
+                copy_span(&source[0..source.len()], after_marker, nodes[initializer].start,
+                    &mut output[0..output.len()], &mut offsets[0..offsets.len()], &mut state[0..state.len()]);
+                let before = state[1];
+                put(&mut output[0..output.len()], &mut state[0..state.len()], &source[nodes[value].start..nodes[value].end]);
+                skip_span(nodes[initializer].start, nodes[initializer].end, &mut offsets[0..offsets.len()], before);
+                copy_span(&source[0..source.len()], nodes[initializer].end, nodes[associated].end,
+                    &mut output[0..output.len()], &mut offsets[0..offsets.len()], &mut state[0..state.len()]);
+                cursor = nodes[associated].end;
+                token = token_at(&tokens[0..tokens.len()], copy(cursor));
+                continue;
+            }
             cursor = tokens[token + 3].end;
             skip_span(copy(at), copy(cursor),&mut offsets[0..offsets.len()], state[1]);
             token += 4;
@@ -258,14 +283,25 @@ pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             if kind == 1 && spelling.content_eq(&main_name[..]) { node += 1; continue; }
             if symbol_count == 8192 { return (4, 0, 0); }
             symbols[symbol_count] = copy(node);
-            if kind == 76 && marked(&tokens[0..tokens.len()], &nodes[node]) {
-                if constant_count == 256 { return (4, 0, 0); }
-                constants[constant_count] = copy(node);
-                environments[constant_count] = graph[graph[node].first_child].next_sibling;
-                affected[symbol_count] = true;
-                constant_count += 1;
-            }
             symbol_count += 1;
+        }
+        node += 1;
+    }
+    // Register package and associated constants uniformly. Specialize the
+    // enclosing implementation for associated members, not a detached symbol.
+    node = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 76 && marked(&tokens[0..tokens.len()], &nodes[node]) {
+            if constant_count == 256 { return (4, 0, 0); }
+            constants[constant_count] = copy(node);
+            environments[constant_count] = graph[graph[node].first_child].next_sibling;
+            constant_count += 1;
+            let owner = if nodes[node].parent == 0 { copy(node) } else { nodes[node].parent };
+            let mut symbol: u64 = 0;
+            while symbol < symbol_count {
+                if symbols[symbol] == owner { affected[symbol] = true; break; }
+                symbol += 1;
+            }
         }
         node += 1;
     }

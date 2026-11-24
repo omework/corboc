@@ -352,3 +352,62 @@ struct Container<T> {
 The compiler selects that method only for `Container<i64>`. Shared, mutable and
 consuming receivers keep the ordinary ownership and borrowing rules.
 See [the syntax specification](../corbo-lang/docs/DEFINITION_METHODS.md).
+
+### Offline API reference
+
+```sh
+corboc doc
+corboc doc --port 8080
+corboc doc --no-open
+```
+
+The command serves the installed, searchable HTML reference on `127.0.0.1` and
+opens the browser unless `--no-open` is supplied. The default port is automatic;
+Ctrl+C stops serving. This works outside a package and requires no C toolchain,
+Python, internet connection or external fonts at runtime.
+
+Installations bundle `share/corbo/docs/` automatically, with the pinned STD
+revision and the compiler-provided API catalog. The reference includes source
+and compiler-backed types, source-line links, complete feature examples, the
+runtime source/ABI and design guides. `/` or Ctrl/Cmd+K focuses search; arrows and
+Enter select a result. No man page is installed.
+
+To regenerate assets without rebuilding the compiler:
+
+```sh
+python3 scripts/stdlib_html.py --corbo-root .deps/corbo --out build/std-docs
+python3 scripts/validate_doc_reference.py --docs build/std-docs
+```
+
+Maintain `docs/BUILTIN_REFERENCE.json` with compiler-provided interfaces and
+source comments with STD-defined interfaces. Shared exports such as Vector have
+compiler-backed method documentation instead of misleading empty pages.
+
+### Annotations on definition members
+
+Struct and enum methods accept existing `type`, `branch` and `lock` contracts.
+Associated functions may introduce type parameters without a receiver.
+Associated constants accept `#(configurable)` and lexical qualified overrides:
+
+```rust
+struct Settings {
+    #(configurable)
+    pub const LIMIT: i64 = 4;
+
+    #(type: T)
+    pub fn identity(value: T) T { value }
+}
+
+fn main() {
+    #(override: Settings::LIMIT=8) {
+        print(Settings::LIMIT);
+        print(Settings::identity(42));
+    }
+
+    print(Settings::LIMIT);
+}
+```
+
+Annotation target restrictions still apply: `configurable` describes constants,
+not fields or methods. Object contracts stay on the type declaration; block
+annotations stay on blocks inside method bodies.

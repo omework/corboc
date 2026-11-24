@@ -129,6 +129,38 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     if id == 0 || depth >= 128 { let inferred = ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     let kind = nodes[id].kind;
     let child = graph[id].first_child;
+    // The enum-path normalizer presents constructors as member/record nodes.
+    if (kind == 17 || kind == 37) && nodes[child].kind == 7 && graph[child].binding == 0 {
+        let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], child);
+        if nodes[owner].kind == 29 {
+            let mut variant = graph[owner].first_child;
+            while variant != 0 {
+                if nodes[variant].kind == 30 && text_equal(&source[0..source.len()], &nodes[variant], &nodes[id]) {
+                    let inferred = ConcreteType { node: owner, reference: 0, slice: false, instance: 0 };
+                    return packed(&inferred);
+                }
+                variant = graph[variant].next_sibling;
+            }
+        }
+    }
+    // Enum constructors infer their nominal owner just as struct literals do.
+    // Preserve that identity when selecting independently generic methods.
+    let enum_path = if kind == 36 { copy(id) } else if kind == 15 && nodes[child].kind == 36 { copy(child) } else { 0 };
+    if enum_path != 0 {
+        let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], enum_path);
+        if nodes[owner].kind == 29 {
+            let last = token_at(&tokens[0..tokens.len()], nodes[enum_path].end) - 1;
+            let mut variant = graph[owner].first_child;
+            while variant != 0 {
+                if nodes[variant].kind == 30 && same_bytes(&source[nodes[variant].name_start..nodes[variant].name_end],
+                    &source[tokens[last].start..tokens[last].end]) {
+                    let inferred = ConcreteType { node: owner, reference: 0, slice: false, instance: 0 };
+                    return packed(&inferred);
+                }
+                variant = graph[variant].next_sibling;
+            }
+        }
+    }
     if kind == 7 {
         let mut binding = graph[id].binding;
         // Named block captures inherit the original binding's type.
@@ -562,7 +594,8 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
             let lock_word: [u8; 4] = [108,111,99,107];
             let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
             let thread_word: [u8; 6] = [116,104,114,101,97,100];
-            if name.content_eq(&lock_word[..]) || name.content_eq(&thread_word[..]) {
+            let branch_word: [u8; 6] = [98,114,97,110,99,104];
+            if name.content_eq(&lock_word[..]) || name.content_eq(&thread_word[..]) || name.content_eq(&branch_word[..]) {
                 written = put(&mut output[0..output.len()], written, &source[nodes[annotation].start..nodes[annotation].end]);
                 let newline: [u8; 1] = [10];
                 written = put(&mut output[0..output.len()], written, &newline[..]);
@@ -1176,6 +1209,20 @@ fn inside_recipe(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: 
     false
 }
 
+/// Find a synchronous or asynchronous function recipe without changing the
+/// ordinary synchronous-call resolver used by the verifier.
+fn recipe_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
+    let callee = graph[call].first_child;
+    if nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
+    let mut function = graph[0].first_child;
+    while function != 0 {
+        if (nodes[function].kind == 1 || nodes[function].kind == 35)
+            && text_equal(&source[0..source.len()], &nodes[callee], &nodes[function]) { return function; }
+        function = graph[function].next_sibling;
+    }
+    0
+}
+
 pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut template = graph[0].first_child;
@@ -1189,7 +1236,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(candidate)) {
             let mut point: u64 = 1;
             while point < nodes.len() as u64 && selected == 0 {
-                if nodes[point].kind == 15 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == candidate {
+                if nodes[point].kind == 15 && recipe_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == candidate {
                     let recipe = inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point));
                     if !recipe { selected = copy(candidate); }
                 }
@@ -1204,7 +1251,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             let mut owner = nodes[point].parent;
             while owner != 0 && nodes[owner].kind != 49 { owner = nodes[owner].parent; }
             if nodes[point].kind == 15 && owner != 0 && inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))
-                && function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))) { return (0, 0); }
+                && function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], recipe_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point))) { return (0, 0); }
             point += 1;
         }
     }
@@ -1226,7 +1273,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     let mut point: u64 = 1;
     while point < nodes.len() as u64 {
         let name = graph[point].first_child;
-        if nodes[point].kind == 15 && bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == template {
+        if nodes[point].kind == 15 && recipe_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point)) == template {
             let recipe = inside_recipe(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(point));
             if !recipe {
                 let mut types = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 32];

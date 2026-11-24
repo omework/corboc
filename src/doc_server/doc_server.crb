@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Bounded loopback HTTP delivery of the installed offline reference.
+use bootstrap::package_check::{message, installed_docs};
+use std::net::tcp::{Listener, Connection};
+use std::net::ipv4::{Addr, SocketAddr};
+use std::io::{File, FileMode};
+use std::text::Utf8Error;
+
+/// Reports CLI syntax; serving has no package or compiler side effects.
+pub fn usage() i32 {
+    message("usage: corboc doc [--port PORT] [--no-open]\n");
+    6
+}
+
+/// Accepts a decimal TCP port, including zero; returns -1 for invalid syntax.
+pub fn port(text: &str) i64 {
+    let bytes = text.as_bytes();
+    if bytes.len() == 0 { return -1; }
+    let mut number: u32 = 0;
+    let mut at: usize = 0;
+    while at < bytes.len() {
+        let digit = bytes[at];
+        if digit < 48 || digit > 57 { return -1; }
+        number = number * 10 + (digit - 48) as u32;
+        if number > 65535 { return -1; }
+        at += 1;
+    }
+    number as i64
+}
+
+/// Appends fixed protocol text inside a bounded response/path buffer.
+fn put(output: &mut [u8], at: usize, text: &[u8]) usize {
+    if at > output.len() || text.len() > output.len() - at { return output.len(); }
+    let mut i: usize = 0;
+    while i < text.len() { output[at + i] = text[i]; i += 1; }
+    at + text.len()
+}
+
+/// Writes an unsigned decimal without formatting or dynamic allocation.
+fn decimal(output: &mut [u8], at: usize, value: u64) usize {
+    let mut digits: [u8; 20] = [0; 20];
+    let mut number = value;
+    let mut count: usize = 0;
+    loop {
+        digits[count] = (number % 10) as u8 + 48;
+        number /= 10; count += 1;
+        if number == 0 { break; }
+    }
+    if at > output.len() || count > output.len() - at { return output.len(); }
+    let mut i: usize = 0;
+    while i < count { output[at + i] = digits[count - i - 1]; i += 1; }
+    at + count
+}
+
+/// Handles partial TCP writes; zero progress terminates this connection.
+fn write_all(connection: &mut Connection, bytes: &[u8]) bool {
+    let mut at: usize = 0;
+    while at < bytes.len() {
+        let part = &bytes[at..bytes.len()];
+        let count = match connection.write(part) {
+            Ok(count) => { count },
+            Err(_error) => { return false; },
+        };
+        if count == 0 { return false; }
+        at += count;
+    }
+    true
+}
+
+/// Sends headers; generated files use EOF framing with Connection: close.
+/// The maximum length sentinel omits Content-Length; empty errors send zero.
+fn header(connection: &mut Connection, status: &str, content_type: &str, length: u64) bool {
+    let mut bytes: [u8; 512] = [0; 512];
+    let initial = "HTTP/1.1 "; let separator = "\r\nContent-Type: ";
+    let size = "\r\nContent-Length: ";
+    let end = "\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-cache\r\n\r\n";
+    let initial_bytes = initial.as_bytes();
+    let status_bytes = status.as_bytes();
+    let separator_bytes = separator.as_bytes();
+    let content_bytes = content_type.as_bytes();
+    let size_bytes = size.as_bytes();
+    let end_bytes = end.as_bytes();
+    let mut at = put(&mut bytes[..], 0, initial_bytes);
+    at = put(&mut bytes[..], at, status_bytes);
+    at = put(&mut bytes[..], at, separator_bytes);
+    at = put(&mut bytes[..], at, content_bytes);
+    if length != 18446744073709551615 {
+        at = put(&mut bytes[..], at, size_bytes);
+        at = decimal(&mut bytes[..], at, length);
+    }
+    at = put(&mut bytes[..], at, end_bytes);
+    if at >= bytes.len() { return false; }
+    write_all(&mut *connection, &bytes[..at])
+}
+
+/// Chooses MIME types for generated reference assets; arbitrary binary data is not served.
+fn content_type(name: &[u8]) i64 {
+    let n = name.len();
+    let html = ".html"; let css = ".css"; let js = ".js"; let json = ".json";
+    let html_bytes = html.as_bytes(); let css_bytes = css.as_bytes();
+    let js_bytes = js.as_bytes(); let json_bytes = json.as_bytes();
+    if n >= 5 { let suffix = &name[n - 5..n]; if suffix.content_eq(html_bytes) { return 1; } }
+    if n >= 4 { let suffix = &name[n - 4..n]; if suffix.content_eq(css_bytes) { return 2; } }
+    if n >= 3 { let suffix = &name[n - 3..n]; if suffix.content_eq(js_bytes) { return 3; } }
+    if n >= 5 { let suffix = &name[n - 5..n]; if suffix.content_eq(json_bytes) { return 4; } }
+    0
+}
+
+/// Serves only one generated filename under the installed reference directory.
+fn asset(connection: &mut Connection, root: &[u8], name: &[u8], head: bool) {
+    let mut path: [u8; 4096] = [0; 4096];
+    if root.len() + name.len() + 1 >= path.len() { drop(header(&mut *connection, "414 URI Too Long", "text/plain", 0)); return; }
+    let at = put(&mut path[..], 0, root);
+    path[at] = 47;
+    let end = put(&mut path[..], at + 1, &name[0..name.len()]);
+    let path_bytes = &path[..end];
+    let decoded: Result<&str, Utf8Error> = str::from_utf8(path_bytes);
+    let path_text = match decoded {
+        Ok(value) => { value },
+        Err(_error) => { drop(header(&mut *connection, "500 Internal Server Error", "text/plain", 0)); return; },
+    };
+    let mut file = match File::open(path_text, FileMode::READ) {
+        Ok(file) => { file },
+        Err(_error) => { drop(header(&mut *connection, "404 Not Found", "text/plain", 0)); return; },
+    };
+    let length: u64 = 18446744073709551615;
+    let kind = content_type(&name[0..name.len()]);
+    let mut sent = false;
+    if kind == 1 { sent = header(&mut *connection, "200 OK", "text/html; charset=utf-8", length); }
+    else if kind == 2 { sent = header(&mut *connection, "200 OK", "text/css; charset=utf-8", length); }
+    else if kind == 3 { sent = header(&mut *connection, "200 OK", "text/javascript; charset=utf-8", length); }
+    else if kind == 4 { sent = header(&mut *connection, "200 OK", "application/json; charset=utf-8", length); }
+    else { sent = header(&mut *connection, "200 OK", "application/octet-stream", length); }
+    if !sent || head { return; }
+    let mut buffer: [u8; 8192] = [0; 8192];
+    loop {
+        let count = match file.read(&mut buffer[..]) {
+            Ok(count) => { count },
+            Err(_error) => { return; },
+        };
+        if count == 0 { return; }
+        if !write_all(&mut *connection, &buffer[..count]) { return; }
+    }
+}
+
+/// Parses only the finite GET/HEAD request needed for static reference delivery.
+fn request(connection: &mut Connection, root: &[u8]) {
+    let mut buffer: [u8; 8192] = [0; 8192];
+    let mut used: usize = 0;
+    let mut complete = false;
+    while used < buffer.len() && !complete {
+        let count = match connection.read(&mut buffer[used..buffer.len()]) {
+            Ok(count) => { count },
+            Err(_error) => { return; },
+        };
+        if count == 0 { return; }
+        used += count;
+        let mut at: usize = 3;
+        while at < used {
+            if buffer[at - 3] == 13 && buffer[at - 2] == 10 && buffer[at - 1] == 13 && buffer[at] == 10 { complete = true; break; }
+            at += 1;
+        }
+    }
+    if !complete { drop(header(&mut *connection, "431 Request Header Fields Too Large", "text/plain", 0)); return; }
+    let get = "GET "; let head = "HEAD ";
+    let get_bytes = get.as_bytes(); let head_bytes = head.as_bytes();
+    let mut start: usize = 0;
+    let mut only_head = false;
+    if used >= 4 { let prefix = &buffer[..4]; if prefix.content_eq(get_bytes) { start = 4; } }
+    if used >= 5 { let prefix = &buffer[..5]; if prefix.content_eq(head_bytes) { start = 5; only_head = true; } }
+    if start == 0 { drop(header(&mut *connection, "405 Method Not Allowed", "text/plain", 0)); return; }
+    if buffer[start] != 47 { drop(header(&mut *connection, "400 Bad Request", "text/plain", 0)); return; }
+    start += 1;
+    let mut end = start;
+    while end < used && buffer[end] != 32 && buffer[end] != 63 && buffer[end] != 13 { end += 1; }
+    if end == used { drop(header(&mut *connection, "400 Bad Request", "text/plain", 0)); return; }
+    if end == start {
+        let index = "index.html";
+        let index_bytes = index.as_bytes();
+        asset(&mut *connection, root, index_bytes, only_head);
+        return;
+    }
+    let mut at = start;
+    while at < end {
+        let c = buffer[at];
+        if !((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 95 || c == 46) {
+            drop(header(&mut *connection, "400 Bad Request", "text/plain", 0)); return;
+        }
+        if c == 46 && at + 1 < end && buffer[at + 1] == 46 { drop(header(&mut *connection, "400 Bad Request", "text/plain", 0)); return; }
+        at += 1;
+    }
+    asset(&mut *connection, root, &buffer[start..end], only_head);
+}
+
+/// Opens the installed reference on IPv4 loopback only; Ctrl+C ends serving.
+pub fn serve(port: u16, launch: bool) i32 {
+    let mut root: [u8; 4096] = [0; 4096];
+    let length = installed_docs(&mut root[..]);
+    if length == 0 { message("corboc: cannot locate the installed reference\n"); return 11; }
+    let index = "index.html";
+    let index_bytes = index.as_bytes();
+    let mut path: [u8; 4096] = [0; 4096];
+    let at = put(&mut path[..], 0, &root[..length]); path[at] = 47;
+    let end = put(&mut path[..], at + 1, index_bytes);
+    let path_bytes = &path[..end];
+    let decoded: Result<&str, Utf8Error> = str::from_utf8(path_bytes);
+    let text = match decoded { Ok(text) => { text }, Err(_error) => { return 11; }, };
+    { let _file = match File::open(text, FileMode::READ) {
+        Ok(file) => { file },
+        Err(_error) => { message("corboc: bundled documentation is missing; reinstall corboc with its reference assets\n"); return 11; },
+    }; }
+    let address = SocketAddr::new(Addr::new(127, 0, 0, 1), port);
+    let mut listener = match Listener::bind(address, None) {
+        Ok(listener) => { listener },
+        Err(_error) => { message("corboc: could not bind the documentation port on 127.0.0.1\n"); return 11; },
+    };
+    let endpoint = listener.addr();
+    let mut url: [u8; 128] = [0; 128];
+    let prefix = "http://127.0.0.1:";
+    let prefix_bytes = prefix.as_bytes();
+    let at = put(&mut url[..], 0, prefix_bytes);
+    let end = decimal(&mut url[..], at, endpoint.port() as u64);
+    url[end] = 47;
+    let url_bytes = &url[..end + 1];
+    let decoded_url: Result<&str, Utf8Error> = str::from_utf8(url_bytes);
+    let url_text = match decoded_url { Ok(text) => { text }, Err(_error) => { return 11; }, };
+    message("Corbo reference: "); message(&url_text[..]); message("\nPress Ctrl+C to stop.\n");
+    if launch { open_browser(&url_text[..]); }
+    loop {
+        let mut connection = match listener.accept() { Ok(value) => { value }, Err(_error) => { return 11; }, };
+        request(&mut connection, &root[..length]);
+    };
+    0
+}

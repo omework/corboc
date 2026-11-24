@@ -465,3 +465,11 @@ before imports. The STD's static LittleEndian/BigEndian/NativeEndian methods
 reuse the existing caller-buffer binary implementation and its checked errors.
 The explicit name constant was removed at the user's request.
 [Focused execution evidence](BINARY_ORDERS_CYCLE.md).
+
+## Offline documentation delivery
+
+Documentation/build scope: local-link/search integrity and actual loopback HTTP behavior pass. Isolated Chrome search and responsive views were inspected. Compiler-owned API coverage is explicit; internal declarations remain labeled. No language rules changed. [Evidence and platform limits](OFFLINE_REFERENCE_CYCLE.md).
+
+## Definition-member annotations
+
+Existing annotation semantics are retained through definition lowering and specialization. Associated configurable constants follow lexical environments; generic struct/enum methods and associated functions, including async, preserve effect contracts. Seven fatal-UBSan executions and seven expected refusals pass, plus six directly related method regressions. [Evidence and limits](MEMBER_ANNOTATIONS_CYCLE.md).

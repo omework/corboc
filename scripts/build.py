@@ -63,6 +63,11 @@ def main():
     else:
         (shared / "development-stdlib.json").unlink(missing_ok=True)
     shutil.copy2(ROOT / "corbo.lock", shared / "corbo.lock")
+    docs = shared / "docs"
+    if docs.exists():
+        shutil.rmtree(docs)
+    run(["python3", ROOT / "scripts/stdlib_html.py", "--corbo-root", source,
+         "--stdlib-root", stdlib_source, "--revision", data["rev"], "--out", docs])
     (prefix / "include").mkdir(exist_ok=True)
     shutil.copy2(source / data["runtime"] / "corbo_runtime.h", prefix / "include/corbo_runtime.h")
     cc = shlex.split(args.cc)

@@ -1,0 +1,727 @@
+{
+  "description": "Compiler-backed type and intrinsic reference. Keep synchronized with core grammar, rules and compiler lowering. This is documentation, not a new declaration source.",
+  "items": [
+    {
+      "name": "i32",
+      "kind": "primitive",
+      "signature": "i32",
+      "description": "Signed integer. Its width is 32 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "i32::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "i64",
+      "kind": "primitive",
+      "signature": "i64",
+      "description": "Signed integer and the default unconstrained integer-literal type. Its width is 64 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "i64::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "u8",
+      "kind": "primitive",
+      "signature": "u8",
+      "description": "Unsigned byte. Its width is 8 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "u8::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "u16",
+      "kind": "primitive",
+      "signature": "u16",
+      "description": "Unsigned integer. Its width is 16 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "u16::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "u32",
+      "kind": "primitive",
+      "signature": "u32",
+      "description": "Unsigned integer. Its width is 32 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "u32::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "u64",
+      "kind": "primitive",
+      "signature": "u64",
+      "description": "Unsigned integer. Its width is 64 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "u64::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "f32",
+      "kind": "primitive",
+      "signature": "f32",
+      "description": "IEEE 754 single-precision floating point. Its width is 32 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "f32::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "f64",
+      "kind": "primitive",
+      "signature": "f64",
+      "description": "IEEE 754 double-precision floating point and the default float-literal type. Its width is 64 bits. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "f64::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "bool",
+      "kind": "primitive",
+      "signature": "bool",
+      "description": "Boolean value; conditions require bool. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "usize",
+      "kind": "primitive",
+      "signature": "usize",
+      "description": "Unsigned pointer-width integer selected from the compilation target. Primitive values copy implicitly. Numeric conversions use as or try_from; checked operations reject invalid integer arithmetic.",
+      "module": "core",
+      "methods": [
+        [
+          "try_from",
+          "usize::try_from(value)",
+          "Fallible numeric conversion; succeeds only when the input value is exactly representable. Conversion failures use the compiler-generated IntegerConversionError."
+        ]
+      ],
+      "examples": [
+        "examples/features/numbers/src/main.crb"
+      ]
+    },
+    {
+      "name": "unit",
+      "kind": "type",
+      "signature": "()",
+      "description": "The unit result. Omitting a function return type and writing () explicitly have the same meaning.",
+      "module": "core"
+    },
+    {
+      "name": "array",
+      "kind": "type",
+      "signature": "[T; N]",
+      "description": "Inline fixed-size storage. N is part of the type and known at compile time. Index values are checked before access; element access preserves the ordinary move/borrow rules.",
+      "module": "core",
+      "methods": [
+        [
+          "len",
+          "fn len(&self) usize",
+          "Returns the compile-time element count."
+        ],
+        [
+          "ref",
+          "fn ref(&self) &[T; N]",
+          "Borrows the array."
+        ],
+        [
+          "mut_ref",
+          "fn mut_ref(&mut self) &mut [T; N]",
+          "Mutably borrows the array."
+        ]
+      ],
+      "examples": [
+        "examples/features/arrays/src/main.crb"
+      ]
+    },
+    {
+      "name": "slice",
+      "kind": "type",
+      "signature": "&[T] / &mut [T]",
+      "description": "A borrowed contiguous view carrying a data address and element count. It retains its target lifetime. Slicing checks both bounds; mutable views require mutation permission.",
+      "module": "core",
+      "methods": [
+        [
+          "len",
+          "fn len(&self) usize",
+          "Returns the number of visible elements."
+        ]
+      ],
+      "examples": [
+        "examples/features/arrays/src/main.crb"
+      ]
+    },
+    {
+      "name": "str",
+      "kind": "type",
+      "signature": "&str",
+      "description": "A borrowed UTF-8 byte sequence. Literals have static storage. Slice boundaries must be UTF-8 boundaries. It does not own or free the referenced text.",
+      "module": "core",
+      "methods": [
+        [
+          "byte_len",
+          "fn byte_len(&self) usize",
+          "Returns the UTF-8 byte length."
+        ],
+        [
+          "as_bytes",
+          "fn as_bytes(&self) &[u8]",
+          "Borrows the encoded bytes."
+        ],
+        [
+          "split",
+          "fn split(&self, separator: &str) std::text::Split",
+          "Returns the source-defined borrowed splitting iterator."
+        ],
+        [
+          "from_utf8",
+          "fn from_utf8(bytes: &[u8]) Result<&str, std::text::Utf8Error>",
+          "Validates UTF-8 without copying; the returned text view retains the input byte storage lifetime."
+        ]
+      ],
+      "examples": [
+        "examples/features/text/src/main.crb"
+      ]
+    },
+    {
+      "name": "fn",
+      "kind": "type",
+      "signature": "fn(P1, P2) R / &fn(P1, P2) R / &mut fn(P1, P2) R",
+      "description": "An owned callable or an explicit shared/mutable callable borrow. Closure parameters are explicitly typed; result types may be inferred. Captures take effect at construction. Copy captures copy automatically; non-Copy captures require move. Borrowed captures must not outlive their targets.",
+      "module": "core",
+      "examples": [
+        "examples/features/closures/src/main.crb"
+      ]
+    },
+    {
+      "name": "A",
+      "kind": "type",
+      "signature": "A<T>",
+      "description": "An owned allocation descriptor retaining its source pool and a stable payload address. Moving the descriptor transfers cleanup responsibility. Dropping it cleans the payload and releases its slot.",
+      "module": "core",
+      "methods": [
+        [
+          "ref",
+          "fn ref(&self) &T",
+          "Borrows the payload, unlike &allocation which borrows the descriptor."
+        ],
+        [
+          "mut_ref",
+          "fn mut_ref(&mut self) &mut T",
+          "Mutably borrows the payload."
+        ]
+      ],
+      "examples": [
+        "examples/features/pools/src/main.crb"
+      ]
+    },
+    {
+      "name": "Option",
+      "kind": "enum",
+      "signature": "Option<T>",
+      "description": "Some(T) or None. Match and if let inspect its variant. ? propagates None; postfix ! extracts Some or terminates on None. Empty/primitive-payload enums follow the implicit-copy rule.",
+      "module": "core",
+      "variants": [
+        "Some(T)",
+        "None"
+      ],
+      "examples": [
+        "examples/features/enums/src/main.crb"
+      ]
+    },
+    {
+      "name": "Result",
+      "kind": "enum",
+      "signature": "Result<T, E>",
+      "description": "Ok(T) or Err(E). ? returns the error from the enclosing function, resolving Outer::from(Inner) when error types differ. Postfix ! extracts Ok or terminates on Err.",
+      "module": "core",
+      "variants": [
+        "Ok(T)",
+        "Err(E)"
+      ],
+      "examples": [
+        "examples/features/errors/src/main.crb"
+      ]
+    },
+    {
+      "name": "Pool",
+      "kind": "type",
+      "signature": "Pool<T>",
+      "description": "Fixed-capacity typed storage on the datastack. The pool must outlive its allocations. Enum pools maintain dedicated storage per variant. Neither slot allocation nor exhaustion implies an unbounded heap fallback.",
+      "module": "std",
+      "methods": [
+        [
+          "new",
+          "fn new(capacity: usize) Pool<T>",
+          "Creates fixed slot storage."
+        ],
+        [
+          "new-value",
+          "fn new(&mut self, value: T) A<T>",
+          "Evaluates and moves a value into a slot; terminates on exhaustion. new({...}) uses contextual initialization; new() requires valid defaults."
+        ],
+        [
+          "try",
+          "fn try(&mut self, value: T) Result<A<T>, PoolError>",
+          "Fallible slot allocation; Full reports exhaustion. The supplied value is consumed on both paths."
+        ]
+      ],
+      "examples": [
+        "examples/features/pools/src/main.crb"
+      ]
+    },
+    {
+      "name": "Vector",
+      "kind": "type",
+      "signature": "Vector<T>",
+      "description": "An owned descriptor for a contiguous sequence whose payload grows inside a bounded region. Construct through a Pool<Vector<T>>. Structural mutation retains all element ownership and reference dependencies.",
+      "module": "std",
+      "methods": [
+        [
+          "len",
+          "fn len(&self) usize",
+          "Returns the live element count."
+        ],
+        [
+          "push",
+          "fn push(&mut self, value: T)",
+          "Appends by value, moving non-Copy values."
+        ],
+        [
+          "remove",
+          "fn remove(&mut self, index: usize) T",
+          "Checks the index, extracts an element and shifts the tail."
+        ],
+        [
+          "pop",
+          "fn pop(&mut self) Option<T>",
+          "Extracts the final element, or returns None."
+        ]
+      ],
+      "examples": [
+        "examples/features/vector/src/main.crb"
+      ]
+    },
+    {
+      "name": "HashMap",
+      "kind": "type",
+      "signature": "HashMap<K, V>",
+      "description": "A region-backed map with integer/bool keys. Payload entries remain in place while the lookup index is reorganized. Extracted values retain their dependencies.",
+      "module": "std",
+      "methods": [
+        [
+          "new",
+          "fn new() HashMap<K, V>",
+          "Constructs an empty map."
+        ],
+        [
+          "insert",
+          "fn insert(&mut self, key: K, value: V) Option<V>",
+          "Moves key/value into the map and returns the previous value on replacement. Primitives copy implicitly."
+        ],
+        [
+          "get",
+          "fn get(&self, key: &K) Option<&V>",
+          "Borrows an existing value without consuming the key."
+        ],
+        [
+          "get_mut",
+          "fn get_mut(&mut self, key: &K) Option<&mut V>",
+          "Mutably borrows an existing value."
+        ],
+        [
+          "remove",
+          "fn remove(&mut self, key: &K) Option<V>",
+          "Moves out an existing value."
+        ]
+      ],
+      "examples": [
+        "examples/features/map/src/main.crb"
+      ]
+    },
+    {
+      "name": "String",
+      "kind": "type",
+      "signature": "String / String<N>",
+      "description": "String owns region-backed UTF-8 bytes and is constructed through a String pool. String<N> instead has a compile-time maximum byte size and inline storage; its source-defined implementation is BoundedString<N>. Neither permits invalid UTF-8. Allocation and borrowing obligations remain visible.",
+      "module": "std",
+      "methods": [
+        [
+          "push_str",
+          "fn push_str(&mut self, text: &str)",
+          "Appends encoded text within the applicable region budget."
+        ],
+        [
+          "byte_len",
+          "fn byte_len(&self) usize",
+          "Returns the encoded byte count."
+        ],
+        [
+          "as_bytes",
+          "fn as_bytes(&self) &[u8]",
+          "Borrows the encoded bytes."
+        ],
+        [
+          "split",
+          "fn split(&self, separator: &str) std::text::Split",
+          "Returns borrowed text pieces; the source must remain alive."
+        ]
+      ],
+      "examples": [
+        "examples/features/text/src/main.crb"
+      ]
+    },
+    {
+      "name": "Future",
+      "kind": "generated type",
+      "signature": "async fn name(...) R",
+      "description": "Each async definition has its own compiler-generated state type, addressed by that definition\u2019s qualified name. Construction captures immediately; .await drives it to completion and yields R. Suspension state retains live values, ownership and dependencies. The compiler/runtime polling contract uses id() and poll(ctx); this does not introduce an arbitrary dynamic trait object.",
+      "module": "runtime",
+      "examples": [
+        "examples/features/async/src/main.crb"
+      ]
+    },
+    {
+      "name": "Handle",
+      "kind": "type",
+      "signature": "runtime::Handle<T>",
+      "description": "A launched execution handle. join() blocks in a synchronous context and yields Result<T, runtime::Error>. Branch contracts and captured dependencies determine required lifetime bounds; the handle name alone is not a synchronization marker.",
+      "module": "runtime",
+      "methods": [
+        [
+          "join",
+          "fn join(self: Handle<T>) Result<T, runtime::Error>",
+          "Waits for completion and transfers the result. A synchronous join is refused in async code."
+        ]
+      ],
+      "examples": [
+        "examples/features/blocking/src/main.crb"
+      ]
+    },
+    {
+      "name": "AsyncHandle",
+      "kind": "type",
+      "signature": "runtime::AsyncHandle<T>",
+      "description": "The asynchronous waiting handle produced by spawn_blocking. Awaiting it yields Result<T, runtime::Error> without blocking the async poller. Captured dependencies stay reserved until the wait finishes.",
+      "module": "runtime",
+      "methods": [
+        [
+          "await",
+          "execution.await",
+          "Waits asynchronously and transfers the completed result."
+        ]
+      ],
+      "examples": [
+        "examples/features/blocking/src/main.crb"
+      ]
+    },
+    {
+      "name": "Error",
+      "kind": "enum",
+      "signature": "runtime::Error",
+      "description": "Execution failures are distinct from the task\u2019s business result. LaunchFailed is reported by waiting on the handle; failure paths still perform the required cleanup.",
+      "module": "runtime",
+      "variants": [
+        "LaunchFailed"
+      ]
+    },
+    {
+      "name": "Context",
+      "kind": "runtime contract",
+      "signature": "runtime::Context",
+      "description": "Polling context provided by the runtime. It carries the wake registration used when returning Pending. This page describes a compiler/runtime contract, not a user-defined replacement-runtime interface.",
+      "module": "runtime"
+    },
+    {
+      "name": "Poll",
+      "kind": "runtime contract",
+      "signature": "runtime::Poll<T>",
+      "description": "Pending or Ready(T) in the compiler/runtime polling contract. Pending must be paired with wake registration so a notification cannot be lost.",
+      "module": "runtime",
+      "variants": [
+        "Pending",
+        "Ready(T)"
+      ]
+    },
+    {
+      "name": "spawn",
+      "kind": "function",
+      "signature": "runtime::spawn(task) runtime::Handle<R>",
+      "description": "Moves an async task into runtime scheduling and returns immediately. The task satisfies the statically resolved polling contract.",
+      "module": "runtime"
+    },
+    {
+      "name": "spawn_blocking",
+      "kind": "function",
+      "signature": "runtime::spawn_blocking(task) runtime::AsyncHandle<R>",
+      "description": "Launches blocking work from async code and returns an asynchronous waiting handle.",
+      "module": "runtime"
+    },
+    {
+      "name": "thread",
+      "kind": "function",
+      "signature": "runtime::thread(move { ... }) runtime::Handle<R>",
+      "description": "Creates a native thread for the directly supplied synchronous block. Captures obey the ordinary ownership, lifetime and transfer contracts.",
+      "module": "runtime"
+    },
+    {
+      "name": "process_args",
+      "kind": "function",
+      "signature": "runtime::process_args()",
+      "description": "Compiler hook backing std::env::args; use the STD API in application code.",
+      "module": "runtime"
+    },
+    {
+      "name": "wait_socket",
+      "kind": "function",
+      "signature": "runtime::wait_socket(socket, direction)",
+      "description": "Restricted STD readiness hook. It is not an unrestricted application API.",
+      "module": "runtime"
+    },
+    {
+      "name": "copy",
+      "kind": "intrinsic",
+      "signature": "copy(value)",
+      "description": "Explicit primitive copy. Primitive assignment, argument passing and eligible enum values also copy implicitly under the current rules.",
+      "module": "core"
+    },
+    {
+      "name": "drop",
+      "kind": "intrinsic",
+      "signature": "drop(value)",
+      "description": "Consumes an owned value, invokes its destructor once, then cleans owned fields/elements from leaves to root. Scope exit uses the same cleanup path.",
+      "module": "core"
+    },
+    {
+      "name": "print",
+      "kind": "intrinsic",
+      "signature": "print(value)",
+      "description": "Compiler-provided output used by examples. It does not implicitly turn an owned value into a borrow.",
+      "module": "core"
+    },
+    {
+      "name": "addr",
+      "kind": "intrinsic",
+      "signature": "addr(&value) usize",
+      "description": "Raw address extraction is restricted to @unchecked. Address provenance cannot escape that block, including through usize.",
+      "module": "core"
+    },
+    {
+      "name": "references",
+      "kind": "intrinsic",
+      "signature": "value.ref() / value.mut_ref()",
+      "description": "Universal explicit borrow helpers. A<T> and types declaring these methods can expose their payload through them. * resolves declared ref()/mut_ref() according to read/write context; no permission is fabricated.",
+      "module": "core"
+    },
+    {
+      "name": "conversions",
+      "kind": "intrinsic",
+      "signature": "Destination::try_from(value) / value as Destination",
+      "description": "Numeric conversions are checked against the destination. try_from reports failure; as terminates when the value is not exactly representable.",
+      "module": "core"
+    },
+    {
+      "name": "tuple",
+      "kind": "type",
+      "signature": "(T1, T2, ...)",
+      "description": "A fixed-layout product. Types are inferred by position. Numeric fields (.0, .1, ...) and destructuring use the same move and borrow rules as other aggregates.",
+      "module": "core",
+      "examples": [
+        "examples/features/tuples/src/main.crb"
+      ]
+    },
+    {
+      "name": "type",
+      "kind": "annotation",
+      "signature": "#(type: T) / #(type: S<V> with { fn next(&mut self) Option<V>; })",
+      "description": "Introduces static type parameters and method-shape requirements. with permits additional methods; without with the declared method shape is exact. No dynamic trait object is introduced.",
+      "module": "language"
+    },
+    {
+      "name": "branch",
+      "kind": "annotation",
+      "signature": "#(branch: join=result.join()) / #(branch)",
+      "description": "Marks a separately progressing branch. The declared join point lets analysis establish when captured references stop being used. Without join, termination may remain unbounded.",
+      "module": "language"
+    },
+    {
+      "name": "lock",
+      "kind": "annotation",
+      "signature": "#(lock) / #(lock: on=self, through_result=true)",
+      "description": "A trusted synchronization contract. Object-level lock applies to public instance methods; same-object re-entry is rejected. through_result extends the protected interval through the returned object. The annotation generates no actual lock implementation.",
+      "module": "language"
+    },
+    {
+      "name": "thread",
+      "kind": "annotation",
+      "signature": "#(thread: transfer=false)",
+      "description": "Prevents transfer to another thread. The restriction propagates through owned fields, captures and async state. Other types are transferable by default, subject to their dependencies.",
+      "module": "language"
+    },
+    {
+      "name": "configurable",
+      "kind": "annotation",
+      "signature": "#(configurable)",
+      "description": "Marks a package or associated constant as configurable through a lexical override. Associated constants use their qualified Type::NAME identity.",
+      "module": "language"
+    },
+    {
+      "name": "override",
+      "kind": "annotation",
+      "signature": "#(override: package::CONSTANT=value)",
+      "description": "Specializes configurable constants in the annotated scope without a dynamic settings object.",
+      "module": "language"
+    },
+    {
+      "name": "if",
+      "kind": "annotation",
+      "signature": "#(if: target.os == \"linux\") ... #(endif)",
+      "description": "Selects source before import resolution. target.os, target.family, target.arch, target.pointer_width and target.endian describe the compilation target. Excluded imports create no collisions.",
+      "module": "language"
+    },
+    {
+      "name": "datastack",
+      "kind": "annotation",
+      "signature": "#(datastack: size=4G, region_stack_size=4G, region_size=100M)",
+      "description": "Optional program memory budgets. Properties are optional. Sizes use positive decimal K/M/G units (powers of 1024). Known maximums may be inferred; unknown bounds use the documented defaults.",
+      "module": "language"
+    },
+    {
+      "name": "stack_region",
+      "kind": "annotation",
+      "signature": "#(stack_region: max_size=4M, count=8)",
+      "description": "A local growing-region budget; count is optional. Moves preserve the applicable capacity/lifetime constraints.",
+      "module": "language"
+    },
+    {
+      "name": "free_pages",
+      "kind": "annotation",
+      "signature": "#(free_pages)",
+      "description": "Requests page restitution at the annotated scope\u2019s cleanup boundary. Cleanup and cursor recovery precede OS page release.",
+      "module": "language"
+    },
+    {
+      "name": "unchecked",
+      "kind": "syntax",
+      "signature": "@unchecked { ... }",
+      "description": "An explicitly unchecked boundary. Native C/assembly and raw addresses require developer-owned correctness; checked reference/ownership guarantees are not inferred for arbitrary native effects.",
+      "module": "language"
+    },
+    {
+      "name": "asm",
+      "kind": "syntax",
+      "signature": "@asm { ... ${operand} ... }",
+      "description": "Inline assembly with explicit instructions and bound Corbo operands. The assembly implementation owns its register preservation and raw memory effects within @unchecked.",
+      "module": "language"
+    },
+    {
+      "name": "c",
+      "kind": "syntax",
+      "signature": "@c(includes={\"header.h\"}) { ... ${operand} ... }",
+      "description": "Inline C with header paths and scalar/aggregate operands. corbo_runtime.h exposes runtime operations and generated C representations. Used inside @unchecked.",
+      "module": "language"
+    },
+    {
+      "name": "operators",
+      "kind": "syntax",
+      "signature": "+ - * / % & | ^ << >> == != < <= > >= && || !",
+      "description": "Checked integer operations, same-type arithmetic and value-checked indices. && and || short-circuit. Signed right shifts preserve sign. Shift counts are checked. Assignment variants evaluate their destination once.",
+      "module": "language"
+    },
+    {
+      "name": "propagation",
+      "kind": "syntax",
+      "signature": "expression? / expression!",
+      "description": "Postfix ? propagates Result/Option failure; postfix ! unwraps or terminates. Prefix ! remains boolean negation.",
+      "module": "language"
+    },
+    {
+      "name": "reference",
+      "kind": "type",
+      "module": "core",
+      "signature": "&T / &mut T",
+      "description": "A non-owning reference with read or mutation permission. The target and allocation source must remain valid through every use. Access compatibility, shared-lock contracts and branch join lifetimes are checked separately from the permission itself."
+    },
+    {
+      "name": "assignment",
+      "kind": "syntax",
+      "module": "language",
+      "signature": "= += -= *= /= %= &= |= ^= <<= >>=",
+      "description": "Assignment copies primitive and eligible enum values, otherwise transfers ownership. Compound assignments evaluate the destination once and retain the arithmetic, conversion and shift checks."
+    },
+    {
+      "name": "IntegerConversionError",
+      "module": "core",
+      "kind": "enum",
+      "signature": "IntegerConversionError",
+      "description": "Compiler-generated failure type for primitive try_from conversions. A failed exact numeric conversion produces this error.",
+      "variants": [
+        "OutOfRange"
+      ]
+    }
+  ]
+}

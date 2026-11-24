@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Best-effort native URL opening. The server also prints its loopback URL.
+#(if: target.family == "unix")
+/// Launches the desktop URL opener without a shell or an inherited long-lived child.
+fn open_browser(url: &str) {
+    let bytes = url.as_bytes();
+    let length = bytes.len();
+    @unchecked {
+        let pointer = addr(&bytes[0]);
+        @c(includes={"unistd.h", "sys/wait.h", "errno.h", "string.h"}) {
+            char text[128]; size_t n=${length};
+            if(n<sizeof(text)) {
+                memcpy(text,(const void *)(uintptr_t)${pointer},n);text[n]=0;
+                long descriptor_limit=sysconf(_SC_OPEN_MAX);
+                if(descriptor_limit<0)descriptor_limit=1024;
+                pid_t child=fork();
+                if(child==0) {
+                    pid_t detached=fork();
+                    if(detached==0) {
+                        for(int fd=3;fd<descriptor_limit;fd++)close(fd);
+#if defined(__APPLE__)
+                        execl("/usr/bin/open","open",text,(char *)NULL);
+#else
+                        execl("/usr/bin/xdg-open","xdg-open",text,(char *)NULL);
+#endif
+                        _exit(127);
+                    }
+                    _exit(detached<0?1:0);
+                }
+                if(child>0){int status;while(waitpid(child,&status,0)<0&&errno==EINTR){}}
+            }
+        }
+    }
+}
+#(endif)
+#(if: target.os == "windows")
+/// Uses the system URL handler without a command shell or linker dependency on shell32.
+fn open_browser(url: &str) {
+    let bytes = url.as_bytes();
+    let length = bytes.len();
+    @unchecked {
+        let pointer = addr(&bytes[0]);
+        @c(includes={"windows.h", "shellapi.h"}) {
+            wchar_t text[128];size_t n=${length};
+            if(n<128){for(size_t i=0;i<n;i++)text[i]=((const unsigned char *)(uintptr_t)${pointer})[i];text[n]=0;
+                HMODULE library=LoadLibraryW(L"shell32.dll");
+                if(library){typedef HINSTANCE (WINAPI *Open)(HWND,LPCWSTR,LPCWSTR,LPCWSTR,LPCWSTR,INT);
+                    Open open=(Open)(uintptr_t)GetProcAddress(library,"ShellExecuteW");
+                    if(open)open(NULL,L"open",text,NULL,NULL,SW_SHOWNORMAL);FreeLibrary(library);}
+            }
+        }
+    }
+}
+#(endif)

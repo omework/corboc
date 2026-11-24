@@ -1,0 +1,17 @@
+{
+  "graph": {
+    "pages": 522,
+    "resolved_local_links": 94257,
+    "searchable_entries": 2182,
+    "compiler_type_coverage": "passed"
+  },
+  "server": {
+    "http": "passed",
+    "assets_compared": 5,
+    "head": "passed",
+    "partial_request": "passed",
+    "traversal_and_errors": "passed",
+    "invalid_cli": "passed",
+    "url": "http://127.0.0.1:52960/"
+  }
+}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lift independently generic methods into ordinary function recipes before specialization.
 
-use bootstrap::model::{AstNode, StaticNode, Token};
+use bootstrap::model::{AstNode, StaticNode, Token, token_at};
 use bootstrap::lowering_annotations::same_bytes;
 use bootstrap::loans::borrow_mutable;
 
@@ -55,11 +55,12 @@ pub fn promote_method_templates(
         &self_name[..]
     )
     {
-        return (8, 0);
+        return promote_static_template(&source[0..source.len()], &nodes[0..nodes.len()],
+            &graph[0..graph.len()], &tokens[0..tokens.len()], recipe,
+            &mut output[0..output.len()], &mut offsets[0..offsets.len()]);
     }
-    let receiver_name: [u8; 16] = [
-        95, 95, 99, 111, 114, 98, 111, 95, 114, 101, 99, 101, 105, 118, 101, 114
-    ];
+    // Keep the explicit receiver name: effect annotations refer to `self`.
+    let receiver_name: [u8; 4] = [115, 101, 108, 102];
     let annotation = graph[receiver].first_child;
     let explicit_reference = annotation != 0 && source[nodes[annotation].start] == 38;
     let shared = source[nodes[receiver].start] == 38 || explicit_reference;
@@ -255,6 +256,63 @@ pub fn promote_method_templates(
     if written >= output.len() {
         return (4, 0);
     }
+    offsets[source.len()] = written as u64;
+    (0, written as u64)
+}
+
+/// Lift an associated function recipe without inventing a receiver argument.
+/// Qualified call sites retain their original arguments and evaluation order.
+fn promote_static_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    tokens: &[Token], recipe: u64, output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
+    let owner = nodes[recipe].parent;
+    let mut replacements: [u64; 4194304] = [0; 4194304];
+    let mut point: u64 = 1;
+    while point < nodes.len() as u64 {
+        if nodes[point].kind == 15 {
+            let callee = graph[point].first_child;
+            if nodes[callee].kind == 36 && graph[callee].first_child == 0
+                && text_equal(&source[0..source.len()], &nodes[callee], &nodes[owner]) {
+                let mut last = token_at(&tokens[0..tokens.len()], nodes[callee].start);
+                while tokens[last + 1].start < nodes[callee].end { last += 1; }
+                if same_bytes(&source[tokens[last].start..tokens[last].end],
+                    &source[nodes[recipe].name_start..nodes[recipe].name_end]) {
+                    replacements[nodes[callee].start] = callee;
+                }
+            }
+        }
+        point += 1;
+    }
+    let mut at: u64 = 0;
+    let mut written: usize = 0;
+    while at < source.len() as u64 {
+        if at == nodes[recipe].start {
+            while at < nodes[recipe].end { offsets[at] = written as u64; at += 1; }
+        } else if replacements[at] != 0 {
+            let callee = replacements[at];
+            let before = written as u64;
+            written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], recipe,
+                recipe, &mut output[0..output.len()], written);
+            while at < nodes[callee].end { offsets[at] = before; at += 1; }
+        } else {
+            if written >= output.len() { return (4, 0); }
+            offsets[at] = written as u64;
+            output[written] = source[at]; written += 1; at += 1;
+        }
+    }
+    let newline: [u8; 1] = [10];
+    written = put(&mut output[0..output.len()], written, &newline[..]);
+    at = nodes[recipe].start;
+    while at < nodes[recipe].end {
+        if at == nodes[recipe].name_start {
+            written = instance_name(&source[0..source.len()], &nodes[0..nodes.len()], recipe,
+                recipe, &mut output[0..output.len()], written);
+            at = nodes[recipe].name_end;
+        } else {
+            if written >= output.len() { return (4, 0); }
+            output[written] = source[at]; written += 1; at += 1;
+        }
+    }
+    if written >= output.len() { return (4, 0); }
     offsets[source.len()] = written as u64;
     (0, written as u64)
 }

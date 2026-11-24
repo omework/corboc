@@ -149,10 +149,15 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 fn receiver_shape(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],place:u64,depth:u64)u64 {
     if place==0 || depth>=128{return 0;}
     let kind=nodes[place].kind;let child=graph[place].first_child;
-    if kind==7{return values[graph[place].binding].origin_call;}
+    if kind==7 {
+        let origin=values[graph[place].binding].origin_call;
+        // Scalar/slice summaries can encode lengths or tags, not AST identities.
+        if origin>=nodes.len() as u64{return 0;}
+        return origin;
+    }
     if kind==19 || kind==14{return receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],child,depth+1);}
     let mut shape=receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],child,depth+1);
-    if shape==0{return 0;}
+    if shape==0 || shape>=nodes.len() as u64{return 0;}
     if source[nodes[shape].start]==38{shape=graph[shape].first_child;}
     if kind==18 && source[nodes[shape].start]==91{return graph[shape].first_child;}
     if kind!=17{return 0;}
@@ -166,7 +171,7 @@ pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
     values: &[CheckedValue], call: u64) u64 {
     let receiver = graph[call].first_child;
     let mut shape=receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],receiver,0);
-    if shape==0{return 0;}
+    if shape==0 || shape>=nodes.len() as u64{return 0;}
     if source[nodes[shape].start]==38{shape=graph[shape].first_child;}
     let record = nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],shape);
     if nodes[record].kind != 28 && nodes[record].kind != 29 { return 0; }
