@@ -546,3 +546,13 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild and install at the existing PATH.
 
 [Implementation, scope and exact file-check result](WAL_FILE_CHECK_CYCLE.md).
+
+## Binary byte-order namespaces
+
+- [x] Expose `target.endian` as target-build metadata (`little` / `big`).
+- [x] Provide NAME-free LittleEndian, BigEndian and conditional NativeEndian static methods in the STD.
+- [x] Validate every supported primitive method, byte-order output, short buffers and bool rejection with fatal UBSan.
+- [x] Validate selection before imports; run the updated README example.
+- [x] Install compiler and explicitly recorded development STD snapshot at the existing PATH.
+
+[Focused evidence and platform scope](BINARY_ORDERS_CYCLE.md).

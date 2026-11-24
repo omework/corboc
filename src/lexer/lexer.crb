@@ -507,6 +507,26 @@ pub fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)->
 #(endif)
 
 
+/// Byte order of the compiler's configured target, resolved by its native build.
+fn target_endian() -> i64 {
+    let mut order: i64 = 0;
+    @unchecked {
+        @c {
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            ${order} = 9;
+#elif defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            ${order} = 10;
+#elif defined(_WIN32)
+            ${order} = 9;
+#else
+#error "The compiler target must define its byte order"
+#endif
+        }
+    }
+    order
+}
+
+
 pub fn target_key(key: &[u8]) -> i64 {
     let os: [u8; 2] = [111, 115];
     if key.content_eq(&os[..]) { return target_os(); }
@@ -516,6 +536,8 @@ pub fn target_key(key: &[u8]) -> i64 {
     if key.content_eq(&arch[..]) { return target_arch(); }
     let pointer_width: [u8; 13] = [112, 111, 105, 110, 116, 101, 114, 95, 119, 105, 100, 116, 104];
     if key.content_eq(&pointer_width[..]) { return target_pointer_width(); }
+    let endian: [u8; 6] = [101, 110, 100, 105, 97, 110];
+    if key.content_eq(&endian[..]) { return target_endian(); }
     return 0;
 }
 
@@ -570,6 +592,14 @@ pub fn target_value_matches(text: &[u8], key: i64) -> bool {
     }
     if key == 8 {
         let value: [u8; 2] = [54, 52];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 9 {
+        let value: [u8; 6] = [108, 105, 116, 116, 108, 101];
+        return target_text_eq(&text[0..text.len()], &value[..]);
+    }
+    if key == 10 {
+        let value: [u8; 3] = [98, 105, 103];
         return target_text_eq(&text[0..text.len()], &value[..]);
     }
     false

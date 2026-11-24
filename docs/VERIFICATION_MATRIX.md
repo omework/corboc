@@ -450,3 +450,11 @@ borrowed array header forms its slice view before overloaded dereference is
 materialized. Block-result moves preserve slice permission and retained roots,
 using existing lifetime checks. Two focused guard executions and ten iteration
 regressions pass. [Evidence and source fixes](WAL_FILE_CHECK_CYCLE.md).
+
+## Target byte order and binary API
+
+`target.endian` is evaluated with the existing compile-time selection mechanism
+before imports. The STD's static LittleEndian/BigEndian/NativeEndian methods
+reuse the existing caller-buffer binary implementation and its checked errors.
+The explicit name constant was removed at the user's request.
+[Focused execution evidence](BINARY_ORDERS_CYCLE.md).

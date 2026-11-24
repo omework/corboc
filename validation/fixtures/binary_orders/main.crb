@@ -1,0 +1,239 @@
+// Static byte-order API: one representative value per supported primitive.
+use std::encoding::binary::{LittleEndian, BigEndian, NativeEndian, Error};
+
+#(if: target.endian == "little")
+fn native_first() -> u8 { 4 }
+#(endif)
+#(if: target.endian == "big")
+fn native_first() -> u8 { 1 }
+#(endif)
+
+fn run() -> Result<(), Error> {
+    {
+        let value: u8 = 127;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_u8(value, &mut output[..])?;
+        let decoded = LittleEndian::read_u8(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u16 = 4660;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_u16(value, &mut output[..])?;
+        let decoded = LittleEndian::read_u16(&output[..])?;
+        print(count == 2 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u32 = 16909060;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_u32(value, &mut output[..])?;
+        let decoded = LittleEndian::read_u32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u64 = 72623859790382856;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_u64(value, &mut output[..])?;
+        let decoded = LittleEndian::read_u64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i32 = -42;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_i32(value, &mut output[..])?;
+        let decoded = LittleEndian::read_i32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i64 = -123456789;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_i64(value, &mut output[..])?;
+        let decoded = LittleEndian::read_i64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f32 = 1.5;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_f32(value, &mut output[..])?;
+        let decoded = LittleEndian::read_f32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f64 = -2.25;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_f64(value, &mut output[..])?;
+        let decoded = LittleEndian::read_f64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: bool = true;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_bool(value, &mut output[..])?;
+        let decoded = LittleEndian::read_bool(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: usize = 4096;
+        let mut output: [u8; 9] = [90; 9];
+        let count = LittleEndian::write_usize(value, &mut output[..])?;
+        let decoded = LittleEndian::read_usize(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u8 = 127;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_u8(value, &mut output[..])?;
+        let decoded = BigEndian::read_u8(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u16 = 4660;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_u16(value, &mut output[..])?;
+        let decoded = BigEndian::read_u16(&output[..])?;
+        print(count == 2 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u32 = 16909060;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_u32(value, &mut output[..])?;
+        let decoded = BigEndian::read_u32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u64 = 72623859790382856;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_u64(value, &mut output[..])?;
+        let decoded = BigEndian::read_u64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i32 = -42;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_i32(value, &mut output[..])?;
+        let decoded = BigEndian::read_i32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i64 = -123456789;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_i64(value, &mut output[..])?;
+        let decoded = BigEndian::read_i64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f32 = 1.5;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_f32(value, &mut output[..])?;
+        let decoded = BigEndian::read_f32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f64 = -2.25;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_f64(value, &mut output[..])?;
+        let decoded = BigEndian::read_f64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: bool = true;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_bool(value, &mut output[..])?;
+        let decoded = BigEndian::read_bool(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: usize = 4096;
+        let mut output: [u8; 9] = [90; 9];
+        let count = BigEndian::write_usize(value, &mut output[..])?;
+        let decoded = BigEndian::read_usize(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u8 = 127;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_u8(value, &mut output[..])?;
+        let decoded = NativeEndian::read_u8(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u16 = 4660;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_u16(value, &mut output[..])?;
+        let decoded = NativeEndian::read_u16(&output[..])?;
+        print(count == 2 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u32 = 16909060;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_u32(value, &mut output[..])?;
+        let decoded = NativeEndian::read_u32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: u64 = 72623859790382856;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_u64(value, &mut output[..])?;
+        let decoded = NativeEndian::read_u64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i32 = -42;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_i32(value, &mut output[..])?;
+        let decoded = NativeEndian::read_i32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: i64 = -123456789;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_i64(value, &mut output[..])?;
+        let decoded = NativeEndian::read_i64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f32 = 1.5;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_f32(value, &mut output[..])?;
+        let decoded = NativeEndian::read_f32(&output[..])?;
+        print(count == 4 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: f64 = -2.25;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_f64(value, &mut output[..])?;
+        let decoded = NativeEndian::read_f64(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: bool = true;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_bool(value, &mut output[..])?;
+        let decoded = NativeEndian::read_bool(&output[..])?;
+        print(count == 1 && decoded == value && output[8] == 90);
+    }
+    {
+        let value: usize = 4096;
+        let mut output: [u8; 9] = [90; 9];
+        let count = NativeEndian::write_usize(value, &mut output[..])?;
+        let decoded = NativeEndian::read_usize(&output[..])?;
+        print(count == 8 && decoded == value && output[8] == 90);
+    }
+    let mut bytes: [u8; 4] = [0; 4];
+    BigEndian::write_u32(16909060, &mut bytes[..])?;
+    print(bytes[0] == 1 && bytes[3] == 4);
+    LittleEndian::write_u32(16909060, &mut bytes[..])?;
+    print(bytes[0] == 4 && bytes[3] == 1);
+    NativeEndian::write_u32(16909060, &mut bytes[..])?;
+    print(bytes[0] == native_first());
+    let mut short: [u8; 2] = [91, 92];
+    match BigEndian::write_u32(1, &mut short[..]) {
+        Err(_) => { print(short[0] == 91 && short[1] == 92); },
+        Ok(_) => { print(false); },
+    }
+    let invalid: [u8; 1] = [2];
+    match NativeEndian::read_bool(&invalid[..]) { Err(_) => { print(true); }, Ok(_) => { print(false); } }
+    Ok(())
+}
+
+fn main() { match run() { Ok(()) => {}, Err(_) => { print(false); } } }
