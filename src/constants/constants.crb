@@ -55,7 +55,19 @@ pub fn resolve_constant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
         let separator = skip_path_trivia(&source[0..source.len()], copy(owner_end), copy(end));
         if separator + 2 >= end || source[separator] != 58 || source[separator + 1] != 58 { return 0; }
         let member = skip_path_trivia(&source[0..source.len()], separator + 2, copy(end));
-        let owner = &source[nodes[use_node].name_start..owner_end];
+        let self_name: [u8; 4] = [83,101,108,102];
+        let written_owner = &source[nodes[use_node].name_start..owner_end];
+        let mut context: u64 = 0;
+        if written_owner.content_eq(&self_name[..]) {
+            context = nodes[use_node].parent;
+            while context != 0 && nodes[context].kind != 28 && nodes[context].kind != 29 && nodes[context].kind != 49 {
+                context = nodes[context].parent;
+            }
+            if context == 0 { return 0; }
+        }
+        let resolved_start = if context == 0 { nodes[use_node].name_start } else { nodes[context].name_start };
+        let resolved_end = if context == 0 { owner_end } else { nodes[context].name_end };
+        let owner = &source[resolved_start..resolved_end];
         let name = &source[member..end];
         let mut item = graph[0].first_child;
         while item != 0 {

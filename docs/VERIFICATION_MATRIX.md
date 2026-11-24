@@ -473,3 +473,7 @@ Documentation/build scope: local-link/search integrity and actual loopback HTTP 
 ## Definition-member annotations
 
 Existing annotation semantics are retained through definition lowering and specialization. Associated configurable constants follow lexical environments; generic struct/enum methods and associated functions, including async, preserve effect contracts. Seven fatal-UBSan executions and seven expected refusals pass, plus six directly related method regressions. [Evidence and limits](MEMBER_ANNOTATIONS_CYCLE.md).
+
+## Unrestricted member order and scoped Self
+
+Definition partitioning preserves existing owner ASTs without requiring fields or variants first. Qualified associated array bounds use the lexical configuration; Self resolves against its enclosing nominal type. Eight focused observations, 14 annotation checks and six method/receiver observations pass. [Evidence and platform limits](MIXED_MEMBERS_CYCLE.md).

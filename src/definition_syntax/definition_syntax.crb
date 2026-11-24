@@ -8,7 +8,39 @@ use bootstrap::lexer::{scan_tokens, select_target};
 use bootstrap::diagnostics::{diagnostic_stage, diagnostic_rewritten, diagnostic_copy};
 use bootstrap::packages::append;
 
-/// Normalize only declaration syntax. Values and constructor field lists are untouched.
+/// Skip one balanced syntax group; native bodies are already opaque tokens.
+fn definition_group(tokens: &[Token], first: u64, count: u64) u64 {
+    let mut at = first;
+    let mut depth: u64 = 0;
+    while at < count && tokens[at].kind != 0 {
+        let kind = tokens[at].kind;
+        if kind == 2 || kind == 4 || kind == 39 { depth += 1; }
+        if kind == 3 || kind == 5 || kind == 40 {
+            if depth == 0 { return 0; }
+            depth -= 1;
+            if depth == 0 { return at + 1; }
+        }
+        at += 1;
+    }
+    0
+}
+
+/// Copy moved declaration bytes with their original diagnostic mapping.
+fn definition_copy(source: &[u8], start: u64, end: u64, output: &mut [u8],
+    offsets: &mut [u64], first: usize) usize {
+    let mut at = start;
+    let mut written = first;
+    while at < end {
+        if written >= output.len() { return output.len(); }
+        offsets[at] = written as u64;
+        output[written] = source[at]; written += 1; at += 1;
+    }
+    offsets[end] = written as u64;
+    written
+}
+
+/// Partition definition members without changing field or method order within
+/// their own groups. Source declarations may interleave fields and methods.
 pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
     tokens: &mut [Token], mode: i32) (i32, u64) {
     if source.len() >= offsets.len() || source.len() >= output.len() { return (4, 0); }
@@ -17,7 +49,8 @@ pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
     let count = select_target(&source[0..source.len()], &mut tokens[..used + 3]);
     if count == 0 { return (7, 0); }
     if count >= 1572867 { return (4, 0); }
-    let mut split: [u64; 1572867] = [0; 1572867];
+    let mut members: [u64; 1572867] = [0; 1572867];
+    let mut owners: [u64; 1572867] = [0; 1572867];
     let mut comma: [bool; 1572867] = [false; 1572867];
     let mut token: u64 = 0;
     let mut changed = false;
@@ -27,37 +60,67 @@ pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
         let mut open = name + 1;
         while open < count as u64 && tokens[open].kind != 4 && tokens[open].kind != 0 { open += 1; }
         if open >= count as u64 || tokens[open].kind != 4 { return (7, 0); }
+        let close = definition_group(&tokens[0..tokens.len()], open, count as u64);
+        if close == 0 { return (7, 0); }
         let mut part = open + 1;
-        let mut nesting: u64 = 0;
-        let mut methods = false;
-        let mut member = true;
-        let mut parentheses: u64 = 0;
-        let mut brackets: u64 = 0;
-        while part < count as u64 && tokens[part].kind != 0 {
-            let kind = tokens[part].kind;
-            if nesting == 0 && kind == 5 { break; }
-            // Fields/variants precede the first method or associated constant.
-            if nesting == 0 && member && !methods && (kind == 7 || kind == 60 || kind == 71 || kind == 57 || kind == 81) {
-                split[part] = name;
-                methods = true;
-                changed = true;
+        let mut has_members = false;
+        while part < close - 1 {
+            let start = part;
+            let mut head = part;
+            while tokens[head].kind == 71 && tokens[head + 1].kind == 2 {
+                head = definition_group(&tokens[0..tokens.len()], head + 1, count as u64);
+                if head == 0 { return (7, 0); }
             }
-            if !methods && kind == 14 && parentheses == 0 && brackets == 0 { comma[part] = true; changed = true; }
-            if nesting == 0 {
-                if kind == 14 || kind == 11 { member = true; } else { member = false; }
+            if tokens[head].kind == 57 { head += 1; }
+            if tokens[head].kind == 60 { head += 1; }
+            let method = tokens[head].kind == 7;
+            let constant = tokens[head].kind == 81;
+            if method || constant {
+                let mut end = head + 1;
+                while end < close - 1 {
+                    let kind = tokens[end].kind;
+                    if method && kind == 4 {
+                        end = definition_group(&tokens[0..tokens.len()], end, count as u64);
+                        break;
+                    }
+                    if kind == 14 { end += 1; break; }
+                    if kind == 2 || kind == 39 {
+                        end = definition_group(&tokens[0..tokens.len()], end, count as u64);
+                        if end == 0 { return (7, 0); }
+                    } else { end += 1; }
+                }
+                if end == 0 || end > close - 1 || end <= start { return (7, 0); }
+                members[start] = end;
+                has_members = true; changed = true; part = end;
+            } else {
+                // A data member ends at a delimiter outside its type/payload.
+                let mut end = part;
+                while end < close - 1 {
+                    let kind = tokens[end].kind;
+                    if kind == 14 || kind == 11 { end += 1; break; }
+                    if kind == 2 || kind == 4 || kind == 39 {
+                        end = definition_group(&tokens[0..tokens.len()], end, count as u64);
+                        if end == 0 { return (7, 0); }
+                    } else { end += 1; }
+                }
+                let mut at = part;
+                let mut parentheses: u64 = 0;
+                let mut brackets: u64 = 0;
+                while at < end {
+                    let kind = tokens[at].kind;
+                    if kind == 14 && parentheses == 0 && brackets == 0 { comma[at] = true; changed = true; }
+                    if kind == 2 { parentheses += 1; }
+                    if kind == 3 { parentheses -= 1; }
+                    if kind == 39 { brackets += 1; }
+                    if kind == 40 { brackets -= 1; }
+                    at += 1;
+                }
+                if end <= part { return (7, 0); }
+                part = end;
             }
-            if kind == 2 { parentheses += 1; }
-            if kind == 3 { parentheses -= 1; }
-            if kind == 39 { brackets += 1; }
-            if kind == 40 { brackets -= 1; }
-            if kind == 4 || kind == 2 || kind == 39 { nesting += 1; }
-            if kind == 5 || kind == 3 || kind == 40 {
-                if nesting == 0 { return (7, 0); }
-                nesting -= 1;
-            }
-            part += 1;
         }
-        token = part + 1;
+        if has_members { owners[close - 1] = name; }
+        token = close;
     }
     diagnostic_stage(&source[0..source.len()]);
     let mut cursor: u64 = 0;
@@ -65,14 +128,26 @@ pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
     token = 0;
     while token < count as u64 && tokens[token].kind != 0 {
         let at = tokens[token].start;
-        while cursor < at {
+        // Native blocks expose operand tokens inside an already copied span.
+        if at < cursor { token += 1; continue; }
+        written = definition_copy(&source[0..source.len()], cursor, at,
+            &mut output[0..output.len()], &mut offsets[0..offsets.len()], written);
+        cursor = at;
+        if members[token] != 0 {
+            let end = members[token];
+            let stop = tokens[end - 1].end;
+            while cursor < stop { offsets[cursor] = written as u64; cursor += 1; }
+            token = end;
+            continue;
+        }
+        while cursor < tokens[token].end {
             if written >= output.len() { return (4, 0); }
             offsets[cursor] = written as u64;
-            output[written] = source[cursor]; written += 1; cursor += 1;
+            output[written] = if comma[token] { 44 } else { source[cursor] };
+            written += 1; cursor += 1;
         }
-        if split[token] != 0 {
-            let header = "} impl "; let header_bytes = header.as_bytes();
-            let name = split[token];
+        if owners[token] != 0 {
+            let name = owners[token];
             let mut last = name + 1;
             if tokens[last].kind == 23 {
                 let mut depth: u64 = 1; last += 1;
@@ -82,27 +157,33 @@ pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
                     last += 1;
                 }
             }
-            let suffix = " { "; let suffix_bytes = suffix.as_bytes();
+            let header = " impl "; let header_bytes = header.as_bytes();
+            let suffix = " {\n"; let suffix_bytes = suffix.as_bytes();
             let owner = &source[tokens[name].start..tokens[last - 1].end];
             if written + header_bytes.len() + owner.len() + suffix_bytes.len() >= output.len() { return (4, 0); }
             written = append(&mut output[0..output.len()], written, header_bytes);
             written = append(&mut output[0..output.len()], written, owner);
             written = append(&mut output[0..output.len()], written, suffix_bytes);
-        }
-        while cursor < tokens[token].end {
-            if written >= output.len() { return (4, 0); }
-            offsets[cursor] = written as u64;
-            output[written] = if comma[token] { 44 } else { source[cursor] };
-            written += 1; cursor += 1;
+            let mut member = last;
+            let newline: [u8; 1] = [10];
+            while member < token {
+                if members[member] == 0 { member += 1; continue; }
+                let end = members[member];
+                written = definition_copy(&source[0..source.len()], tokens[member].start, tokens[end - 1].end,
+                    &mut output[0..output.len()], &mut offsets[0..offsets.len()], written);
+                if written >= output.len() { return (4, 0); }
+                written = append(&mut output[0..output.len()], written, &newline[..]);
+                member = end;
+            }
+            let finish = "}\n"; let finish_bytes = finish.as_bytes();
+            if written + finish_bytes.len() >= output.len() { return (4, 0); }
+            written = append(&mut output[0..output.len()], written, finish_bytes);
         }
         token += 1;
     }
-    while cursor < source.len() as u64 {
-        if written >= output.len() { return (4, 0); }
-        offsets[cursor] = written as u64;
-        output[written] = source[cursor]; written += 1; cursor += 1;
-    }
-    offsets[cursor] = written as u64;
+    written = definition_copy(&source[0..source.len()], cursor, source.len() as u64,
+        &mut output[0..output.len()], &mut offsets[0..offsets.len()], written);
+    if written >= output.len() { return (4, 0); }
     if changed { diagnostic_rewritten(&output[..written], &offsets[0..offsets.len()], source.len()); }
     (0, written as u64)
 }

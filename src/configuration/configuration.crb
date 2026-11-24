@@ -34,13 +34,23 @@ fn deferred_length(source: &[u8], nodes: &[AstNode], position: u64, end: u64) bo
     false
 }
 
+/// Return the final identifier in a named array bound (possibly Type::NAME).
+fn bound_tail(tokens: &[Token], first: u64) u64 {
+    let mut last = first;
+    while last + 2 < tokens.len() as u64 && tokens[last + 1].kind == 43 && tokens[last + 2].kind == 1 { last += 2; }
+    last
+}
+
 /// Avoid configuration work for ordinary compilation units and generic array bounds.
 pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) bool {
     let mut i: usize = 0;
     while i + 3 < tokens.len() {
         if tokens[i].kind == 71 && (tokens[i + 2].annotation == 31 || tokens[i + 2].annotation == 32) { return true; }
-        if tokens[i].kind == 14 && tokens[i + 1].kind == 1 && tokens[i + 2].kind == 40
-            && !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[i+1].start, tokens[i+1].end) { return true; }
+        if tokens[i].kind == 14 && tokens[i + 1].kind == 1 {
+            let last = bound_tail(&tokens[0..tokens.len()], (i + 1) as u64);
+            if tokens[last + 1].kind == 40 && (last != (i + 1) as u64
+                || !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[i+1].start, tokens[i+1].end)) { return true; }
+        }
         i += 1;
     }
     false
@@ -222,20 +232,34 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
             continue;
         }
         let symbol = references[token];
-        let array_length = token != 0 && tokens[token - 1].kind == 14 && tokens[token + 1].kind == 40
+        let last_bound = bound_tail(&tokens[0..tokens.len()], token);
+        let array_length = token != 0 && tokens[token - 1].kind == 14 && tokens[last_bound + 1].kind == 40
             && tokens[token].kind == 1
-            && !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[token].start, tokens[token].end);
+            && (last_bound != token || !deferred_length(&source[0..source.len()], &nodes[0..nodes.len()], tokens[token].start, tokens[token].end));
         if array_length {
-            if symbol == 0 || nodes[symbols[symbol - 1]].kind != 76 { drop(report_violation_site(1, copy(at), 66)); state[2] = 8; return; }
-            let constant = symbols[symbol - 1];
+            // Preserve the existing module-symbol resolution for bare bounds;
+            // qualified and Self bounds additionally resolve their AST path.
+            let mut constant: u64 = if symbol != 0 && nodes[symbols[symbol - 1]].kind == 76 { symbols[symbol - 1] } else { 0 };
+            let mut expression: u64 = 1;
+            while expression < nodes.len() as u64 && constant == 0 {
+                if nodes[expression].start == at && (nodes[expression].kind == 7 || nodes[expression].kind == 36) {
+                    constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], expression);
+                }
+                expression += 1;
+            }
+            if constant == 0 { drop(report_violation_site(1, copy(at), 66)); state[2] = 8; return; }
             let index = slot(&constants[0..constants.len()], copy(constant));
             let value = if index == 0 { graph[graph[constant].first_child].next_sibling }
                 else { environments[env * 256 + index - 1] };
             if nodes[value].kind != 9 { drop(report_violation_site(1, copy(at), 67)); state[2] = 8; return; }
             let before = state[1];
             put(&mut output[0..output.len()], &mut state[0..state.len()], &source[nodes[value].start..nodes[value].end]);
-            skip_span(copy(at), tokens[token].end, &mut offsets[0..offsets.len()],copy(before));
-            offsets[tokens[token].end] = state[1];
+            let bound_end = tokens[last_bound].end;
+            skip_span(copy(at), bound_end, &mut offsets[0..offsets.len()],copy(before));
+            offsets[bound_end] = state[1];
+            cursor = bound_end;
+            token = last_bound + 1;
+            continue;
         } else if env != 0 && symbol != 0 && affected[symbol - 1] {
             let before = state[1];
             name(&source[0..source.len()],&nodes[0..nodes.len()], symbols[symbol - 1], copy(env),&mut output[0..output.len()],&mut state[0..state.len()]);

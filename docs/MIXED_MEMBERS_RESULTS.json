@@ -1,0 +1,156 @@
+{
+  "mixed_members": [
+    {
+      "case": "tracker_layout",
+      "status": "executed, fatal UBSan",
+      "output": "5\n7\n5\n"
+    },
+    {
+      "case": "interleaved_enum",
+      "status": "executed, fatal UBSan",
+      "output": "9\n3\n6\n"
+    },
+    {
+      "case": "unmarked_qualified_bound",
+      "status": "executed, fatal UBSan",
+      "output": "3\n2\n"
+    },
+    {
+      "case": "definition_self_alias",
+      "status": "executed, fatal UBSan",
+      "output": "7\n9\n"
+    },
+    {
+      "case": "imported_members",
+      "status": "executed, fatal UBSan",
+      "output": "9\n42\n4\n"
+    },
+    {
+      "case": "outside_self",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vkoqsf9x/outside_self.crb:1:10: error[E0111]: syntax error: Self requires an enclosing struct or enum type\n     1 | fn bad() Self { 0 } fn main() {}\n       |          ^~~~\n       = found: `Self`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unknown_bound",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vkoqsf9x/unknown_bound.crb:1:23: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | struct X { data: [u8; Self::MISSING]; } fn main() {}\n       |                       ^~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "runtime_bound",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vkoqsf9x/runtime_bound.crb:1:41: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | fn main() { let size=3; let values:[u8; size]=[0;3]; }\n       |                                         ^~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "annotations": [
+    {
+      "case": "associated_configuration",
+      "status": "executed, fatal UBSan",
+      "output": "4\n6\n9\n9\n11\n11\n12\n11\n9\n4\n6\n"
+    },
+    {
+      "case": "generic_members",
+      "status": "executed, fatal UBSan",
+      "output": "21\ntrue\n42\nfalse\n7\n8\n"
+    },
+    {
+      "case": "method_lock_contracts",
+      "status": "executed, fatal UBSan",
+      "output": "3\n5\n"
+    },
+    {
+      "case": "conditional_members",
+      "status": "executed, fatal UBSan",
+      "output": "3\n"
+    },
+    {
+      "case": "branch_members",
+      "status": "executed, fatal UBSan",
+      "output": "8\n9\n"
+    },
+    {
+      "case": "async_generic_members",
+      "status": "executed, fatal UBSan",
+      "output": "49\n"
+    },
+    {
+      "case": "imported_members",
+      "status": "executed, fatal UBSan",
+      "output": "9\n42\n4\n"
+    },
+    {
+      "case": "configurable_method",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/configurable_method.crb:1:28: error[E0007]: syntax error: invalid syntax near this token\n     1 | struct X { #(configurable) fn bad() {} } fn main() {}\n       |                            ^~\n       = found: `fn`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "lock_constant",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/lock_constant.crb:1:35: error[E0113]: syntax error: expected a function name after fn\n     1 | struct X { #(lock: on=self) const BAD: i64=1; } fn main() {}\n       |                                   ^~~\n       = found: `BAD`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "type_constant",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/type_constant.crb:1:32: error[E0113]: syntax error: expected a function name after fn\n     1 | enum X { End; #(type: T) const BAD: i64=1; } fn main() {}\n       |                                ^~~\n       = found: `BAD`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "configurable_field",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/configurable_field.crb:1:12: error[E0007]: syntax error: invalid syntax near this token\n     1 | struct X { #(configurable) value: i64; } fn main() {}\n       |            ^\n       = found: `#`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unknown_member_annotation",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/unknown_member_annotation.crb:1:15: error[E0007]: syntax error: invalid syntax near this token\n     1 | enum X { End; #(unknown) fn bad() {} } fn main() {}\n       |               ^\n       = found: `#`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unmarked_override",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/unmarked_override.crb:1:62: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | struct X { pub const LIMIT: i64=1; } fn main() { #(override: X::LIMIT=2) { print(X::LIMIT); } }\n       |                                                              ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "out_of_range_override",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-vdwqm5e5/out_of_range_override.crb:1:89: error[N1]: rule violation: literal cannot be represented by the required type\n     1 | enum X { End; #(configurable) pub const LIMIT: u8=1; } fn main() { #(override: X::LIMIT=256) { print(X::LIMIT); } }\n       |                                                                                         ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "methods": {
+    "cases": [
+      {
+        "case": "inline_methods",
+        "status": "passed",
+        "output": "22\ntrue\ntrue\nfalse\n14\n22\n"
+      },
+      {
+        "case": "constrained_receivers",
+        "status": "passed",
+        "output": "42\n21\ntrue\n6\n"
+      },
+      {
+        "case": "unavailable_specialization",
+        "status": "rejected",
+        "exit": 8,
+        "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/unavailable_specialization.crb:17:59: error[N1]: rule violation: method is unavailable for this specialization: its typed receiver requires different type arguments 'value'\n    17 | fn main() { let value = Container::new(true); print(value.doubled()); }\n       |                                                           ^~~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/unavailable_specialization.crb:17:17: note: value declared here (generated-source anchor)\n    17 | fn main() { let value = Container::new(true); print(value.doubled()); }\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "shared_receiver_mutation",
+        "status": "rejected",
+        "exit": 8,
+        "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/shared_receiver_mutation.crb:1:51: error[N5]: rule violation: cannot mutate through a shared reference 'self'\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                                   ^~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/shared_receiver_mutation.crb:1:35: note: borrow created here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/shared_receiver_mutation.crb:1:35: note: borrowed target declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/shared_receiver_mutation.crb:1:35: note: value declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "wrong_receiver_owner",
+        "status": "rejected",
+        "exit": 8,
+        "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/wrong_receiver_owner.crb:1:70: error[N1]: rule violation: typed receiver must name the enclosing struct or enum\n     1 | struct Other { value: i64; } struct Point { value: i64; fn bad(self: &Other) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.bad()); }\n       |                                                                      ^~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+      },
+      {
+        "case": "consumed_receiver",
+        "status": "rejected",
+        "exit": 8,
+        "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/consumed_receiver.crb:1:137: error[N6]: rule violation: use of a value after its ownership was moved 'p'\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                                                                         ^\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/consumed_receiver.crb:1:118: note: ownership moved here (generated-source anchor)\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                                                      ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-lcy6c2oe/consumed_receiver.crb:1:88: note: value declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                        ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+      }
+    ],
+    "platform": "macOS ARM64",
+    "sanitizer": "UBSan"
+  }
+}

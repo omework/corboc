@@ -202,8 +202,8 @@ do {
         else if(code==107)message="expected ',' or ')' after this tuple-pattern binding";
         else if(code==108)message="a tuple pattern requires at least two bindings";
         else if(code==109)message="expected a field name or decimal tuple index after '.'";
-        else if(code==111)message="Self is only valid inside an impl block";
-        else if(code==112)message="Self already includes the enclosing impl type arguments";
+        else if(code==111)message="Self requires an enclosing struct or enum type";
+        else if(code==112)message="Self already includes the enclosing type arguments";
         else if(code==110)message="put mut on an individual tuple binding, as in for (mut first, second)";
         else if(code==113)message="expected a function name after fn";
         else if(code==114)message="expected '(' after the function name";

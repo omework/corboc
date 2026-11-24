@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Resolve Self to the enclosing impl target before generic specialization.
+//! Resolve Self to the enclosing nominal type before generic specialization.
 use bootstrap::model::{AstNode, StaticNode, Token, token_at};
 use bootstrap::packages::append;
 use bootstrap::diagnostics::diagnostic_emit;
@@ -37,7 +37,7 @@ pub fn expand_self_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     let mut typed = false;
     while node < nodes.len() as u64 {
         if nodes[node].start <= start && end <= nodes[node].end {
-            if nodes[node].kind == 49 { owner = node; }
+            if nodes[node].kind == 28 || nodes[node].kind == 29 || nodes[node].kind == 49 { owner = node; }
             if nodes[node].kind == 4 { typed = true; }
         }
         node += 1;

@@ -588,3 +588,14 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Rebuild and install at the existing PATH.
 
 [Evidence and platform scope](MEMBER_ANNOTATIONS_CYCLE.md).
+
+## Unrestricted definition members and Self
+
+- [x] Remove required ordering between fields/variants, constants and methods.
+- [x] Resolve qualified associated array bounds and scoped Self aliases.
+- [x] Preserve native operands and diagnostic mappings during partitioning.
+- [x] Update grammar, bilingual guides and documentation inventory.
+- [x] Pass 28 focused/regression observations and the qualified WAL snapshot check.
+- [x] Install at the existing PATH.
+
+[Evidence and scope](MIXED_MEMBERS_CYCLE.md).
