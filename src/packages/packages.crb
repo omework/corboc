@@ -2,25 +2,25 @@ use bootstrap::diagnostics::{diagnostic_input,diagnostic_copy};
 use bootstrap::package_io::read_source;
 
 pub struct PackageFile {
-    end: u64,
-    module_start: u64,
-    module_end: u64,
-    entry: bool,
-    package: u64,
-    visible: u64,
+    end: u64;
+    module_start: u64;
+    module_end: u64;
+    entry: bool;
+    package: u64;
+    visible: u64;
     /// Canonical input path in the package name arena; distinct from its module.
-    path_start: u64,
-    path_end: u64,
+    path_start: u64;
+    path_end: u64;
 }
 
 pub struct PackageInput {
-    source_end: u64,
-    names_end: u64,
-    files_end: u64,
-    error: i32,
+    source_end: u64;
+    names_end: u64;
+    files_end: u64;
+    error: i32;
 }
 
-pub fn append(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
+pub fn append(output: &mut [u8], cursor: usize, bytes: &[u8]) usize {
     if bytes.len() > output.len() - cursor { return 0; }
     diagnostic_copy(cursor as u64,&bytes[0..bytes.len()]);
     let mut offset: usize = 0;
@@ -31,12 +31,12 @@ pub fn append(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
     cursor + offset
 }
 
-fn name_byte(byte: u8) -> bool {
+fn name_byte(byte: u8) bool {
     byte == 95 || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
         || (byte >= 48 && byte <= 57)
 }
 
-fn entry_length(name: &[u8]) -> usize {
+fn entry_length(name: &[u8]) usize {
     let mut length: usize = 0;
     while length < name.len() && name[length] != 0 { length = length + 1; }
     length
@@ -44,7 +44,7 @@ fn entry_length(name: &[u8]) -> usize {
 
 fn walk(path: &[u8], module_start: usize, module_end: usize, source: &mut [u8],
     names: &mut [u8], files: &mut [PackageFile], start_source: usize, start_names: usize,
-    start_files: usize, package: u64) -> PackageInput {
+    start_files: usize, package: u64) PackageInput {
     let mut directory_cache: [u32; 150] = [0; 150];
     let directory = open_package_directory(&path[0..path.len()], &mut directory_cache);
     if directory == 0 {

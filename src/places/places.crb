@@ -17,12 +17,12 @@ use bootstrap::declarations::{nominal_declaration, verification_field, layout_vi
 
 // An array binding uses the usual availability state. Its shape is independent
 // of that state: the element kind is in ty and the length is in origin_call.
-pub fn is_scalar_array(ty: i64) -> bool {
+pub fn is_scalar_array(ty: i64) bool {
     (ty >= 401 && ty <= 409) || ty == 450
 }
 
 // Compact inline-array layout shared by signatures and Result payloads.
-pub fn inline_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn inline_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let (array, length) = scalar_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], annotation);
     if array <= 0 { return array; }
@@ -30,11 +30,11 @@ pub fn inline_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     array_code(array - 400, length, false)
 }
 
-pub fn inline_array(ty: i64) -> bool {
+pub fn inline_array(ty: i64) bool {
     ty >= 10001 && ty <= 419609 && ty % 100 >= 1 && ty % 100 <= 9
 }
 
-pub fn literal_length(source: &[u8], nodes: &[AstNode], literal: u64) -> (bool, u64) {
+pub fn literal_length(source: &[u8], nodes: &[AstNode], literal: u64) (bool, u64) {
     if nodes[literal].kind != 9 { return (false, 0); }
     let mut at = nodes[literal].start;
     let end = nodes[literal].end;
@@ -55,7 +55,7 @@ pub fn literal_length(source: &[u8], nodes: &[AstNode], literal: u64) -> (bool, 
 }
 
 // 0 denotes another type; a negative value denotes an invalid array length.
-pub fn scalar_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> (i64, u64) {
+pub fn scalar_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) (i64, u64) {
     if annotation == 0 || source[nodes[annotation].start] != 91 { return (0, 0); }
     let item = graph[annotation].first_child;
     let length = graph[item].next_sibling;
@@ -67,7 +67,7 @@ pub fn scalar_array_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     return (ty + 400, count);
 }
 
-fn record_array_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+fn record_array_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     if annotation == 0 || source[nodes[annotation].start] != 91 { return 0; }
     let element = graph[annotation].first_child;
     if element == 0 || graph[element].next_sibling == 0 { return 0; }
@@ -79,7 +79,7 @@ fn record_array_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     0
 }
 
-fn array_row_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+fn array_row_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     if annotation == 0 || source[nodes[annotation].start] != 91 { return 0; }
     let row = graph[annotation].first_child;
     if row == 0 || graph[row].next_sibling == 0 { return 0; }
@@ -88,7 +88,7 @@ fn array_row_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     0
 }
 
-fn scalar_width(ty: i64) -> u64 {
+fn scalar_width(ty: i64) u64 {
     if ty == 2 || ty == 7 || ty == 9 { return 8; }
     if ty == 1 || ty == 6 || ty == 8 { return 4; }
     if ty == 5 { return 2; }
@@ -96,7 +96,7 @@ fn scalar_width(ty: i64) -> u64 {
 }
 
 fn check_flat_array_literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64) -> (i64, u64) {
+    values: &mut [CheckedValue], literal: u64, annotation: u64) (i64, u64) {
     let (declared, count) = scalar_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
     if declared < 0 { return (declared, 0); }
@@ -144,7 +144,7 @@ fn check_flat_array_literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     return (element + 400, length);
 }
 
-fn row_shape_equal(values: &[CheckedValue], left: u64, right: u64) -> bool {
+fn row_shape_equal(values: &[CheckedValue], left: u64, right: u64) bool {
     let mut a = left;
     let mut b = right;
     while values[a].ty == 450 && values[b].ty == 450 {
@@ -156,7 +156,7 @@ fn row_shape_equal(values: &[CheckedValue], left: u64, right: u64) -> bool {
 }
 
 fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], literal: u64, annotation: u64) i64 {
     let repeat = nodes[literal].kind == 45;
     let first = graph[literal].first_child;
     if nodes[first].kind != 44 && nodes[first].kind != 45 {
@@ -215,12 +215,12 @@ fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     0
 }
 
-fn replicable_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) -> bool {
+fn replicable_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) bool {
     value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], record, depth, false)
 }
 
 pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    record: u64, depth: u64, allow_destructor: bool) -> bool {
+    record: u64, depth: u64, allow_destructor: bool) bool {
     if depth>=64{return false;}
     if tuple_shape(&source[0..source.len()],&nodes[0..nodes.len()],copy(record)){
         let mut part=graph[record].first_child;
@@ -303,7 +303,7 @@ pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn structural_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], literal: u64, annotation: u64) i64 {
     let first = graph[literal].first_child;
     if nodes[first].kind==20 || (nodes[first].kind==7 && values[graph[first].binding].ty==475){return tuple_array(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],literal,annotation);}
     let named = nodes[first].kind == 7 && values[graph[first].binding].ty == 300;
@@ -352,7 +352,7 @@ fn structural_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn check_array_literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64) -> (i64, u64) {
+    values: &mut [CheckedValue], literal: u64, annotation: u64) (i64, u64) {
     let plain = structural_array(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(literal), copy(annotation));
     if plain != 0 { return (plain, literal); }
@@ -367,7 +367,7 @@ pub fn check_array_literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn check_fixed_index(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], index: u64, length: u64) -> i64 {
+    values: &mut [CheckedValue], index: u64, length: u64) i64 {
     if nodes[index].kind == 46 { return -9; }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(index), 0, 0);
@@ -384,7 +384,7 @@ pub fn check_fixed_index(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 // tree. This walk validates selectors once, in source order, without moving the
 // base or deriving a synthetic binding for each field.
 pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], place: u64) -> (i64, u64, u64) {
+    values: &mut [CheckedValue], place: u64) (i64, u64, u64) {
     let kind = nodes[place].kind;
     let child = graph[place].first_child;
     if kind == 7 {
@@ -582,7 +582,7 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn check_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) -> (i64, u64) {
+    values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) (i64, u64) {
     let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     if ty <= 0 { return (ty, 0); }
@@ -621,7 +621,7 @@ pub fn check_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 /// Scalar clients retain their type restriction; every place uses the same
 /// recursive root, permission and loan checks as aggregate replacement.
 pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) -> (i64, u64) {
+    values: &mut [CheckedValue], place: u64, write: bool, borrowing: bool) (i64, u64) {
     let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     drop(binding);
@@ -636,7 +636,7 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
 // 710 + element is &array, 720 + element is &mut array. Keep the
 // fixed length with the reference so it survives parameter substitution.
 pub fn array_ref_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64) -> (i64, u64) {
+    annotation: u64) (i64, u64) {
     if annotation == 0 || source[nodes[annotation].start] != 38 { return (0, 0); }
     let inner = graph[annotation].first_child;
     let (array, length) = scalar_array_type(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -647,7 +647,7 @@ pub fn array_ref_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn dereference_owned_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], projection: u64, expression: u64, expected: i64, mode: i64) -> i64 {
+    values: &mut [CheckedValue], projection: u64, expression: u64, expected: i64, mode: i64) i64 {
     // Dereferencing a stored scalar reference reads its pointee. The
     // enclosing owner and all its existing dependencies remain checked.
     let (record, holder, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -691,7 +691,7 @@ pub fn dereference_owned_projection(source: &[u8], nodes: &[AstNode], graph: &[S
     return scalar;
 }
 
-pub fn inline_vector_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], vector: u64) -> u64 {
+pub fn inline_vector_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], vector: u64) u64 {
     let word: [u8; 6] = [86,101,99,116,111,114];
     let name = &source[nodes[vector].name_start..nodes[vector].name_end];
     let element = graph[vector].first_child;
@@ -703,10 +703,10 @@ pub fn inline_vector_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if ty >= 10101 { element } else { 0 }
 }
 
-pub fn slice_view(ty: i64) -> bool { ty >= 741 && ty <= 749 }
+pub fn slice_view(ty: i64) bool { ty >= 741 && ty <= 749 }
 
 pub fn slice_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64) -> (i64, u64, bool) {
+    annotation: u64) (i64, u64, bool) {
     if annotation == 0 || source[nodes[annotation].start] != 38 { return (0, 0, false); }
     let slice = graph[annotation].first_child;
     let element = graph[slice].first_child;
@@ -728,7 +728,7 @@ pub fn slice_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn check_slice_bound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], bound: u64, length: u64, fixed: bool) -> i64 {
+    values: &mut [CheckedValue], bound: u64, length: u64, fixed: bool) i64 {
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(bound), 0, 0);
     if ty < 0 { return ty; }
@@ -743,7 +743,7 @@ fn check_slice_bound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 // Preserve both the storage root and the reborrowed descriptor.
 pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], destination: u64, expression: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], destination: u64, expression: u64, annotation: u64) i64 {
     let text=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),0);
     if text<0{return text;}
     if text==2000138 {
@@ -832,7 +832,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 /// The destination's root and shape survive every projection; nominal types
 /// are consulted only for layout compatibility, not to locate that root.
 pub fn replace_aggregate_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, place: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, place: u64) i64 {
     let (ty, binding, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     if ty < 0 { return ty; }
@@ -886,7 +886,7 @@ pub fn replace_aggregate_place(source: &[u8], nodes: &[AstNode], graph: &[Static
 }
 
 pub fn slice_length(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, expected: i64) -> i64 {
+    values: &mut [CheckedValue], call: u64, expected: i64) i64 {
     let base = graph[call].first_child;
     let word: [u8; 3] = [108,101,110];
     let spelling = &source[nodes[call].name_start..nodes[call].name_end];
@@ -910,7 +910,7 @@ pub fn slice_length(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 /// Resolve a write through a scalar reference stored in an aggregate field.
 /// The pointee reservation and the containing aggregate remain independent.
 pub fn writable_reference_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], projection: u64, expression: u64) -> (i64, u64) {
+    values: &mut [CheckedValue], projection: u64, expression: u64) (i64, u64) {
     let (record, holder, layout) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], graph[projection].first_child);
     if record < 0 { return (record, 0); }
@@ -937,11 +937,11 @@ pub fn writable_reference_projection(source: &[u8], nodes: &[AstNode], graph: &[
 }
 
 /// Positional aggregate identity uses the same root/dependency representation.
-pub fn tuple_shape(source:&[u8],nodes:&[AstNode],shape:u64)->bool{
+pub fn tuple_shape(source:&[u8],nodes:&[AstNode],shape:u64)bool{
     shape!=0 && (nodes[shape].kind==20 || (nodes[shape].kind==4 && source[nodes[shape].start]==40))
 }
 
-fn tuple_array(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],literal:u64,annotation:u64)->i64{
+fn tuple_array(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],literal:u64,annotation:u64)i64{
     let first=graph[literal].first_child;
     let element=if annotation!=0{graph[annotation].first_child}else{0};
     if annotation!=0 && (source[nodes[annotation].start]!=91 || !tuple_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(element))){return 0-violation_site(1,nodes[literal].start,335);}

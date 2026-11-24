@@ -6,9 +6,9 @@ use bootstrap::loans::{borrow_mutable, loan_element, loan_conflict, live_roots};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::verify::{verify_expr, violation};
 
-pub fn nested_loan(ty: i64) -> bool { ty > 1900 && ty < 1940 }
+pub fn nested_loan(ty: i64) bool { ty > 1900 && ty < 1940 }
 
-pub fn nested_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn nested_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let outer = nodes[annotation].start;
     if source[outer] != 38 { return 0; }
     let inner = graph[annotation].first_child;
@@ -26,7 +26,7 @@ pub fn nested_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
 }
 
 pub fn check_nested_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], argument: u64, expected: i64) -> i64 {
+    values: &[CheckedValue], argument: u64, expected: i64) i64 {
     let place = graph[argument].first_child;
     let start = nodes[argument].start;
     if nodes[argument].kind != 13 || nodes[place].kind != 7 { return -9; }
@@ -48,7 +48,7 @@ pub fn check_nested_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 pub fn nested_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, place: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, place: u64) i64 {
     let deref = graph[place].first_child;
     let name = graph[deref].first_child;
     if nodes[deref].kind != 14 || nodes[name].kind != 7 { return 0; }
@@ -69,7 +69,7 @@ pub fn nested_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) i64 {
     let place = graph[expression].first_child;
     if nodes[place].kind != 7 { return 0; }
     let reference = graph[place].binding;
@@ -92,7 +92,7 @@ pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn nested_access(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    point: u64, loan: u64, write: bool) -> i64 {
+    point: u64, loan: u64, write: bool) i64 {
     let start = nodes[point].start;
     if values[loan].state != 1 { return 0 - violation_site(6, start, 248); }
     if !live_roots(&values[0..values.len()], &graph[0..graph.len()], copy(loan)) {

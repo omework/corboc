@@ -15,7 +15,7 @@ use bootstrap::tasks::{task_value, future_type};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::verify::{violation, check_type, verify_expr};
 
-pub fn loan_element(values: &[CheckedValue], reference: u64) -> i64 {
+pub fn loan_element(values: &[CheckedValue], reference: u64) i64 {
     let ty = values[reference].ty;
     if ty >= 81 && ty <= 87 { return ty - 80; }
     if selected_loan_union(copy(ty)) { return ty % 10; }
@@ -26,7 +26,7 @@ pub fn loan_element(values: &[CheckedValue], reference: u64) -> i64 {
     target_type
 }
 
-pub fn external_roots(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], loan: u64) -> bool {
+pub fn external_roots(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], loan: u64) bool {
     let target = values[loan].target;
     if nodes[target].kind==4 && nodes[nodes[target].parent].kind==3
         && graph[nodes[target].parent].type_node==target && values[target].target==target {return true;}
@@ -56,7 +56,7 @@ pub fn external_roots(nodes: &[AstNode], graph: &[StaticNode], values: &[Checked
 }
 
 pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &[CheckedValue], expression: u64, result: i64) -> i64 {
+    values: &[CheckedValue], expression: u64, result: i64) i64 {
     let kind = nodes[expression].kind;
     let offset = nodes[expression].start;
     if kind == 7 {
@@ -130,7 +130,7 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 
 // A positive result is a conflict with a later use in the same statement
 // sequence. A negative result requires control-flow liveness to decide.
-pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) -> bool {
+pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) bool {
     let ty = values[loan].ty;
     if result_type(copy(ty)) {let member=values[loan].loan_parent;return member!=0 && reserves(&values[0..values.len()],&graph[0..graph.len()],member,target);}
     if ty == 5019 { return values[loan].target == target; }
@@ -284,7 +284,7 @@ pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target
 // Resolve a projected use against the field's canonical name. An
 // unprojected use retains all field loans.
 fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    aggregate: u64, target: u64, use_node: u64, write: bool) -> i64 {
+    aggregate: u64, target: u64, use_node: u64, write: bool) i64 {
     let mut point = use_node;
     while nodes[nodes[point].parent].kind == 19 { point = nodes[point].parent; }
     let projection = nodes[point].parent;
@@ -316,13 +316,13 @@ fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[Check
 
 // Follow provenance through relay calls and storage views. A parameter may
 // serve as its own symbolic root.
-pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> bool {
+pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) bool {
     let live=live_roots_impl(values,graph,loan);
     if !live {semantic_invalid_root(loan);}
     live
 }
 
-fn live_roots_impl(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> bool {
+fn live_roots_impl(values: &[CheckedValue], graph: &[StaticNode], loan: u64) bool {
     let reference_type = values[loan].ty;
     if reference_type == 5019 { return values[values[loan].target].state == 1; }
     if constructor_arguments(copy(reference_type)) {
@@ -420,7 +420,7 @@ fn live_roots_impl(values: &[CheckedValue], graph: &[StaticNode], loan: u64) -> 
     return live_roots(&values[0..values.len()], &graph[0..graph.len()], parent);
 }
 
-fn exclusive_slice_field(values: &[CheckedValue], graph: &[StaticNode], holder: u64, target: u64) -> bool {
+fn exclusive_slice_field(values: &[CheckedValue], graph: &[StaticNode], holder: u64, target: u64) bool {
     let ty = values[holder].ty;
     if ty>20 && ty<60{return values[holder].writable && reserves(&values[0..values.len()],&graph[0..graph.len()],holder,target);}
     if (ty >= 741 && ty <= 749) || ty == 734 {
@@ -454,7 +454,7 @@ fn exclusive_slice_field(values: &[CheckedValue], graph: &[StaticNode], holder: 
     false
 }
 
-fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u64, target: u64) -> bool {
+fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u64, target: u64) bool {
     if !task_value(values[task].ty) { return false; }
     if values[task].ty == 3500 {
         let record = values[task].loan_parent;
@@ -507,7 +507,7 @@ fn exclusive_task_target(values: &[CheckedValue], graph: &[StaticNode], task: u6
 }
 
 fn bootstrap_task_reserves(values: &[CheckedValue], graph: &[StaticNode], node: u64,
-    target: u64, exclusive: bool) -> bool {
+    target: u64, exclusive: bool) bool {
     let ty = values[node].ty;
     if ty == 5019 { return values[node].target == target; }
     if constructor_arguments(copy(ty)) {
@@ -559,7 +559,7 @@ fn bootstrap_task_reserves(values: &[CheckedValue], graph: &[StaticNode], node: 
 // The first field selector identifies disjoint storage beneath one binding.
 // Mutable bindings retain their own identity, since an initializer alone
 // cannot describe their later reassignments.
-pub fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+pub fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) u64 {
     if point == 0 || depth >= 128 { return 0; }
     let kind = nodes[point].kind;
     if kind == 7 { return projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[point].binding, depth + 1); }
@@ -589,7 +589,7 @@ pub fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth
     0
 }
 
-pub fn disjoint_fields(nodes: &[AstNode], graph: &[StaticNode], point: u64, reference: u64) -> bool {
+pub fn disjoint_fields(nodes: &[AstNode], graph: &[StaticNode], point: u64, reference: u64) bool {
     let current = projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], point, 0);
     let prior = projected_path(nodes, graph, reference, 0);
     current / 1048576 != 0 && current / 1048576 == prior / 1048576
@@ -597,25 +597,25 @@ pub fn disjoint_fields(nodes: &[AstNode], graph: &[StaticNode], point: u64, refe
 }
 
 pub fn loan_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
-    target: u64, point: u64, write: bool) -> i64 {
+    target: u64, point: u64, write: bool) i64 {
     loan_conflict_after(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
         target, copy(point), write, nodes[point].start)
 }
 
 pub fn loan_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
-    target: u64, point: u64, write: bool, from: u64) -> i64 {
+    target: u64, point: u64, write: bool, from: u64) i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], copy(target), copy(point), copy(write), from, 0, !write, point)
 }
 
 pub fn loan_conflict_excluding(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
-    target: u64, point: u64, write: bool, excluded: u64) -> i64 {
+    target: u64, point: u64, write: bool, excluded: u64) i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
         &graph[0..graph.len()], target, copy(point), write, nodes[point].start, excluded, false, point)
 }
 
 fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
-    target: u64, point: u64, write: bool, from: u64, excluded: u64, permission_only: bool, proof: u64) -> i64 {
+    target: u64, point: u64, write: bool, from: u64, excluded: u64, permission_only: bool, proof: u64) i64 {
     // Constructing an address does not read or write the referent. Its lifetime
     // is still attached to the resulting reference by the ordinary binding path.
     if permission_only && (nodes[point].kind == 13 || (nodes[point].kind == 5
@@ -713,7 +713,7 @@ fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[Stati
     0
 }
 
-fn linear_use_path(nodes: &[AstNode], graph: &[StaticNode], use_node: u64, stop: u64) -> bool {
+fn linear_use_path(nodes: &[AstNode], graph: &[StaticNode], use_node: u64, stop: u64) bool {
     let mut node = use_node;
     while node != stop {
         let kind = nodes[node].kind;
@@ -730,7 +730,7 @@ fn linear_use_path(nodes: &[AstNode], graph: &[StaticNode], use_node: u64, stop:
     kind == 5 || kind == 6 || kind == 8 || kind == 10 || kind == 21
 }
 
-fn linear_sequence(nodes: &[AstNode], graph: &[StaticNode], first: u64, last: u64) -> bool {
+fn linear_sequence(nodes: &[AstNode], graph: &[StaticNode], first: u64, last: u64) bool {
     let mut node = first;
     while node != last {
         if node == 0 { return false; }
@@ -746,7 +746,7 @@ fn linear_sequence(nodes: &[AstNode], graph: &[StaticNode], first: u64, last: u6
     true
 }
 
-pub fn borrow_mutable(prefix: &[u8]) -> bool {
+pub fn borrow_mutable(prefix: &[u8]) bool {
     // Unresolved and by-value receivers have no borrow prefix. Do not subtract
     // the leading '&' width unless that token is actually present.
     if prefix.len()==0 || prefix[0]!=38{return false;}
@@ -760,7 +760,7 @@ pub fn borrow_mutable(prefix: &[u8]) -> bool {
 // Handle a single borrowed scalar argument. Additional arguments need
 // reservation tracking across argument evaluation.
 pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], annotation: u64, argument: u64) -> i64 {
+    values: &[CheckedValue], annotation: u64, argument: u64) i64 {
     let start = nodes[argument].start;
     let referent = graph[annotation].first_child;
     let expected = verify_primitive(&source[0..source.len()], nodes[referent].name_start, nodes[referent].name_end);
@@ -823,7 +823,7 @@ pub fn check_single_loan_argument(source: &[u8], nodes: &[AstNode], graph: &[Sta
 }
 
 pub fn compatible_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], annotation: u64, expected: i64, exclusive: bool) -> bool {
+    tokens: &[Token], annotation: u64, expected: i64, exclusive: bool) bool {
     let referent = graph[annotation].first_child;
     let token = token_at(&tokens[0..tokens.len()], nodes[annotation].start);
     if tokens[token].kind != 25 || referent == 0 { return false; }
@@ -832,7 +832,7 @@ pub fn compatible_loan_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     ty == expected
 }
 
-fn exclusive_pair(values: &[CheckedValue], graph: &[StaticNode], left: u64, right: u64) -> i64 {
+fn exclusive_pair(values: &[CheckedValue], graph: &[StaticNode], left: u64, right: u64) i64 {
     if (values[left].ty >= 81 && values[left].ty <= 87) || (values[right].ty >= 81 && values[right].ty <= 87) {
         return 1;
     }
@@ -858,7 +858,7 @@ fn exclusive_pair(values: &[CheckedValue], graph: &[StaticNode], left: u64, righ
 }
 
 pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], values: &mut [CheckedValue], call: u64, point: u64, function: u64) -> i64 {
+    tokens: &[Token], values: &mut [CheckedValue], call: u64, point: u64, function: u64) i64 {
     let (nominal, reference) = field_reborrow(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(function));
     if nominal != 0 {
@@ -975,17 +975,17 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 /// A content access preserves storage; only synchronization and explicit lock intervals exclude it.
-pub fn access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool) -> i64 {
+pub fn access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool) i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(point), write, nodes[point].start, 0, true, point)
 }
 
 /// Checks the final content write after evaluating its right-hand side once.
-pub fn access_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool, from: u64) -> i64 {
+pub fn access_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, point: u64, write: bool, from: u64) i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(point), write, from, 0, true, point)
 }
 
 /// Follows explicit retained-lock markers independently of ordinary writable references.
-fn explicit_lock_dependency(values: &[CheckedValue], graph: &[StaticNode], value: u64, target: u64, depth: u64) -> bool {
+fn explicit_lock_dependency(values: &[CheckedValue], graph: &[StaticNode], value: u64, target: u64, depth: u64) bool {
     if value == 0 || depth > 64 { return false; }
     let ty = values[value].ty;
     if ty == 5019 { return values[value].target == target; }
@@ -1004,6 +1004,6 @@ fn explicit_lock_dependency(values: &[CheckedValue], graph: &[StaticNode], value
 }
 
 /// A delayed body begins execution here; its capture supplies the separate lock proof.
-pub fn launch_access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, launch: u64, capture: u64, write: bool) -> i64 {
+pub fn launch_access_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode], target: u64, launch: u64, capture: u64, write: bool) i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()], target, copy(launch), write, nodes[launch].start, 0, true, capture)
 }

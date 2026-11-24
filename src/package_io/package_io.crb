@@ -2,7 +2,7 @@ use std::text::Utf8Error;
 use std::io::{File, FileError, FileMode, FilePerm};
 
 /// Borrows compiler-internal path bytes as text, excluding an optional NUL.
-pub fn path_text(path: &[u8]) -> Result<&str, Utf8Error> {
+pub fn path_text(path: &[u8]) Result<&str, Utf8Error> {
     let length = path.len();
     let mut end: usize = length;
     if length != 0 && path[length - 1] == 0 { end = length - 1; }
@@ -11,7 +11,7 @@ pub fn path_text(path: &[u8]) -> Result<&str, Utf8Error> {
 }
 
 /// Opens an internal byte path through the public UTF-8 File boundary.
-pub fn open_file(path: &[u8], mode: i64) -> Result<File, FileError> {
+pub fn open_file(path: &[u8], mode: i64) Result<File, FileError> {
     let text = match path_text(&path[0..path.len()]) {
         Ok(text) => { text },
         Err(_error) => { return Err(FileError.InvalidPath); },
@@ -20,7 +20,7 @@ pub fn open_file(path: &[u8], mode: i64) -> Result<File, FileError> {
 }
 
 /// Creates a file from an internal path without exposing a byte-path STD API.
-pub fn create_file(path: &[u8], mode: i64, perm: FilePerm) -> Result<File, FileError> {
+pub fn create_file(path: &[u8], mode: i64, perm: FilePerm) Result<File, FileError> {
     let text = match path_text(&path[0..path.len()]) {
         Ok(text) => { text },
         Err(_error) => { return Err(FileError.InvalidPath); },
@@ -29,7 +29,7 @@ pub fn create_file(path: &[u8], mode: i64, perm: FilePerm) -> Result<File, FileE
 }
 
 // Compiler-internal paths may still include their terminating zero.
-pub fn read_source(path: &[u8], buffer: &mut [u8]) -> (i32, usize) {
+pub fn read_source(path: &[u8], buffer: &mut [u8]) (i32, usize) {
     match open_file(&path[0..path.len()], FileMode::read_only()) {
         Err(error) => { drop(error); return (1, 0); },
         Ok(opened) => {

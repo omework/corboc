@@ -8164,5 +8164,21 @@
     "rule": "1",
     "condition": "unborrowed range supplied to a mutable slice parameter",
     "message": "slice argument requires an explicit mutable borrow"
+  },
+  {
+    "id": 1020,
+    "file": "src/generics/generics.crb",
+    "function": "specialize_structs",
+    "rule": "1",
+    "condition": "typed receiver does not match concrete generic arguments",
+    "message": "method is unavailable for this specialization: its typed receiver requires different type arguments"
+  },
+  {
+    "id": 1021,
+    "file": "src/definition_syntax/definition_syntax.crb",
+    "function": "expand_typed_receivers",
+    "rule": "1",
+    "condition": "borrowed receiver names a different owner",
+    "message": "typed receiver must name the enclosing struct or enum"
   }
 ]

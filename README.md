@@ -73,7 +73,7 @@ build/install/
 Assignments, arguments and returns copy primitive values implicitly:
 
 ```rust
-fn identity(value: i64) -> i64 { value }
+fn identity(value: i64) i64 { value }
 
 fn main() {
     let original: i64 = 12;
@@ -306,7 +306,7 @@ and Windows companion-handle/event resource costs.
 `value.ref()` and `value.mut_ref()` normalize to `&value` and `&mut value` for
 all types. They do not implicitly dereference an existing reference or grant
 mutation permission. `for item in source` evaluates its source once, then uses
-indexed array/slice access or the source's `next() -> Option<T>` method.
+indexed array/slice access or the source's `next() Option<T>` method.
 
 ```rust
 fn main() {
@@ -331,3 +331,24 @@ remains accepted for STD/source compatibility. Associated functions retain
 `Type::method(...)`. Instance methods can use nested field receivers, including
 `self.tracker.lock().await`, with the existing ownership, borrowing and lock
 contracts. See [implementation and focused evidence](docs/ENUM_PATHS_FIELD_RECEIVERS_CYCLE.md).
+
+### Definition-local methods
+
+Methods and associated constants live inside their struct or enum, after
+semicolon-terminated fields/variants. Return types follow parameters directly.
+A typed receiver can constrain an existing generic parameter:
+
+```rust
+#(type: T)
+struct Container<T> {
+    value: T;
+
+    pub fn doubled(self: &Container<i64>) i64 {
+        self.value * 2
+    }
+}
+```
+
+The compiler selects that method only for `Container<i64>`. Shared, mutable and
+consuming receivers keep the ordinary ownership and borrowing rules.
+See [the syntax specification](../corbo-lang/docs/DEFINITION_METHODS.md).

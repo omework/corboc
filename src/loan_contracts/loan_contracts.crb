@@ -2,7 +2,7 @@ use bootstrap::checked_state::record as record_checked;
 use bootstrap::model::{AstNode, StaticNode, Token, CheckedValue};
 use bootstrap::verify::check_type;
 
-pub fn loan_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+pub fn loan_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
     let callee = graph[call].first_child;
     if nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
     let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
@@ -18,7 +18,7 @@ pub fn loan_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call:
 // A direct return or explicit reborrow can be traced back to a parameter.
 // An unresolved return keeps the caller on the conservative path.
 fn expression_origin(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    value: u64, parameter: u64, contracts: &[CheckedValue]) -> bool {
+    value: u64, parameter: u64, contracts: &[CheckedValue]) bool {
     let kind = nodes[value].kind;
     let child = graph[value].first_child;
     if kind == 19 {
@@ -59,7 +59,7 @@ fn expression_origin(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn tail_returns(nodes: &[AstNode], point: u64, body: u64) -> bool {
+fn tail_returns(nodes: &[AstNode], point: u64, body: u64) bool {
     if nodes[point].kind != 10 { return false; }
     let mut block = nodes[point].parent;
     while block != body {
@@ -75,7 +75,7 @@ fn tail_returns(nodes: &[AstNode], point: u64, body: u64) -> bool {
 // Every reachable return must be accounted for. Scanning syntactic returns
 // may retain unreachable origins, which is safe for reservation.
 fn returned_origin(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64,
-    body: u64, parameter: u64, contracts: &[CheckedValue]) -> bool {
+    body: u64, parameter: u64, contracts: &[CheckedValue]) bool {
     let mut point: u64 = 1;
     while point < nodes.len() as u64 {
         let explicit = nodes[point].kind == 6 && graph[point].destination == function;
@@ -93,7 +93,7 @@ fn returned_origin(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], funct
 }
 
 fn reaches_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    visited: &mut [bool], current: u64, target: u64) -> bool {
+    visited: &mut [bool], current: u64, target: u64) bool {
     if visited[current] { return false; }
     visited[current] = true;
     let mut node: u64 = 1;

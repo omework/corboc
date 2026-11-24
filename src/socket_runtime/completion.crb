@@ -7,7 +7,7 @@ use bootstrap::target_c::byte_text;
 use bootstrap::runtime_sources::completion_runtime;
 
 /// Returns attach=1 or asynchronous completion=2 only inside the linker-designated STD functions.
-pub fn completion_call(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],node:u64)->i64 {
+pub fn completion_call(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],node:u64)i64 {
     if nodes[node].kind!=15{return 0;}
     let callee=graph[node].first_child;if nodes[callee].kind!=36{return 0;}
     let mut owner=nodes[node].parent;

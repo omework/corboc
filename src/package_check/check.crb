@@ -3,13 +3,13 @@
 use std::time::{Duration, sleep};
 
 /// Reports command syntax without creating any package artifacts.
-pub fn usage() -> i32 {
+pub fn usage() i32 {
     message("usage: corboc check [PACKAGE|FILE.crb] [--watch]\n");
     6
 }
 
 /// Waits between content snapshots. A second stable snapshot debounces saves.
-pub fn pause() -> bool {
+pub fn pause() bool {
     match sleep(Duration::from_millis(250)) {
         Ok(()) => { true },
         Err(error) => { drop(error); false },
@@ -32,7 +32,7 @@ pub fn message(text: &str) {
 }
 
 /// Resolves the bundled STD using the same executable-relative layout as build.
-pub fn installed_stdlib(output: &mut [u8]) -> usize {
+pub fn installed_stdlib(output: &mut [u8]) usize {
     let length = executable_path(&mut output[0..output.len()]);
     if length == 0 { return 0; }
     let mut last: usize = 0;

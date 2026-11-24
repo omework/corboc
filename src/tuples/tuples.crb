@@ -18,12 +18,12 @@ use bootstrap::ownership::{plain_structure, check_owned_struct};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::calls::bootstrap_callee;
 
-pub fn tuple_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+pub fn tuple_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) bool {
     nodes[annotation].kind == 4 && source[nodes[annotation].start] == 40 && graph[annotation].first_child != 0
 }
 
 pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], expression: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], expression: u64, annotation: u64) i64 {
     if nodes[expression].kind == 26 {
         return scalar_tuple_if(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], expression, annotation);
@@ -146,7 +146,7 @@ pub fn tuple_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn symbolic_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    point: u64, annotation: u64) -> i64 {
+    point: u64, annotation: u64) i64 {
     let mut field: u64 = if annotation == 0 { 0 } else { graph[annotation].first_child };
     while field != 0 {
         if graph[field].first_child != 0 { return -9; }
@@ -170,7 +170,7 @@ pub fn symbolic_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
 }
 
 pub fn destructure_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64) i64 {
     let first = graph[statement].first_child;
     let annotation = if nodes[first].kind == 4 { copy(first) } else { 0 };
     let expression = if annotation != 0 { graph[first].next_sibling } else { first };
@@ -215,7 +215,7 @@ pub fn destructure_tuple(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     0
 }
 
-fn scalar_tuple_binding(nodes: &[AstNode], graph: &[StaticNode], operand: u64) -> u64 {
+fn scalar_tuple_binding(nodes: &[AstNode], graph: &[StaticNode], operand: u64) u64 {
     let mut node = operand;
     while nodes[node].kind == 19 { node = graph[node].first_child; }
     if nodes[node].kind == 7 { return graph[node].binding; }
@@ -223,7 +223,7 @@ fn scalar_tuple_binding(nodes: &[AstNode], graph: &[StaticNode], operand: u64) -
 }
 
 fn scalar_tuple_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    tuple: u64, merge: bool) -> i64 {
+    tuple: u64, merge: bool) i64 {
     let mut item = graph[tuple].first_child;
     while item != 0 {
         let binding = scalar_tuple_binding(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(item));
@@ -270,7 +270,7 @@ fn scalar_tuple_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Che
 }
 
 // Each leaf is checked against the incoming state; moves merge only after every alternative is valid.
-fn scalar_tuple_if(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64)->i64 {
+fn scalar_tuple_if(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64)i64 {
     let checked=tuple_alternative(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],
         &mut values[0..values.len()],copy(expression),annotation,0);
     if checked<0{return checked;}
@@ -278,7 +278,7 @@ fn scalar_tuple_if(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut
     if moved!=0{return moved;}475
 }
 
-fn tuple_alternative(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64,hint:u64)->i64 {
+fn tuple_alternative(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,annotation:u64,hint:u64)i64 {
     if expression==0{return -9;}
     if nodes[expression].kind==26 {
         let test=graph[expression].first_child;let yes=graph[test].next_sibling;
@@ -337,7 +337,7 @@ fn tuple_alternative(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
     if reference!=0{return 0-violation_site(1, nodes[expression].start, 729);}475
 }
 
-fn tuple_alternative_moves(nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64)->i64 {
+fn tuple_alternative_moves(nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64)i64 {
     if nodes[expression].kind==26 {
         let test=graph[expression].first_child;let yes=graph[test].next_sibling;
         let left=scalar_arm(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(yes));
@@ -356,7 +356,7 @@ fn tuple_alternative_moves(nodes:&[AstNode],graph:&[StaticNode],values:&mut [Che
     }0
 }
 
-fn scalar_tuple_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+fn scalar_tuple_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) bool {
     let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call));
     if function == 0 || nodes[function].kind != 1 { return false; }
     let mut argument = graph[graph[call].first_child].next_sibling;
@@ -374,7 +374,7 @@ fn scalar_tuple_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], cal
 }
 
 // Identifies the tuple-producing alternatives without evaluating any expression.
-pub fn tuple_conditional(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],expression:u64)->bool {
+pub fn tuple_conditional(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],expression:u64)bool {
     if nodes[expression].kind==20{return true;}
     if nodes[expression].kind==15 {
         let callee=bootstrap_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));

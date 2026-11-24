@@ -5,7 +5,7 @@ use std::io::File;
 use std::io::{FileMode, FilePerm};
 
 /// Checks a portable package identifier before using it as a directory name.
-fn valid_name(name: &[u8]) -> bool {
+fn valid_name(name: &[u8]) bool {
     if name.len() == 0 || name.len() > 255 { return false; }
     let mut at: usize = 0;
     while at < name.len() {
@@ -28,13 +28,13 @@ fn message(text: &str) {
 }
 
 /// Returns the usage status without touching the filesystem.
-pub fn usage() -> i32 {
+pub fn usage() i32 {
     message("usage: corboc new <package_name>\n");
     6
 }
 
 /// Writes a complete file, retrying partial writes and closing on scope exit.
-fn write_file(path: &[u8], bytes: &[u8]) -> bool {
+fn write_file(path: &[u8], bytes: &[u8]) bool {
     let mut file = match create_file(&path[0..path.len()], FileMode::WRITE_ONLY | FileMode::CREATE_NEW, FilePerm.DefaultMode) {
         Ok(file) => { file },
         Err(_error) => { return false; },
@@ -54,7 +54,7 @@ fn write_file(path: &[u8], bytes: &[u8]) -> bool {
 }
 
 /// Appends bounded bytes while retaining the output's trailing NUL.
-fn append(output: &mut [u8], offset: usize, bytes: &[u8]) -> usize {
+fn append(output: &mut [u8], offset: usize, bytes: &[u8]) usize {
     let mut i: usize = 0;
     while i < bytes.len() {
         output[offset + i] = bytes[i];
@@ -64,7 +64,7 @@ fn append(output: &mut [u8], offset: usize, bytes: &[u8]) -> usize {
 }
 
 /// Creates one new child directory and its minimal runnable package.
-pub fn run(name: &[u8]) -> i32 {
+pub fn run(name: &[u8]) i32 {
     if !valid_name(&name[0..name.len()]) {
         message("corboc: invalid package name; use letters, digits and underscores, starting with a letter or underscore (std and runtime are reserved)\n");
         return 6;
@@ -83,7 +83,7 @@ pub fn run(name: &[u8]) -> i32 {
 }
 
 /// Populates only the freshly created directory; no Git repository is initialized.
-fn populate(name: &[u8]) -> bool {
+fn populate(name: &[u8]) bool {
     let mut path: [u8; 512] = [0; 512];
     let root = append(&mut path[..], 0, &name[0..name.len()]);
     let child = "/src";

@@ -3,7 +3,7 @@ use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::scalar::{verify_primitive, verify_literal_hint};
 use bootstrap::calls::bootstrap_callee;
 
-pub fn scalar_known_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], operand: u64) -> i64 {
+pub fn scalar_known_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], operand: u64) i64 {
     let mut node = operand;
     while nodes[node].kind == 19 || nodes[node].kind == 12 {
         node = graph[node].first_child;

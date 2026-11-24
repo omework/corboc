@@ -21,24 +21,24 @@ use bootstrap::declarations::{nominal_declaration, verification_field};
 // A branch keeps an independent state for each successor. Local declarations
 // have unique node IDs, so only pre-existing bindings participate in the join.
 struct BranchState {
-    before: i64,
-    yes: i64,
+    before: i64;
+    yes: i64;
 }
 
 pub struct LoopEdge {
-    breaks: i64,
-    continues: i64,
+    breaks: i64;
+    continues: i64;
 }
 
 // An empty spelling denotes the parser-generated else arm of if-let.
-pub fn wildcard_pattern(source: &[u8], nodes: &[AstNode], pattern: u64) -> bool {
+pub fn wildcard_pattern(source: &[u8], nodes: &[AstNode], pattern: u64) bool {
     if nodes[pattern].kind != 41 { return false; }
     let start = nodes[pattern].name_start;
     let end = nodes[pattern].name_end;
     end == start || (end == start + 1 && source[start] == 95)
 }
 
-fn join_availability(left: i64, right: i64) -> i64 {
+fn join_availability(left: i64, right: i64) i64 {
     if left == 0 { return right; }
     if right == 0 || left == right { return left; }
     4
@@ -62,7 +62,7 @@ pub fn record_loop_edge(values: &[CheckedValue], graph: &[StaticNode], edges: &m
 }
 
 pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], edges: &mut [LoopEdge], branch: u64, result: i64, value_context: bool, destination: u64) -> (i64, i64) {
+    values: &mut [CheckedValue], edges: &mut [LoopEdge], branch: u64, result: i64, value_context: bool, destination: u64) (i64, i64) {
     if value_context && (result==0 || result==475)
         && tuple_conditional(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(branch)) {
         let checked=tuple_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(branch),0);
@@ -169,7 +169,7 @@ pub fn check_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
 
 // Widen differing scalar states at the back edge until the loop head stabilizes.
 pub fn check_while(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], node: u64, result: i64) -> i64 {
+    values: &mut [CheckedValue], node: u64, result: i64) i64 {
     let (status, ty) = loop_flow(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &tokens[0..tokens.len()], &mut values[0..values.len()], node, result, 0);
     drop(ty);
@@ -177,7 +177,7 @@ pub fn check_while(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
 }
 
 pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], node: u64, result: i64, receiver: i64) -> (i64, i64) {
+    values: &mut [CheckedValue], node: u64, result: i64, receiver: i64) (i64, i64) {
     if receiver == 0 {
         let drained = drain_handles(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
             &mut values[0..values.len()], copy(node));
@@ -271,13 +271,12 @@ pub fn loop_flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
     return (0, 0);
 }
 
-
 // Nominal variants, task results and collection options use the same join:
 // a move in an exiting arm does not poison a continuing arm, and a
 // conditional move cannot reappear at the join.
 pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     values: &mut [CheckedValue], edges: &mut [LoopEdge], expression: u64,
-    result: i64, receiver: i64, destination: u64) -> (i64, i64) {
+    result: i64, receiver: i64, destination: u64) (i64, i64) {
     let subject = graph[expression].first_child;
     let mut which = copy(subject);
     let explicit_borrow = nodes[subject].kind == 13;
@@ -735,8 +734,7 @@ fn set_state(values: &mut [CheckedValue], binding: u64, state: i64) {
         loan_parent: loan_parent, origin_call: origin_call, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binding);
 }
 
-
-pub fn pattern_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pattern: u64, nominal: u64) -> u64 {
+pub fn pattern_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pattern: u64, nominal: u64) u64 {
     let mut start = nodes[pattern].name_end;
     let limit = nodes[pattern].end;
     while start < limit && source[start] != 46 && !(source[start]==58 && start+1<limit && source[start+1]==58) { start = start + 1; }

@@ -23,7 +23,7 @@ use bootstrap::places::record_with_shared_fields;
 
 // Scalar collection operations already use these verifier type codes.
 pub fn scalar_option_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64) -> i64 {
+    annotation: u64) i64 {
     let name: [u8; 6] = [79,112,116,105,111,110];
     let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     if !spelling.content_eq(&name[..]) { return 0; }
@@ -45,14 +45,14 @@ pub fn scalar_option_annotation(source: &[u8], nodes: &[AstNode], graph: &[Stati
     0
 }
 
-pub fn scalar_option(ty: i64) -> bool { ty > 910 && ty < 920 || optional(ty) }
+pub fn scalar_option(ty: i64) bool { ty > 910 && ty < 920 || optional(ty) }
 
-pub fn nested_checked_option(ty: i64) -> i64 {
+pub fn nested_checked_option(ty: i64) i64 {
     if optional(copy(ty)) && scalar_option(option_payload(copy(ty))) { return option_payload(ty); }
     0
 }
 
-fn option_leaf(ty: i64) -> i64 {
+fn option_leaf(ty: i64) i64 {
     let mut current = ty;
     while optional(copy(current)) {
         current = option_payload(current);
@@ -60,12 +60,12 @@ fn option_leaf(ty: i64) -> i64 {
     current
 }
 
-pub fn checked_option_payload(ty: i64) -> i64 {
+pub fn checked_option_payload(ty: i64) i64 {
     if optional(copy(ty)) { return option_payload(ty); }
     ty - 910
 }
 
-pub fn option_variant(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
+pub fn option_variant(source: &[u8], nodes: &[AstNode], node: u64) i64 {
     let some: [u8; 4] = [83,111,109,101];
     let none: [u8; 4] = [78,111,110,101];
     let spelling = &source[nodes[node].name_start..nodes[node].name_end];
@@ -74,7 +74,7 @@ pub fn option_variant(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
     0
 }
 
-pub fn scalar_reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn scalar_reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let inner = graph[annotation].first_child;
     if inner == 0 || source[nodes[annotation].start] != 38 || graph[inner].first_child != 0 { return 0; }
     let element = verify_primitive(&source[0..source.len()], nodes[inner].name_start, nodes[inner].name_end);
@@ -84,26 +84,26 @@ pub fn scalar_reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[St
 }
 
 // The node id identifies the type, while the low bit distinguishes &mut.
-pub fn record_borrow(ty: i64) -> bool { ty > 20000000 && ty <= 21048577 }
+pub fn record_borrow(ty: i64) bool { ty > 20000000 && ty <= 21048577 }
 
-pub fn slice_borrow(ty: i64) -> bool {
+pub fn slice_borrow(ty: i64) bool {
     (ty >= 30000002 && ty <= 30000015) || (ty > 31000000 && ty <= 32048577)
         || (ty >= 33020202 && ty <= 33839219)
 }
 
-pub fn slice_borrow_type(ty: i64) -> i64 {
+pub fn slice_borrow_type(ty: i64) i64 {
     if ty >= 33000000 { return 749; }
     if ty > 31000000 { return 748; }
     740 + (ty - 30000000) / 2
 }
 
-pub fn borrow_shape(ty: i64) -> u64 {
+pub fn borrow_shape(ty: i64) u64 {
     if record_borrow(copy(ty)) { return unsigned((ty - 20000000) / 2); }
     if ty > 31000000 && ty <= 32048577 { return unsigned((ty - 31000000) / 2); }
     0
 }
 
-pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return argument_text_type();}
     let scalar = scalar_reference_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
@@ -131,14 +131,14 @@ pub fn reference_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     20000000 + 2 * signed(nominal) + (if mutable { 1 } else { 0 })
 }
 
-pub fn borrow_exclusive(ty: i64) -> bool {
+pub fn borrow_exclusive(ty: i64) bool {
     if ty==2000138{return false;}
     if record_borrow(copy(ty)) || slice_borrow(copy(ty)) { return ty % 2 == 1; }
     ty >= 40
 }
 
 fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) -> i64 {
+    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) i64 {
     let start = nodes[expression].start;
     let exclusive = borrow_exclusive(copy(reference));
     let nominal = unsigned((reference - 20000000) / 2);
@@ -193,7 +193,7 @@ fn check_option_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     return ty;
 }
 
-pub fn option_borrow(ty: i64) -> i64 {
+pub fn option_borrow(ty: i64) i64 {
     if !optional(copy(ty)) { return 0; }
     let payload = option_leaf(ty);
     if (payload > 20 && payload <= 29) || (payload > 40 && payload <= 49)
@@ -204,7 +204,7 @@ pub fn option_borrow(ty: i64) -> i64 {
 // Resolve the selected field of a stored shared reference reborrow. This
 // path denotes the pointee, rather than the storage of the field itself.
 pub fn shared_field_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    expression: u64, binding: u64, layout: u64, reference: i64) -> u64 {
+    expression: u64, binding: u64, layout: u64, reference: i64) u64 {
     if reference <= 20 || reference >= 28 || nodes[expression].kind != 13
         || graph[expression].mutable { return 0; }
     let dereference = graph[expression].first_child;
@@ -227,7 +227,7 @@ pub fn shared_field_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 // stored in that parameter. Record the latter only when every Some path
 // selects the same field.
 pub fn shared_option_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64, reference: i64, depth: u64) -> u64 {
+    function: u64, reference: i64, depth: u64) u64 {
     if depth >= 128 || reference <= 20 || reference >= 28 || nodes[function].kind != 1 { return 0; }
     let formal = graph[function].first_child;
     let output = graph[formal].next_sibling;
@@ -351,7 +351,7 @@ pub fn shared_option_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) -> i64 {
+    values: &mut [CheckedValue], expression: u64, reference: i64, result: u64, ty: i64) i64 {
     if reference==2000138 {
         let actual=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),1);
         if actual<=0{return if actual<0{actual}else{-9};}
@@ -491,7 +491,7 @@ pub fn check_option_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticN
     return ty;
 }
 
-pub fn option_borrow_return(nodes: &[AstNode], values: &[CheckedValue], value: u64) -> bool {
+pub fn option_borrow_return(nodes: &[AstNode], values: &[CheckedValue], value: u64) bool {
     let root = values[value].target;
     root == 0 || values[root].ty==5018 || (nodes[root].kind==4 && nodes[nodes[root].parent].kind==3) || (nodes[root].kind == 3 && values[root].target == root)
 }
@@ -505,7 +505,7 @@ pub fn copy_option_borrow(values: &mut [CheckedValue], from: u64, to: u64, ty: i
         loan_parent: parent, origin_call: origin, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],to);
 }
 
-pub fn resource_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn resource_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let allocation = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation), false);
     if allocation >= 201 && allocation <= 207 { return allocation; }
@@ -523,22 +523,22 @@ pub fn resource_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     0
 }
 
-pub fn option_allocation(ty: i64) -> i64 {
+pub fn option_allocation(ty: i64) i64 {
     if !optional(copy(ty)) { return 0; }
     let payload = option_leaf(ty);
     if (payload >= 201 && payload <= 207) || nominal_allocation(copy(payload)) { return payload; }
     0
 }
 
-pub fn nominal_allocation(ty: i64) -> bool { ty > 40000000 && ty <= 40524288 }
+pub fn nominal_allocation(ty: i64) bool { ty > 40000000 && ty <= 40524288 }
 
-pub fn allocation_shape(ty: i64) -> u64 { unsigned(ty - 40000000) }
+pub fn allocation_shape(ty: i64) u64 { unsigned(ty - 40000000) }
 
-pub fn allocation_kind(ty: i64) -> i64 { if nominal_allocation(copy(ty)) { 301 } else { ty } }
+pub fn allocation_kind(ty: i64) i64 { if nominal_allocation(copy(ty)) { 301 } else { ty } }
 
-pub fn allocation_pool_type(ty: i64) -> i64 { if nominal_allocation(copy(ty)) { 99 } else { ty - 100 } }
+pub fn allocation_pool_type(ty: i64) i64 { if nominal_allocation(copy(ty)) { 99 } else { ty - 100 } }
 
-pub fn option_handle(ty: i64) -> i64 {
+pub fn option_handle(ty: i64) i64 {
     if !optional(copy(ty)) { return 0; }
     let payload = option_leaf(ty);
     if (payload >= 620 && payload <= 629) || (payload >= 640 && payload <= 649) { return payload; }
@@ -546,7 +546,7 @@ pub fn option_handle(ty: i64) -> i64 {
 }
 
 pub fn check_option_resource(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], expression: u64, result: u64, ty: i64) -> i64 {
+    values: &mut [CheckedValue], expression: u64, result: u64, ty: i64) i64 {
     let payload = option_payload(copy(ty));
     let allocation = option_allocation(copy(ty)) != 0;
     let actual = if allocation && nodes[expression].kind == 16 {
@@ -574,16 +574,15 @@ pub fn check_option_resource(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     return ty;
 }
 
-
 // When an envelope returns a worker built by an ordinary call, the
 // worker's explicitly moved reference formal can reach Some. The caller
 // reserves the actual source for the lifetime of that returned handle.
-pub fn option_handle_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> bool {
+pub fn option_handle_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) bool {
     option_handle_capture_at(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], function, 0)
 }
 
-fn option_handle_capture_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64, depth: u64) -> bool {
+fn option_handle_capture_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64, depth: u64) bool {
     if function == 0 || depth >= 128 { return false; }
     let mut node = function + 1;
     while node < nodes.len() as u64 && nodes[node].start < nodes[function].end {
@@ -620,7 +619,7 @@ fn option_handle_capture_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 pub fn option_resource_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], node: u64, ty: i64) -> bool {
+    values: &[CheckedValue], node: u64, ty: i64) bool {
     let root = values[node].target;
     if option_allocation(copy(ty)) != 0 {
         if root == 0 || nodes[root].kind == 3 { return true; }

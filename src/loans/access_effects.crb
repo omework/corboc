@@ -8,7 +8,7 @@ use bootstrap::lock_contracts::lock_parameter;
 use bootstrap::scalar::verify_primitive;
 
 /// Resolves a source-level alias without conflating its binding with its referent.
-pub fn access_root(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+pub fn access_root(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) u64 {
     if point == 0 || depth > 64 {
         return 0;
     }
@@ -72,7 +72,7 @@ pub fn access_nominal(
     graph: &[StaticNode],
     point: u64,
     depth: u64
-) -> u64 {
+) u64 {
     if point == 0 || depth > 32 {
         return 0;
     }
@@ -178,7 +178,7 @@ pub fn access_callee(
     graph: &[StaticNode],
     call: u64,
     depth: u64
-) -> u64 {
+) u64 {
     if depth > 32 {
         return 0;
     }
@@ -234,7 +234,7 @@ pub fn access_actual(
     call: u64,
     function: u64,
     formal: u64
-) -> u64 {
+) u64 {
     let mut parameter = graph[function].first_child;
     while nodes[parameter].kind == 58 {
         parameter = graph[parameter].next_sibling;
@@ -263,7 +263,7 @@ pub fn access_actual(
 }
 
 /// Establishes lexical domination, rather than relying on source order alone.
-fn access_inside(nodes: &[AstNode], ancestor: u64, point: u64) -> bool {
+fn access_inside(nodes: &[AstNode], ancestor: u64, point: u64) bool {
     let mut current = copy(point);
     while current != 0 {
         if current == ancestor {
@@ -275,7 +275,7 @@ fn access_inside(nodes: &[AstNode], ancestor: u64, point: u64) -> bool {
 }
 
 /// Determines the lock whose explicitly retained result is alive at this access.
-fn lexical_protection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> u64 {
+fn lexical_protection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) u64 {
     let mut function = copy(point);
     let mut execution: u64 = 0;
     while function != 0 && nodes[function].kind != 1 && nodes[function].kind != 35 {
@@ -378,7 +378,7 @@ fn scalar_storage(
     graph: &[StaticNode],
     place: u64,
     depth: u64
-) -> bool {
+) bool {
     if depth > 32 || place == 0 {
         return false;
     }
@@ -475,7 +475,7 @@ fn scalar_storage(
 }
 
 /// Pure library primitives do not invalidate the prepared places of another argument.
-fn simple_access_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+fn simple_access_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) bool {
     let callee = graph[call].first_child;
     let spelling = &source[nodes[callee].name_start..nodes[callee].name_end];
     if nodes[callee].kind != 7 || graph[callee].binding != 0 {
@@ -493,7 +493,7 @@ fn summarize_access(
     graph: &[StaticNode],
     function: u64,
     formal: u64
-) -> (i64, u64) {
+) (i64, u64) {
     let mut mode: i64 = 1;
     let mut lock: u64 = 0;
     let mut seen = false;
@@ -752,7 +752,7 @@ pub fn prepare_accesses(source: &[u8], nodes: &[AstNode], graph: &mut [StaticNod
 }
 
 /// Resolves a checked reference's storage identity without following allocation pool edges.
-pub fn checked_access_root(values: &[CheckedValue], reference: u64, depth: u64) -> u64 {
+pub fn checked_access_root(values: &[CheckedValue], reference: u64, depth: u64) u64 {
     if reference == 0 || depth > 64 {
         return 0;
     }
@@ -778,7 +778,7 @@ pub fn protected_overlap(
     branch: u64,
     target: u64,
     point: u64
-) -> bool {
+) bool {
     let lock = graph[point].protection;
     if lock == 0 || lock == 18446744073709551615 {
         return false;
@@ -809,7 +809,7 @@ pub fn reference_preparation(
     graph: &[StaticNode],
     point: u64,
     depth: u64
-) -> bool {
+) bool {
     if point == 0 || depth > 64 {
         return false;
     }
@@ -844,7 +844,7 @@ pub fn reference_preparation(
 
 /// Lock equality requires an exact object identity, not merely overlapping storage.
 /// Projected/unknown identities remain unproven until their path can be instantiated.
-fn lock_identity(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+fn lock_identity(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) u64 {
     if point == 0 || depth > 64 {
         return 0;
     }

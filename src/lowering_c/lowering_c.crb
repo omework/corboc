@@ -25,7 +25,7 @@ pub fn emit_c_headers(source:&[u8],nodes:&[AstNode]) {
 }
 
 /// Verifies known operand types; the C body itself is the responsibility of @unchecked.
-pub fn check_c(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64)->bool {
+pub fn check_c(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64)bool {
     let mut operand=graph[node].first_child;
     while operand!=0 {
         if nodes[operand].kind==52 {
@@ -36,7 +36,7 @@ pub fn check_c(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64)->bool
 }
 
 /// Emits a scoped C block with typed aliases; aggregate operands retain their storage.
-pub fn lower_c(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64,emit:bool)->bool {
+pub fn lower_c(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&[i64],node:u64,emit:bool)bool {
     if !check_c(&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(node)){return false;}
     if !emit{return true;}
     character(123);character(10);

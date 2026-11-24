@@ -8,14 +8,14 @@ use bootstrap::loans::{access_callee, access_nominal, access_actual};
 use bootstrap::verify::violation;
 
 /// Recognize a declaration's thread metadata without assigning meaning to its name.
-fn thread_annotation(source: &[u8], nodes: &[AstNode], item: u64) -> bool {
+fn thread_annotation(source: &[u8], nodes: &[AstNode], item: u64) bool {
     let word: [u8; 6] = [116, 104, 114, 101, 97, 100];
     let text = &source[nodes[item].name_start..nodes[item].name_end];
     nodes[item].kind == 58 && text.content_eq(&word[..])
 }
 
 /// Return the declared output type after parameters and before the function body.
-fn output_type(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn output_type(nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut child = graph[function].first_child;
     while nodes[child].kind == 3 || nodes[child].kind == 58 {
         child = graph[child].next_sibling;
@@ -28,7 +28,7 @@ fn output_type(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
 }
 
 /// Union owned child facts; zero means that no restricted component was found.
-fn child_fact(graph: &[StaticNode], facts: &[u64], parent: u64) -> u64 {
+fn child_fact(graph: &[StaticNode], facts: &[u64], parent: u64) u64 {
     let mut child = graph[parent].first_child;
     while child != 0 {
         if facts[child] != 0 {
@@ -46,7 +46,7 @@ fn projection_owner(
     graph: &[StaticNode],
     point: u64,
     depth: u64
-) -> u64 {
+) u64 {
     if point == 0 || depth > 64 {
         return 0;
     }
@@ -96,7 +96,7 @@ fn field_fact(
     graph: &[StaticNode],
     facts: &[u64],
     point: u64
-) -> u64 {
+) u64 {
     let owner = projection_owner(
         &source[0..source.len()],
         &nodes[0..nodes.len()],
@@ -120,7 +120,7 @@ fn field_fact(
 }
 
 /// A native block owns outer bindings captured by move, not its freshly created locals.
-fn capture_fact(nodes: &[AstNode], graph: &[StaticNode], facts: &[u64], block: u64) -> u64 {
+fn capture_fact(nodes: &[AstNode], graph: &[StaticNode], facts: &[u64], block: u64) u64 {
     let mut point = block + 1;
     while point < nodes.len() as u64 && nodes[point].start < nodes[block].end {
         let binding = graph[point].binding;
@@ -143,7 +143,7 @@ fn suspended_fact(
     graph: &[StaticNode],
     facts: &[u64],
     function: u64
-) -> u64 {
+) u64 {
     let mut suspension = function + 1;
     while suspension < nodes.len() as u64 && nodes[suspension].start < nodes[function].end {
         if nodes[suspension].kind == 38 || nodes[suspension].kind == 25 {
@@ -191,7 +191,7 @@ fn node_fact(
     graph: &[StaticNode],
     facts: &[u64],
     point: u64
-) -> u64 {
+) u64 {
     let kind = nodes[point].kind;
     let child = graph[point].first_child;
     if kind == 4 {
@@ -355,7 +355,7 @@ fn node_fact(
 }
 
 /// Identify execution boundaries, including user functions with a branch contract.
-fn launch_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> bool {
+fn launch_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) bool {
     if nodes[point].kind != 15 && nodes[point].kind != 16 {
         return false;
     }
@@ -401,7 +401,7 @@ fn launch_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u6
 }
 
 /// Derive restrictions to a fixed point, then reject only crossings carrying one.
-pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) i64 {
     let mut present = false;
     let mut item: u64 = 1;
     while item < nodes.len() as u64 {

@@ -6,7 +6,7 @@ use bootstrap::lowering_types::{number, local};
 use bootstrap::lowering_annotations::same_bytes;
 
 /// Recognizes the three stable parameters of the STD channel wait binding only.
-pub fn channel_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+pub fn channel_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     if nodes[node].kind != 15 { return false; }
     let name = graph[node].first_child;
     let expected: [u8;21] = [114,117,110,116,105,109,101,58,58,119,97,105,116,95,99,104,97,110,110,101,108];

@@ -11,7 +11,7 @@ use bootstrap::declarations::{nominal_declaration, verification_field, layout_vi
 use bootstrap::lowering_types::option_code;
 use bootstrap::calls::{bootstrap_callee, lookup_record_method};
 
-pub fn handle_vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn handle_vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     let inner = graph[annotation].first_child;
@@ -22,9 +22,9 @@ pub fn handle_vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     return 2200 + handle - 620;
 }
 
-pub fn handle_vector(ty: i64) -> bool { ty >= 2300 && ty <= 2327 }
+pub fn handle_vector(ty: i64) bool { ty >= 2300 && ty <= 2327 }
 
-pub fn owned_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn owned_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let child = graph[annotation].first_child;
     if child == 0 || graph[child].next_sibling != 0
         || nodes[annotation].name_end - nodes[annotation].name_start != 1
@@ -35,7 +35,7 @@ pub fn owned_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     pool + 100
 }
 
-pub fn record_with_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> bool {
+pub fn record_with_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) bool {
     if nodes[record].kind != 28 { return false; }
     let mut field = graph[record].first_child;
     let mut found = false;
@@ -53,7 +53,7 @@ pub fn record_with_handle_vector(source: &[u8], nodes: &[AstNode], graph: &[Stat
 }
 
 pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64) i64 {
     let receiver = graph[call].first_child;
     if nodes[receiver].kind != 17 || graph[receiver].next_sibling != 0 { return 0; }
     let pop: [u8; 3] = [112,111,112];
@@ -92,7 +92,7 @@ pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     output
 }
 
-fn ungroup(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+fn ungroup(nodes: &[AstNode], graph: &[StaticNode], expression: u64) u64 {
     let mut node = expression;
     while nodes[node].kind == 19 { node = graph[node].first_child; }
     node
@@ -101,7 +101,7 @@ fn ungroup(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
 // Follow a guaranteed tail extraction through ordinary forwarding calls.
 // Let a conditional or stateful method keep its existing conservative summary.
 pub fn returned_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64, depth: u64) -> u64 {
+    function: u64, depth: u64) u64 {
     if function == 0 || depth >= 64 { return 0; }
     let formal = graph[function].first_child;
     let result = graph[formal].next_sibling;
@@ -166,7 +166,7 @@ pub fn returned_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 // A forwarded extraction updates the original owner, not the adapter's
 // descriptor. Constructor mappings preserve that identity across moves.
 fn extraction_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    root: u64, field: u64, depth: u64) -> u64 {
+    root: u64, field: u64, depth: u64) u64 {
     if root == 0 || depth >= 64 || nodes[root].kind == 3 { return 0; }
     if values[root].ty == 734 {
         return extraction_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -197,7 +197,7 @@ fn extraction_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], valu
 }
 
 pub fn apply_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, root: u64, field: u64, result: i64) -> i64 {
+    call: u64, root: u64, field: u64, result: i64) i64 {
     if root == 0 || nodes[root].kind == 3 { return 0; }
     let root = extraction_owner(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &values[0..values.len()], root, copy(field), 0);
@@ -235,10 +235,10 @@ pub fn apply_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     1
 }
 
-pub fn pooled_handle(ty: i64) -> bool { ty >= 2400 && ty <= 2427 }
+pub fn pooled_handle(ty: i64) bool { ty >= 2400 && ty <= 2427 }
 
 pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], call: u64, destination: u64, pool: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, destination: u64, pool: u64) i64 {
     let name = &source[nodes[call].name_start..nodes[call].name_end];
     let new: [u8; 3] = [110,101,119];
     if !name.content_eq(&new[..]) { return -9; }
@@ -267,7 +267,7 @@ pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
 }
 
 pub fn drop_temporary_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], call: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64) i64 {
     if nodes[call].kind != 15 { return 0; }
     let name = graph[call].first_child;
     let method = graph[name].next_sibling;
@@ -312,7 +312,7 @@ pub fn drop_temporary_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 pub fn take_pooled_handle(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    expression: u64, binding: u64, expected: i64, mode: i64) -> i64 {
+    expression: u64, binding: u64, expected: i64, mode: i64) i64 {
     let start = nodes[expression].start;
     let ty = values[binding].ty;
     let pool = values[binding].target;
@@ -334,7 +334,7 @@ pub fn take_pooled_handle(nodes: &[AstNode], graph: &[StaticNode], values: &mut 
 }
 
 pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, vector: u64) i64 {
     let name = &source[nodes[call].name_start..nodes[call].name_end];
     let push: [u8; 4] = [112,117,115,104];
     let argument = graph[graph[call].first_child].next_sibling;
@@ -386,7 +386,7 @@ pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
 }
 
 pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, vector: u64) i64 {
     let name = &source[nodes[call].name_start..nodes[call].name_end];
     let remove: [u8; 6] = [114,101,109,111,118,101];
     let pop: [u8; 3] = [112,111,112];
@@ -457,7 +457,7 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 // Recognize the loop transfer function: every Some joins its element
 // and returns to the head, while None is the only exit.
 pub fn drain_handles(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], loop_node: u64) -> i64 {
+    values: &mut [CheckedValue], loop_node: u64) i64 {
     if nodes[loop_node].kind != 27 { return 0; }
     let body = graph[loop_node].first_child;
     let statement = graph[body].first_child;

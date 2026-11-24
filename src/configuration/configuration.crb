@@ -8,7 +8,7 @@ use bootstrap::scalar::verify_literal;
 use bootstrap::verify::report_violation;
 
 /// A generic recipe retains its parameter-sized arrays until specialization.
-fn deferred_length(source: &[u8], nodes: &[AstNode], position: u64, end: u64) -> bool {
+fn deferred_length(source: &[u8], nodes: &[AstNode], position: u64, end: u64) bool {
     let name = &source[position..end];
     let mut parameter: usize = 1;
     while parameter < nodes.len() {
@@ -35,7 +35,7 @@ fn deferred_length(source: &[u8], nodes: &[AstNode], position: u64, end: u64) ->
 }
 
 /// Avoid configuration work for ordinary compilation units and generic array bounds.
-pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) -> bool {
+pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) bool {
     let mut i: usize = 0;
     while i + 3 < tokens.len() {
         if tokens[i].kind == 71 && (tokens[i + 2].annotation == 31 || tokens[i + 2].annotation == 32) { return true; }
@@ -46,12 +46,12 @@ pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) -> 
     false
 }
 
-fn equal(source: &[u8], nodes: &[AstNode], left: u64, right: u64) -> bool {
+fn equal(source: &[u8], nodes: &[AstNode], left: u64, right: u64) bool {
     let a = &source[nodes[left].name_start..nodes[left].name_end];
     a.content_eq(&source[nodes[right].name_start..nodes[right].name_end])
 }
 
-fn marked(tokens: &[Token], node: &AstNode) -> bool {
+fn marked(tokens: &[Token], node: &AstNode) bool {
     let t = token_at(&tokens[0..tokens.len()], (*node).start);
     tokens[t].kind == 71 && tokens[t + 2].annotation == 31
 }
@@ -100,14 +100,14 @@ fn skip_span(start: u64, end: u64, offsets: &mut [u64], position: u64) {
     while at <= end { offsets[at] = copy(position); at += 1; }
 }
 
-fn slot(constants: &[u64], declaration: u64) -> u64 {
+fn slot(constants: &[u64], declaration: u64) u64 {
     let mut i: u64 = 0;
     while i < constants.len() as u64 { if constants[i] == declaration { return i + 1; } i += 1; }
     0
 }
 
 fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
-    environments: &[u64], expression: u64, env: u64, depth: u64) -> u64 {
+    environments: &[u64], expression: u64, env: u64, depth: u64) u64 {
     if depth >= 128 || expression == 0 { return 0; }
     if nodes[expression].kind == 9 { return expression; }
     if nodes[expression].kind == 12 && nodes[graph[expression].first_child].kind == 9 { return expression; }
@@ -121,7 +121,7 @@ fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[
 
 // state: environment count, output cursor, error, output visibility count.
 fn environment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
-    environments: &mut [u64], directive: u64, parent: u64, state: &mut [u64]) -> u64 {
+    environments: &mut [u64], directive: u64, parent: u64, state: &mut [u64]) u64 {
     let mut values: [u64; 256] = [0; 256];
     let mut assigned: [bool; 256] = [false; 256];
     let mut i: u64 = 0;
@@ -240,10 +240,10 @@ fn relocate(visibility: &[LayoutVisibility], output: &mut [LayoutVisibility], of
 
 /// Lower lexical environments into isolated concrete symbols before verification.
 pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64], visibility: &[LayoutVisibility], views: &mut [LayoutVisibility]) -> (i32, u64, usize) {
+    output: &mut [u8], offsets: &mut [u64], visibility: &[LayoutVisibility], views: &mut [LayoutVisibility]) (i32, u64, usize) {
     let mut symbols: [u64; 8192] = [0; 8192];
     let mut affected: [bool; 8192] = [false; 8192];
-    let mut references: [u64; 524292] = [0; 524292];
+    let mut references: [u64; 1572867] = [0; 1572867];
     let mut constants: [u64; 256] = [0; 256];
     let mut environments: [u64; 65536] = [0; 65536];
     let mut state: [u64; 4] = [0; 4]; state[0] = 1;

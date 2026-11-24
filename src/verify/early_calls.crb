@@ -15,7 +15,7 @@ use bootstrap::lowering_types::unsigned as node_index;
 
 // -10 leaves ordinary expression dispatch in charge.
 fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) i64 {
     if pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],copy(node)) {
         return check_pool_try(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],node,expected,mode);
     }
@@ -88,7 +88,7 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     return -10;
 }
 
-fn loop_has_break(nodes: &[AstNode], graph: &[StaticNode], target: u64) -> bool {
+fn loop_has_break(nodes: &[AstNode], graph: &[StaticNode], target: u64) bool {
     let mut point: u64 = 1;
     while point < nodes.len() as u64 {
         if nodes[point].kind == 23 && graph[point].destination == target { return true; }

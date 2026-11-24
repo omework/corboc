@@ -1,0 +1,177 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Lower definition-local methods to the compiler's existing method-owner nodes.
+//! Source offsets are composed before package linking; native blocks stay opaque.
+use bootstrap::model::{Token, AstNode, StaticNode};
+use bootstrap::verify::report_violation_site;
+use bootstrap::lowering_annotations::same_bytes;
+use bootstrap::lexer::{scan_tokens, select_target};
+use bootstrap::diagnostics::{diagnostic_stage, diagnostic_rewritten, diagnostic_copy};
+use bootstrap::packages::append;
+
+/// Normalize only declaration syntax. Values and constructor field lists are untouched.
+pub fn definition_input(source: &[u8], output: &mut [u8], offsets: &mut [u64],
+    tokens: &mut [Token], mode: i32) (i32, u64) {
+    if source.len() >= offsets.len() || source.len() >= output.len() { return (4, 0); }
+    let (error, used) = scan_tokens(&source[0..source.len()], &mut tokens[0..tokens.len()], mode);
+    if error != 0 { return (error, 0); }
+    let count = select_target(&source[0..source.len()], &mut tokens[..used + 3]);
+    if count == 0 { return (7, 0); }
+    if count >= 1572867 { return (4, 0); }
+    let mut split: [u64; 1572867] = [0; 1572867];
+    let mut comma: [bool; 1572867] = [false; 1572867];
+    let mut token: u64 = 0;
+    let mut changed = false;
+    while token < count as u64 && tokens[token].kind != 0 {
+        if tokens[token].kind != 58 && tokens[token].kind != 59 { token += 1; continue; }
+        let name = token + 1;
+        let mut open = name + 1;
+        while open < count as u64 && tokens[open].kind != 4 && tokens[open].kind != 0 { open += 1; }
+        if open >= count as u64 || tokens[open].kind != 4 { return (7, 0); }
+        let mut part = open + 1;
+        let mut nesting: u64 = 0;
+        let mut methods = false;
+        let mut member = true;
+        let mut parentheses: u64 = 0;
+        let mut brackets: u64 = 0;
+        while part < count as u64 && tokens[part].kind != 0 {
+            let kind = tokens[part].kind;
+            if nesting == 0 && kind == 5 { break; }
+            // Fields/variants precede the first method or associated constant.
+            if nesting == 0 && member && !methods && (kind == 7 || kind == 60 || kind == 71 || kind == 57 || kind == 81) {
+                split[part] = name;
+                methods = true;
+                changed = true;
+            }
+            if !methods && kind == 14 && parentheses == 0 && brackets == 0 { comma[part] = true; changed = true; }
+            if nesting == 0 {
+                if kind == 14 || kind == 11 { member = true; } else { member = false; }
+            }
+            if kind == 2 { parentheses += 1; }
+            if kind == 3 { parentheses -= 1; }
+            if kind == 39 { brackets += 1; }
+            if kind == 40 { brackets -= 1; }
+            if kind == 4 || kind == 2 || kind == 39 { nesting += 1; }
+            if kind == 5 || kind == 3 || kind == 40 {
+                if nesting == 0 { return (7, 0); }
+                nesting -= 1;
+            }
+            part += 1;
+        }
+        token = part + 1;
+    }
+    diagnostic_stage(&source[0..source.len()]);
+    let mut cursor: u64 = 0;
+    let mut written: usize = 0;
+    token = 0;
+    while token < count as u64 && tokens[token].kind != 0 {
+        let at = tokens[token].start;
+        while cursor < at {
+            if written >= output.len() { return (4, 0); }
+            offsets[cursor] = written as u64;
+            output[written] = source[cursor]; written += 1; cursor += 1;
+        }
+        if split[token] != 0 {
+            let header = "} impl "; let header_bytes = header.as_bytes();
+            let name = split[token];
+            let mut last = name + 1;
+            if tokens[last].kind == 23 {
+                let mut depth: u64 = 1; last += 1;
+                while last < count as u64 && depth != 0 {
+                    if tokens[last].kind == 23 { depth += 1; }
+                    if tokens[last].kind == 24 { depth -= 1; }
+                    last += 1;
+                }
+            }
+            let suffix = " { "; let suffix_bytes = suffix.as_bytes();
+            let owner = &source[tokens[name].start..tokens[last - 1].end];
+            if written + header_bytes.len() + owner.len() + suffix_bytes.len() >= output.len() { return (4, 0); }
+            written = append(&mut output[0..output.len()], written, header_bytes);
+            written = append(&mut output[0..output.len()], written, owner);
+            written = append(&mut output[0..output.len()], written, suffix_bytes);
+        }
+        while cursor < tokens[token].end {
+            if written >= output.len() { return (4, 0); }
+            offsets[cursor] = written as u64;
+            output[written] = if comma[token] { 44 } else { source[cursor] };
+            written += 1; cursor += 1;
+        }
+        token += 1;
+    }
+    while cursor < source.len() as u64 {
+        if written >= output.len() { return (4, 0); }
+        offsets[cursor] = written as u64;
+        output[written] = source[cursor]; written += 1; cursor += 1;
+    }
+    offsets[cursor] = written as u64;
+    if changed { diagnostic_rewritten(&output[..written], &offsets[0..offsets.len()], source.len()); }
+    (0, written as u64)
+}
+
+/// Typed shared/mutable receivers enter the ordinary receiver analysis after
+/// generic selection. Consuming receivers remain ordinary by-value parameters.
+pub fn has_typed_receivers(source: &[u8], nodes: &[AstNode]) bool {
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 3 && nodes[nodes[nodes[node].parent].parent].kind == 49 {
+            let self_name = "self"; let self_bytes = self_name.as_bytes();
+            let name = &source[nodes[node].name_start..nodes[node].name_end];
+            if !name.content_eq(self_bytes) { node += 1; continue; }
+            let annotation = node + 1;
+            if annotation < nodes.len() as u64 && nodes[annotation].kind == 4 && nodes[annotation].parent == node && source[nodes[annotation].start] == 38 { return true; }
+        }
+        node += 1;
+    }
+    false
+}
+
+/// Resolve an explicit borrowed receiver to the same representation as &self.
+pub fn expand_typed_receivers(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
+    let mut cursor: u64 = 0;
+    let mut written: usize = 0;
+    let mut node: u64 = 1;
+    let mut changed = false;
+    while node < nodes.len() as u64 {
+        let parameter = graph[node].first_child;
+        if (nodes[node].kind == 1 || nodes[node].kind == 35) && nodes[nodes[node].parent].kind == 49 && nodes[parameter].kind == 3 {
+            let annotation = graph[parameter].type_node;
+            let self_name = "self"; let self_bytes = self_name.as_bytes();
+            let spelling = &source[nodes[parameter].name_start..nodes[parameter].name_end];
+            if annotation != 0 && source[nodes[annotation].start] == 38 && spelling.content_eq(self_bytes) {
+                let target = graph[annotation].first_child;
+                let owner = nodes[node].parent;
+                if !same_bytes(&source[nodes[target].name_start..nodes[target].name_end], &source[nodes[owner].name_start..nodes[owner].name_end]) {
+                    return (report_violation_site(1, nodes[annotation].start, 1021), 0);
+                }
+                while cursor < nodes[parameter].start {
+                    if written >= output.len() { return (4, 0); }
+                    offsets[cursor] = written as u64;
+                    output[written] = source[cursor]; cursor += 1; written += 1;
+                }
+                let mut exclusive = false;
+                let mut at = nodes[annotation].start;
+                while at + 2 < nodes[target].start {
+                    if source[at] == 109 && source[at + 1] == 117 && source[at + 2] == 116 { exclusive = true; }
+                    at += 1;
+                }
+                let shared = "&self"; let mutable = "&mut self";
+                let shared_bytes = shared.as_bytes(); let mutable_bytes = mutable.as_bytes();
+                let previous = written as u64;
+                if written + 9 >= output.len() { return (4, 0); }
+                if exclusive { written = append(&mut output[0..output.len()], written, mutable_bytes); }
+                else { written = append(&mut output[0..output.len()], written, shared_bytes); }
+                while cursor < nodes[parameter].end { offsets[cursor] = previous; cursor += 1; }
+                changed = true;
+            }
+        }
+        node += 1;
+    }
+    if !changed { return (0, 0); }
+    while cursor < source.len() as u64 {
+        if written >= output.len() { return (4, 0); }
+        offsets[cursor] = written as u64;
+        output[written] = source[cursor]; cursor += 1; written += 1;
+    }
+    offsets[cursor] = written as u64;
+    (0, written as u64)
+}

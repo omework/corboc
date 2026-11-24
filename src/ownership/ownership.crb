@@ -18,7 +18,7 @@ use bootstrap::scalar::verify_primitive;
 use bootstrap::stored::{record_loan_field, stored_loan_array};
 
 fn has_nominal_default(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64, depth: u64, access: u64) -> bool {
+    annotation: u64, depth: u64, access: u64) bool {
     if depth >= 64 || graph[annotation].first_child != 0 { return false; }
     if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 0 { return true; }
     let nominal = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
@@ -34,7 +34,7 @@ fn has_nominal_default(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn nominal_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    nominal: u64, expression: u64) -> u64 {
+    nominal: u64, expression: u64) u64 {
     let name = &source[nodes[expression].name_start..nodes[expression].name_end];
     let mut variant = graph[nominal].first_child;
     while variant != 0 {
@@ -46,7 +46,7 @@ pub fn nominal_variant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    initializer: u64, destination: u64) -> i64 {
+    initializer: u64, destination: u64) i64 {
     let start = nodes[initializer].start;
     let receiver = graph[initializer].first_child;
     if nodes[receiver].kind != 7 { return -9; }
@@ -218,7 +218,7 @@ pub fn check_pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], va
 
 // Keep ownership edges at the constructor fields. Moving the aggregate
 // transfers its constructor identity together with those edges.
-pub fn plain_structure(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], nominal: u64, depth: u64) -> bool {
+pub fn plain_structure(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], nominal: u64, depth: u64) bool {
     if nodes[nominal].kind != 28 || depth > 64 { return false; }
     let mut field = graph[nominal].first_child;
     while field != 0 {
@@ -243,7 +243,7 @@ pub fn plain_structure(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], n
 }
 
 pub fn check_owned_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], initializer: u64, destination: u64) -> i64 {
+    values: &mut [CheckedValue], initializer: u64, destination: u64) i64 {
     let mut declaration = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(initializer));
     let base = graph[initializer].first_child;
@@ -275,7 +275,7 @@ pub fn check_owned_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         graph[initializer].first_child, destination, declaration, false);
 }
 
-fn array_owned_value(graph: &[StaticNode], values: &[CheckedValue], node: u64) -> bool {
+fn array_owned_value(graph: &[StaticNode], values: &[CheckedValue], node: u64) bool {
     let ty = values[node].ty;
     if (ty >= 1 && ty <= 9) || (ty >= 201 && ty <= 207) { return true; }
     if ty != 300 && ty != 470 { return false; }
@@ -290,7 +290,7 @@ fn array_owned_value(graph: &[StaticNode], values: &[CheckedValue], node: u64) -
 }
 
 fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64, destination: u64) -> i64 {
+    values: &mut [CheckedValue], literal: u64, annotation: u64, destination: u64) i64 {
     if nodes[literal].kind != 44 || source[nodes[annotation].start] != 91 { return 0; }
     let element = graph[annotation].first_child;
     let length = graph[element].next_sibling;
@@ -320,7 +320,7 @@ fn check_nominal_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], initializer: u64, first_field: u64, destination: u64, declaration: u64, defaults: bool) -> i64 {
+    values: &mut [CheckedValue], initializer: u64, first_field: u64, destination: u64, declaration: u64, defaults: bool) i64 {
     if !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(declaration), copy(initializer)) {
         return 0 - private_layout_violation(nodes[initializer].start);
     }

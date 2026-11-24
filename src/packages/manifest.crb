@@ -1,40 +1,40 @@
 use bootstrap::package_io::read_source;
 
 struct Manifest {
-    name_start: u64,
-    name_end: u64,
-    dependencies_start: u64,
-    dependencies_end: u64,
-    bin_name_start: u64,
-    bin_name_end: u64,
-    valid: bool,
+    name_start: u64;
+    name_end: u64;
+    dependencies_start: u64;
+    dependencies_end: u64;
+    bin_name_start: u64;
+    bin_name_end: u64;
+    valid: bool;
 }
 
 struct Dependency {
-    name_start: u64,
-    name_end: u64,
-    source_start: u64,
-    source_end: u64,
-    revision_start: u64,
-    revision_end: u64,
-    valid: bool,
+    name_start: u64;
+    name_end: u64;
+    source_start: u64;
+    source_end: u64;
+    revision_start: u64;
+    revision_end: u64;
+    valid: bool;
 }
 
-fn whitespace(byte: u8) -> bool { byte == 32 || byte == 9 || byte == 13 }
+fn whitespace(byte: u8) bool { byte == 32 || byte == 9 || byte == 13 }
 
-fn horizontal(source: &[u8], start: u64, end: u64) -> u64 {
+fn horizontal(source: &[u8], start: u64, end: u64) u64 {
     let mut at = start;
     while at < end && whitespace(source[at]) { at = at + 1; }
     at
 }
 
-fn line_end(source: &[u8], start: u64) -> u64 {
+fn line_end(source: &[u8], start: u64) u64 {
     let mut at = start;
     while at < source.len() as u64 && source[at] != 10 { at = at + 1; }
     at
 }
 
-fn identifier(source: &[u8], start: u64, end: u64) -> u64 {
+fn identifier(source: &[u8], start: u64, end: u64) u64 {
     if start == end || (source[start] >= 48 && source[start] <= 57) { return start; }
     let mut at = start;
     while at < end && name_byte(source[at]) { at = at + 1; }
@@ -43,7 +43,7 @@ fn identifier(source: &[u8], start: u64, end: u64) -> u64 {
 
 // The bootstrap accepts bare keys and single-line strings in inline tables.
 // Span endpoints exclude the quote and preserve byte offsets in the manifest.
-fn quoted_end(source: &[u8], start: u64, end: u64) -> u64 {
+fn quoted_end(source: &[u8], start: u64, end: u64) u64 {
     if start == end || (source[start] != 34 && source[start] != 39) { return 0; }
     let quote = source[start];
     let mut at = start + 1;
@@ -55,12 +55,12 @@ fn quoted_end(source: &[u8], start: u64, end: u64) -> u64 {
     at
 }
 
-fn line_tail(source: &[u8], start: u64, end: u64) -> bool {
+fn line_tail(source: &[u8], start: u64, end: u64) bool {
     let at = horizontal(&source[0..source.len()], start, copy(end));
     at == end || source[at] == 35
 }
 
-fn read_manifest(source: &[u8]) -> Manifest {
+fn read_manifest(source: &[u8]) Manifest {
     let invalid = Manifest { name_start: 0, name_end: 0, dependencies_start: 0, dependencies_end: 0, bin_name_start: 0, bin_name_end: 0, valid: false };
     let mut name_start: u64 = 0;
     let mut name_end: u64 = 0;
@@ -128,7 +128,7 @@ fn read_manifest(source: &[u8]) -> Manifest {
         bin_name_end: bin_name_end, valid: valid }
 }
 
-fn read_dependency(source: &[u8], start: u64, end: u64) -> Dependency {
+fn read_dependency(source: &[u8], start: u64, end: u64) Dependency {
     let invalid = Dependency { name_start: 0, name_end: 0, source_start: 0, source_end: 0,
         revision_start: 0, revision_end: 0, valid: false };
     let last = identifier(&source[0..source.len()], copy(start), copy(end));
@@ -185,7 +185,7 @@ fn read_dependency(source: &[u8], start: u64, end: u64) -> Dependency {
 }
 
 // A binary name is one portable filename component, not an output path.
-fn binary_file_name(name: &[u8]) -> bool {
+fn binary_file_name(name: &[u8]) bool {
     if name.len() == 0 { return false; }
     let mut index: usize = 0;
     let mut substantive = false;
@@ -200,7 +200,7 @@ fn binary_file_name(name: &[u8]) -> bool {
 
 // Select a package-relative default, retaining a separate NUL-terminated directory.
 // Returned lengths exclude terminators; the second is the directory prefix length.
-pub fn binary_output(root: &[u8], output: &mut [u8]) -> (i32, usize, usize) {
+pub fn binary_output(root: &[u8], output: &mut [u8]) (i32, usize, usize) {
     let manifest_file: [u8; 12] = [112,97,99,107,97,103,101,46,116,111,109,108];
     let mut path: [u8; 4096] = [0; 4096];
     let end = resolve_path(&root[0..root.len()], &manifest_file[..], &mut path[..]);
@@ -224,14 +224,14 @@ pub fn binary_output(root: &[u8], output: &mut [u8]) -> (i32, usize, usize) {
 }
 
 #(if: target.os == "windows")
-fn executable_suffix(output: &mut [u8], start: usize) -> usize {
+fn executable_suffix(output: &mut [u8], start: usize) usize {
     let extension: [u8; 4] = [46,101,120,101];
     append(&mut output[0..output.len()], start, &extension[..])
 }
 #(endif)
 
 #(if: target.os == "macos" || target.os == "linux")
-fn executable_suffix(output: &mut [u8], start: usize) -> usize {
+fn executable_suffix(output: &mut [u8], start: usize) usize {
     drop(output);
     start
 }

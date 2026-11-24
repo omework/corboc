@@ -11,7 +11,7 @@ use bootstrap::loans::borrow_mutable;
 
 // A finite permutation or selection of shared references, optionally
 // reached through an unchanged recursive array argument.
-pub fn array_relay_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+pub fn array_relay_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) i64 {
     if nodes[function].kind != 1 { return 0; }
     let input = graph[function].first_child;
     let next = graph[input].next_sibling;
@@ -89,7 +89,7 @@ pub fn array_relay_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 pub fn apply_array_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, function: u64, destination: u64, scalar: i64) -> i64 {
+    call: u64, function: u64, destination: u64, scalar: i64) i64 {
     let callee = graph[call].first_child;
     let input = graph[callee].next_sibling;
     let flag = graph[input].next_sibling;

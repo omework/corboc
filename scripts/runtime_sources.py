@@ -76,10 +76,10 @@ def packed_literal(data):
             'let bytes = encoded.as_bytes(); resource_unpack(bytes); }\n')
 
 
-UNPACK = """fn resource_nibble(byte:u8) -> u8 {
+UNPACK = """fn resource_nibble(byte:u8) u8 {
     if byte <= 57 { byte - 48 } else { byte - 87 }
 }
-fn resource_byte(input:&[u8], at:u64) -> u8 {
+fn resource_byte(input:&[u8], at:u64) u8 {
     let hi = resource_nibble(input[at * 2]);
     let lo = resource_nibble(input[at * 2 + 1]);
     hi * 16 + lo

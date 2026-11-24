@@ -4,7 +4,6 @@ use bootstrap::model::{AstNode,StaticNode};
 use bootstrap::lowering_types::{c_type,number,signed};
 use bootstrap::target_c::{byte_text,character};
 
-
 /// Escapes underscores so generated separators cannot collide with source names.
 pub fn c_identifier(source:&[u8],start:u64,end:u64) {
     let mut at=start;

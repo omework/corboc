@@ -4,7 +4,7 @@ use bootstrap::lowering_types::{array_length, array_item, array_value_type, plac
 use bootstrap::target_c::{byte_text, character};
 
 fn slice_borrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     let place = graph[node].first_child;
     let base = graph[place].first_child;
     let projected = nodes[base].kind != 7;

@@ -8,16 +8,16 @@ use std::io::{File, FileMode};
 /// Resolved CLI context; lengths index the caller-owned path buffers.
 pub struct CheckTarget {
     /// Package, package-backed file, standalone file, or an error status.
-    kind: i32,
+    kind: i32;
     /// Canonical enclosing package path length, zero for standalone files.
-    root_end: usize,
+    root_end: usize;
     /// Canonical selected source path length, zero for package targets.
-    file_end: usize,
+    file_end: usize;
 }
 
 /// Returns package=0, package-backed file=1, standalone file=2, or an error.
 /// Canonical identities remain stable across editor save-by-rename operations.
-pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) -> CheckTarget {
+pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) CheckTarget {
     if input.len() == 0 || input.len() >= 4096 || root.len() < 4096 || file.len() < 4096 {
         return CheckTarget { kind: 4, root_end: 0, file_end: 0 };
     }
@@ -99,7 +99,7 @@ pub fn check_target(input: &[u8], root: &mut [u8], file: &mut [u8]) -> CheckTarg
 
 /// Keep the selected file an explicit input even when its package still checks
 /// after the file is deleted. Scope closes the read-only probe automatically.
-pub fn check_file_present(path: &[u8]) -> bool {
+pub fn check_file_present(path: &[u8]) bool {
     if path.len() == 0 || path.len() >= 4096 { return false; }
     match open_file(&path[0..path.len()], FileMode::read_only()) {
         Ok(opened) => {
@@ -121,7 +121,7 @@ pub fn read_check_file(
     source: &mut [u8],
     names: &mut [u8],
     files: &mut [PackageFile]
-) -> PackageInput {
+) PackageInput {
     let invalid = PackageInput {
         source_end: 0,
         names_end: 0,
@@ -202,7 +202,7 @@ pub fn read_check_input(
     names: &mut [u8],
     files: &mut [PackageFile],
     file: bool
-) -> PackageInput {
+) PackageInput {
     if file {
         return read_check_file(
             root,

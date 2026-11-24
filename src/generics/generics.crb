@@ -11,20 +11,20 @@ use bootstrap::verify::report_violation;
 use bootstrap::loans::borrow_mutable;
 use bootstrap::scalar::{verify_primitive, verify_literal_hint};
 
-struct ConcreteType { node: u64, reference: i64, slice: bool, instance: u64 }
-struct Instance { template: u64, count: u64 }
-struct Dependency { owner: u64, site: u64, template: u64, instance: u64 }
+struct ConcreteType { node: u64; reference: i64; slice: bool; instance: u64; }
+struct Instance { template: u64; count: u64; }
+struct Dependency { owner: u64; site: u64; template: u64; instance: u64; }
 
-fn put(output: &mut [u8], cursor: usize, bytes: &[u8]) -> usize {
+fn put(output: &mut [u8], cursor: usize, bytes: &[u8]) usize {
     if cursor >= output.len() || bytes.len() > output.len() - cursor { return output.len(); }
     append(output, cursor, bytes)
 }
 
-fn text_equal(source: &[u8], a: &AstNode, b: &AstNode) -> bool {
+fn text_equal(source: &[u8], a: &AstNode, b: &AstNode) bool {
     same_bytes(&source[(*a).name_start..(*a).name_end], &source[(*b).name_start..(*b).name_end])
 }
 
-fn template_parameter(nodes: &[AstNode], graph: &[StaticNode], template: u64, index: u64) -> u64 {
+fn template_parameter(nodes: &[AstNode], graph: &[StaticNode], template: u64, index: u64) u64 {
     let mut child = graph[template].first_child;
     let mut current: u64 = 0;
     while child != 0 {
@@ -53,21 +53,21 @@ fn template_parameter(nodes: &[AstNode], graph: &[StaticNode], template: u64, in
 }
 
 /// Identifies STD templates whose callable field needs concrete capture storage.
-pub fn deferred_iterator(source: &[u8], nodes: &[AstNode], item: u64) -> bool {
+pub fn deferred_iterator(source: &[u8], nodes: &[AstNode], item: u64) bool {
     let prefix: [u8; 13] = [95,95,99,111,114,98,111,95,105,116,101,114,95];
     let name = &source[nodes[item].name_start..nodes[item].name_end];
     name.len() >= 13 && same_bytes(&name[0..13], &prefix[..])
 }
 
-fn is_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) -> bool {
+fn is_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) bool {
     !deferred_iterator(&source[0..source.len()], &nodes[0..nodes.len()], copy(item)) && (nodes[item].kind == 28 || nodes[item].kind == 29) && template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], item, 0) != 0
 }
 
-fn implementation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, item: u64) -> bool {
+fn implementation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, item: u64) bool {
     nodes[item].kind == 49 && text_equal(&source[0..source.len()], &nodes[template], &nodes[item])
 }
 
-fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owner: u64, name: u64) -> u64 {
+fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owner: u64, name: u64) u64 {
     let mut item = graph[0].first_child;
     while item != 0 {
         if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(owner), copy(item)) {
@@ -83,7 +83,7 @@ fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owner: u64, na
     0
 }
 
-fn output(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn output(nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut child = graph[function].first_child;
     while child != 0 {
         if nodes[child].kind == 4 { return child; }
@@ -92,7 +92,7 @@ fn output(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
     0
 }
 
-fn concrete(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> ConcreteType {
+fn concrete(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) ConcreteType {
     if ty != 0 && source[nodes[ty].start] == 38 {
         let inner = graph[ty].first_child;
         let exclusive = borrow_mutable(&source[nodes[ty].start..nodes[inner].start]);
@@ -101,7 +101,7 @@ fn concrete(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> 
     ConcreteType { node: ty, reference: 0, slice: false, instance: 0 }
 }
 
-fn layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> u64 {
+fn layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) u64 {
     let mut item = graph[0].first_child;
     while item != 0 {
         if (nodes[item].kind == 28 || nodes[item].kind == 29)
@@ -114,18 +114,18 @@ fn layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> u6
 // AST node ids use the upper bits. The low bits encode the reference mode
 // and whether an array has been viewed as a slice. Recursive inference returns
 // this scalar, leaving the ordinary caller-reserved record slots bounded.
-fn packed(ty: &ConcreteType) -> u64 {
+fn packed(ty: &ConcreteType) u64 {
     let reference: u64 = if (*ty).reference == 2 { 2 } else if (*ty).reference == 1 { 1 } else { 0 };
     ((*ty).node + (*ty).instance * 1048576) * 8 + reference + (if (*ty).slice { 4 } else { 0 })
 }
 
-fn decoded(code: u64) -> ConcreteType {
+fn decoded(code: u64) ConcreteType {
     ConcreteType { node: code / 8 % 1048576,
         reference: if code % 4 == 2 { 2 } else if code % 4 == 1 { 1 } else { 0 },
         slice: code % 8 >= 4, instance: code / 8388608 }
 }
 
-fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], id: u64, depth: u64) -> u64 {
+fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], id: u64, depth: u64) u64 {
     if id == 0 || depth >= 128 { let inferred = ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; return packed(&inferred); }
     let kind = nodes[id].kind;
     let child = graph[id].first_child;
@@ -249,7 +249,7 @@ fn type_code(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
     0
 }
 
-fn primitive_type(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
+fn primitive_type(source: &[u8], nodes: &[AstNode], node: u64) i64 {
     if nodes[node].kind == 9 {
         let first=source[nodes[node].start];
         if first==116 || first==102{return 3;}
@@ -262,7 +262,7 @@ fn primitive_type(source: &[u8], nodes: &[AstNode], node: u64) -> i64 {
 }
 
 // Numeric literal arguments denote values, independently of decimal/hex spelling.
-fn literal_bound(source: &[u8], node: &AstNode) -> u64 {
+fn literal_bound(source: &[u8], node: &AstNode) u64 {
     let mut at = (*node).start;
     let mut base: u64 = 10;
     if (*node).end - at > 2 && source[at] == 48 && (source[at+1] == 120 || source[at+1] == 88) { base = 16; at += 2; }
@@ -276,7 +276,7 @@ fn literal_bound(source: &[u8], node: &AstNode) -> u64 {
     value
 }
 
-fn same_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a: &ConcreteType, b: &ConcreteType, depth: u64) -> bool {
+fn same_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a: &ConcreteType, b: &ConcreteType, depth: u64) bool {
     if depth >= 128 || (*a).reference != (*b).reference || (*a).slice != (*b).slice { return false; }
     if (*a).instance != 0 || (*b).instance != 0 { return (*a).instance == (*b).instance; }
     if (*a).node == (*b).node { return true; }
@@ -300,7 +300,7 @@ fn same_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], a: &Concret
 }
 
 fn unify(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, pattern: u64,
-    actual: &ConcreteType, types: &mut [ConcreteType], depth: u64) -> bool {
+    actual: &ConcreteType, types: &mut [ConcreteType], depth: u64) bool {
     if depth >= 128 || pattern == 0 || (*actual).node == 0 { return false; }
     let expected = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], pattern);
     let pattern = expected.node;
@@ -336,7 +336,7 @@ fn unify(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, 
     left == right
 }
 
-fn constraints(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, types: &mut [ConcreteType], instances:&mut [Instance], stored:&mut [ConcreteType], instance_count:&mut [u64]) -> bool {
+fn constraints(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, types: &mut [ConcreteType], instances:&mut [Instance], stored:&mut [ConcreteType], instance_count:&mut [u64]) bool {
     let mut annotation = graph[template].first_child;
     while annotation != 0 {
         if nodes[annotation].kind == 58 {
@@ -436,7 +436,7 @@ fn constraints(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template:
     true
 }
 
-fn number(output: &mut [u8], start: usize, n: u64) -> usize {
+fn number(output: &mut [u8], start: usize, n: u64) usize {
     let mut digits: [u8; 20] = [0; 20];
     let alphabet: [u8; 10] = [48,49,50,51,52,53,54,55,56,57];
     let mut cursor: usize = 20;
@@ -457,7 +457,7 @@ fn number(output: &mut [u8], start: usize, n: u64) -> usize {
     written
 }
 
-fn instance_name(source: &[u8], nodes: &[AstNode], template: u64, id: u64, output: &mut [u8], start: usize) -> usize {
+fn instance_name(source: &[u8], nodes: &[AstNode], template: u64, id: u64, output: &mut [u8], start: usize) usize {
     let prefix: [u8; 20] = [95,95,99,111,114,98,111,95,115,112,101,99,105,97,108,105,122,101,100,95];
     let separator: [u8; 1] = [95];
     let cursor = put(&mut output[0..output.len()], start, &prefix[..]);
@@ -466,7 +466,7 @@ fn instance_name(source: &[u8], nodes: &[AstNode], template: u64, id: u64, outpu
     number(output, cursor, id)
 }
 
-fn write_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: &ConcreteType, output: &mut [u8], start: usize) -> usize {
+fn write_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: &ConcreteType, output: &mut [u8], start: usize) usize {
     let mut start = start;
     if (*ty).reference != 0 {
         let shared: [u8; 1] = [38];
@@ -501,7 +501,7 @@ fn write_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: &Concr
 // Keep the generic source method as a recipe until adapter specialization.
 // Substituting an item such as &T into a method's type-parameter declaration
 // would otherwise turn D<V> into a declaration containing a concrete type.
-fn iterator_collect_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) -> u64 {
+fn iterator_collect_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], item: u64) u64 {
     if nodes[item].kind != 49 { return 0; }
     let name = &source[nodes[item].name_start..nodes[item].name_end];
     let plain: [u8; 4] = [73,116,101,114];
@@ -516,9 +516,40 @@ fn iterator_collect_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     0
 }
 
+// A typed receiver restricts an existing owner parameter; it introduces no new
+// type parameter. Omit unavailable methods before checking specialized bodies.
+fn receiver_matches(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    method: u64, instance: &Instance, id: u64, types: &[ConcreteType], instances: &[Instance]) bool {
+    let mut parameter = graph[method].first_child;
+    while parameter != 0 && nodes[parameter].kind != 3 { parameter = graph[parameter].next_sibling; }
+    if parameter == 0 { return true; }
+    let self_name = "self"; let self_bytes = self_name.as_bytes();
+    let spelling = &source[nodes[parameter].name_start..nodes[parameter].name_end];
+    if !spelling.content_eq(self_bytes) || graph[parameter].type_node == 0 { return true; }
+    let receiver = concrete(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[parameter].type_node);
+    let mut argument = graph[receiver.node].first_child;
+    if argument == 0 { return true; }
+    let mut bound: [ConcreteType; 32] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 32];
+    let mut index: u64 = 0;
+    while index < (*instance).count {
+        let value = &types[id * 32 + index];
+        bound[index] = ConcreteType { node: (*value).node, reference: (*value).reference, slice: (*value).slice, instance: (*value).instance };
+        index += 1;
+    }
+    index = 0;
+    while argument != 0 && index < (*instance).count {
+        if !unify_instance(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+            (*instance).template, argument, &types[id * 32 + index], &mut bound[..],
+            &instances[0..instances.len()], &types[0..types.len()], 0) { return false; }
+        argument = graph[argument].next_sibling;
+        index += 1;
+    }
+    argument == 0 && index == (*instance).count
+}
+
 fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], instance: &Instance,
-    id: u64, part: u64, types: &[ConcreteType], dependencies: &[Dependency],
-    output: &mut [u8], origins: &mut [u64], start: usize) -> usize {
+    id: u64, part: u64, types: &[ConcreteType], instances: &[Instance], dependencies: &[Dependency],
+    output: &mut [u8], origins: &mut [u64], start: usize) usize {
     let collector = iterator_collect_method(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(part));
     let mut token = token_at(&tokens[0..tokens.len()], nodes[part].start);
     let mut cursor = nodes[part].start;
@@ -543,6 +574,22 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
     token = token_at(&tokens[0..tokens.len()], copy(cursor));
     let self_name: [u8; 4] = [83,101,108,102];
     while tokens[token].start < nodes[part].end {
+        let mut member = graph[part].first_child;
+        let mut skipped = false;
+        while member != 0 {
+            if (nodes[member].kind == 1 || nodes[member].kind == 35)
+                && tokens[token].start == nodes[member].start
+                && !receiver_matches(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
+                    member, instance, id, &types[0..types.len()], &instances[0..instances.len()]) {
+                written = put(&mut output[0..output.len()], written, &source[cursor..nodes[member].start]);
+                cursor = nodes[member].end;
+                token = token_at(&tokens[0..tokens.len()], copy(cursor));
+                skipped = true;
+                break;
+            }
+            member = graph[member].next_sibling;
+        }
+        if skipped { continue; }
         if collector != 0 && tokens[token].start == nodes[collector].start {
             written = put(&mut output[0..output.len()], written, &source[cursor..nodes[collector].start]);
             cursor = nodes[collector].end;
@@ -612,7 +659,7 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
     put(output, written, &source[cursor..nodes[part].end])
 }
 
-fn body_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], template: u64) -> bool {
+fn body_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], template: u64) bool {
     let mut point: u64 = 1;
     while point < nodes.len() as u64 {
         let mut ancestor = copy(point);
@@ -659,7 +706,7 @@ fn body_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
 
 fn matched_instance(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     expression: u64, template: u64, instances: &[Instance], substitutions: &[u64],
-    dependencies: &[Dependency], depth: u64) -> u64 {
+    dependencies: &[Dependency], depth: u64) u64 {
     if expression == 0 || depth >= 128 { return 0; }
     let kind = nodes[expression].kind;
     let first = graph[expression].first_child;
@@ -707,15 +754,15 @@ fn matched_instance(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 }
 
 pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) -> (i32, u64) {
+    output: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) (i32, u64) {
     let mut instances: [Instance; 4096] = [Instance { template: 0, count: 0 }; 4096];
     let mut stored_types: [ConcreteType; 131072] = [ConcreteType { node: 0, reference: 0, slice: false, instance: 0 }; 131072];
     let mut count: u64 = 0;
     let mut instance_count:[u64;1]=[0];
-    let mut substitutions: [u64; 524292] = [0; 524292];
-    let mut substitution_ends: [u64; 524292] = [0; 524292];
+    let mut substitutions: [u64; 1572867] = [0; 1572867];
+    let mut substitution_ends: [u64; 1572867] = [0; 1572867];
     let mut omitted: [bool; 524289] = [false; 524289];
-    let mut omissions: [u64; 524292] = [0; 524292];
+    let mut omissions: [u64; 1572867] = [0; 1572867];
     let mut template = graph[0].first_child;
     while template != 0 {
         if is_template(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template)) {
@@ -996,6 +1043,43 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         }
         point = point + 1;
     }
+    // Diagnose a concrete receiver mismatch as a typing failure, before its
+    // unavailable method is omitted from the generated specialization.
+    let mut method_call: u64 = 1;
+    while method_call < nodes.len() as u64 {
+        if nodes[method_call].kind == 16 {
+            let mut instance: u64 = 0;
+            while instance < count {
+                let template = instances[instance].template;
+                let selected = matched_instance(&nodes[0..nodes.len()], &graph[0..graph.len()],
+                    &tokens[0..tokens.len()], graph[method_call].first_child, template,
+                    &instances[..count], &substitutions[..], &dependencies[..dependency_count], 0);
+                if selected == instance + 1 {
+                    let mut part = graph[0].first_child;
+                    let mut named = false;
+                    let mut available = false;
+                    while part != 0 {
+                        if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], template, part) {
+                            let mut member = graph[part].first_child;
+                            while member != 0 {
+                                if (nodes[member].kind == 1 || nodes[member].kind == 35)
+                                    && text_equal(&source[0..source.len()], &nodes[member], &nodes[method_call]) {
+                                    named = true;
+                                    if receiver_matches(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], member,
+                                        &instances[instance], instance, &stored_types[..], &instances[..]) { available = true; }
+                                }
+                                member = graph[member].next_sibling;
+                            }
+                        }
+                        part = graph[part].next_sibling;
+                    }
+                    if named && !available { return (report_violation_site(1, nodes[method_call].name_start, 1020), 0); }
+                }
+                instance += 1;
+            }
+        }
+        method_call += 1;
+    }
     let mut cursor: u64 = 0;
     let mut written: usize = 0;
     let mut token: u64 = 0;
@@ -1035,12 +1119,12 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     while instance < count {
         let template = instances[instance].template;
         written = put(&mut output[0..output.len()], written, &newline[..]);
-        written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(template), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
+        written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(template), &stored_types[..], &instances[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
         let mut part = graph[0].first_child;
         while part != 0 {
             if implementation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(template), copy(part)) {
                 written = put(&mut output[0..output.len()], written, &newline[..]);
-                written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(part), &stored_types[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
+                written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], &instances[instance], copy(instance), copy(part), &stored_types[..], &instances[..], &dependencies[..dependency_count], &mut output[0..output.len()], &mut origins[0..origins.len()], written);
             }
             part = graph[part].next_sibling;
         }
@@ -1064,14 +1148,14 @@ pub fn specialize_structs(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 
 /// Resolves a concrete constructor result for the existing adapter lowering.
 pub fn expression_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], expression: u64) -> u64 {
+    tokens: &[Token], expression: u64) u64 {
     let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &tokens[0..tokens.len()], expression, 0));
     layout(source, nodes, graph, ty.node)
 }
 
 /// A function contract is a recipe, specialized from concrete call arguments.
-pub fn function_template(nodes: &[AstNode], graph: &[StaticNode], item: u64) -> bool {
+pub fn function_template(nodes: &[AstNode], graph: &[StaticNode], item: u64) bool {
     if nodes[item].kind != 1 && nodes[item].kind != 35 { return false; }
     template_parameter(&nodes[0..nodes.len()], &graph[0..graph.len()], item, 0) != 0
 }
@@ -1079,7 +1163,7 @@ pub fn function_template(nodes: &[AstNode], graph: &[StaticNode], item: u64) -> 
 /// Expand one recipe per pass. Reparse before specializing dependent calls.
 // Defer calls in both generic functions and generic impls until their enclosing
 // recipe has concrete arguments. Struct methods can call generic helpers too.
-fn inside_recipe(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) -> bool {
+fn inside_recipe(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) bool {
     let mut ancestor = nodes[point].parent;
     while ancestor != 0 {
         if function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(ancestor)) { return true; }
@@ -1093,7 +1177,7 @@ fn inside_recipe(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: 
 }
 
 pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut template = graph[0].first_child;
     while template != 0 && !function_template(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(template)) {
         template = graph[template].next_sibling;
@@ -1204,7 +1288,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             while instance < count {
                 let mut origins: [u64; 1] = [0];
                 written = render(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()],
-                    &instances[instance], copy(instance), copy(template), &stored[..], &empty[0..0], &mut output[0..output.len()], &mut origins[..], written);
+                    &instances[instance], copy(instance), copy(template), &stored[..], &instances[..], &empty[0..0], &mut output[0..output.len()], &mut origins[..], written);
                 instance += 1;
             }
             while at < nodes[template].end { offsets[at] = written as u64; at += 1; }
@@ -1225,7 +1309,7 @@ pub fn specialize_functions(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 /// Recognize primitive-qualified fallible conversion calls without overriding nominal methods.
-pub fn numeric_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+pub fn numeric_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     if nodes[node].kind != 15 { return false; }
     let name = graph[node].first_child;
     if nodes[name].kind != 36 || verify_primitive(&source[0..source.len()], nodes[name].name_start, nodes[name].name_end) == 0 { return false; }
@@ -1236,7 +1320,7 @@ pub fn numeric_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 
 /// Materialize the exact conversion contract as an ordinary Result-returning helper.
 pub fn specialize_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut starts: [u64; 4194304] = [0; 4194304];
     let mut count: u64 = 0;
     let mut point: u64 = 1;
@@ -1296,7 +1380,7 @@ pub fn specialize_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 fn render_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], point: u64, start: usize) -> (i32, u64) {
+    output: &mut [u8], point: u64, start: usize) (i32, u64) {
     let name = graph[point].first_child;
     let argument = graph[name].next_sibling;
     if argument == 0 || graph[argument].next_sibling != 0 { return (report_violation_site(1, nodes[point].start, 140), 0); }
@@ -1320,42 +1404,42 @@ fn render_conversion(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tok
     if written >= output.len() { return (4, 0); }
     return (0, written as u64);
 }
-fn conversion_text_0(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_0(out: &mut [u8], at: usize) usize {
     let text: [u8; 20] = [10,102,110,32,95,95,99,111,114,98,111,95,110,117,109,101,114,105,99,95];
     put(out, at, &text[..])
 }
 
-fn conversion_text_1(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_1(out: &mut [u8], at: usize) usize {
     let text: [u8; 8] = [40,118,97,108,117,101,58,32];
     put(out, at, &text[..])
 }
 
-fn conversion_text_2(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_2(out: &mut [u8], at: usize) usize {
     let text: [u8; 12] = [41,32,45,62,32,82,101,115,117,108,116,60];
     put(out, at, &text[..])
 }
 
-fn conversion_text_3(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_3(out: &mut [u8], at: usize) usize {
     let text: [u8; 47] = [44,32,73,110,116,101,103,101,114,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114,62,32,123,32,108,101,116,32,109,117,116,32,99,111,110,118,101,114,116,101,100,58,32];
     put(out, at, &text[..])
 }
 
-fn conversion_text_4(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_4(out: &mut [u8], at: usize) usize {
     let text: [u8; 53] = [32,61,32,48,59,32,108,101,116,32,109,117,116,32,101,120,97,99,116,58,32,98,111,111,108,32,61,32,102,97,108,115,101,59,32,64,117,110,99,104,101,99,107,101,100,32,123,32,64,99,32,123,32];
     put(out, at, &text[..])
 }
 
-fn conversion_text_5(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_5(out: &mut [u8], at: usize) usize {
     let text: [u8; 82] = [32,125,32,125,32,105,102,32,101,120,97,99,116,32,123,32,79,107,40,99,111,110,118,101,114,116,101,100,41,32,125,32,101,108,115,101,32,123,32,69,114,114,40,73,110,116,101,103,101,114,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114,46,79,117,116,79,102,82,97,110,103,101,41,32,125,32,125,10];
     put(out, at, &text[..])
 }
 
-fn conversion_text_6(out: &mut [u8], at: usize) -> usize {
+fn conversion_text_6(out: &mut [u8], at: usize) usize {
     let text: [u8; 44] = [10,101,110,117,109,32,73,110,116,101,103,101,114,67,111,110,118,101,114,115,105,111,110,69,114,114,111,114,32,123,32,79,117,116,79,102,82,97,110,103,101,32,125,10];
     put(out, at, &text[..])
 }
 
-fn conversion_c_type(out: &mut [u8], start: usize, ty: i64) -> usize {
+fn conversion_c_type(out: &mut [u8], start: usize, ty: i64) usize {
     let mut at = start;
     if ty == 1 { at = numeric_text_0(&mut out[0..out.len()], at);
  }
@@ -1375,11 +1459,11 @@ fn conversion_c_type(out: &mut [u8], start: usize, ty: i64) -> usize {
  }
     at
 }
-fn conversion_bits(ty: i64) -> u64 {
+fn conversion_bits(ty: i64) u64 {
     if ty == 1 { 31 } else if ty == 2 { 63 } else if ty == 4 { 8 }
     else if ty == 5 { 16 } else if ty == 6 { 32 } else { 64 }
 }
-pub fn conversion_code(out: &mut [u8], start: usize, from: i64, into: i64) -> usize {
+pub fn conversion_code(out: &mut [u8], start: usize, from: i64, into: i64) usize {
     let mut at = start;
     if from < 8 && into < 8 {
         at = numeric_text_8(&mut out[0..out.len()], at);
@@ -1443,189 +1527,189 @@ pub fn conversion_code(out: &mut [u8], start: usize, from: i64, into: i64) -> us
     }
     at
 }
-fn numeric_text_0(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_0(out: &mut [u8], at: usize) usize {
     let text: [u8; 7] = [105,110,116,51,50,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_1(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_1(out: &mut [u8], at: usize) usize {
     let text: [u8; 7] = [105,110,116,54,52,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_2(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_2(out: &mut [u8], at: usize) usize {
     let text: [u8; 7] = [117,105,110,116,56,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_3(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_3(out: &mut [u8], at: usize) usize {
     let text: [u8; 8] = [117,105,110,116,49,54,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_4(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_4(out: &mut [u8], at: usize) usize {
     let text: [u8; 8] = [117,105,110,116,51,50,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_5(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_5(out: &mut [u8], at: usize) usize {
     let text: [u8; 8] = [117,105,110,116,54,52,95,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_6(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_6(out: &mut [u8], at: usize) usize {
     let text: [u8; 5] = [102,108,111,97,116];
     put(out, at, &text[..])
 }
 
-fn numeric_text_7(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_7(out: &mut [u8], at: usize) usize {
     let text: [u8; 6] = [100,111,117,98,108,101];
     put(out, at, &text[..])
 }
 
-fn numeric_text_8(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_8(out: &mut [u8], at: usize) usize {
     let text: [u8; 43] = [95,95,105,110,116,49,50,56,32,115,61,40,95,95,105,110,116,49,50,56,41,36,123,118,97,108,117,101,125,59,32,36,123,101,120,97,99,116,125,61,115,62,61];
     put(out, at, &text[..])
 }
 
-fn numeric_text_9(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_9(out: &mut [u8], at: usize) usize {
     let text: [u8; 18] = [40,45,40,40,95,95,105,110,116,49,50,56,41,49,32,60,60,32];
     put(out, at, &text[..])
 }
 
-fn numeric_text_10(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_10(out: &mut [u8], at: usize) usize {
     let text: [u8; 2] = [41,41];
     put(out, at, &text[..])
 }
 
-fn numeric_text_11(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_11(out: &mut [u8], at: usize) usize {
     let text: [u8; 1] = [48];
     put(out, at, &text[..])
 }
 
-fn numeric_text_12(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_12(out: &mut [u8], at: usize) usize {
     let text: [u8; 22] = [32,38,38,32,115,60,40,40,95,95,105,110,116,49,50,56,41,49,32,60,60,32];
     put(out, at, &text[..])
 }
 
-fn numeric_text_13(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_13(out: &mut [u8], at: usize) usize {
     let text: [u8; 30] = [41,59,32,105,102,40,36,123,101,120,97,99,116,125,41,32,36,123,99,111,110,118,101,114,116,101,100,125,61,40];
     put(out, at, &text[..])
 }
 
-fn numeric_text_14(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_14(out: &mut [u8], at: usize) usize {
     let text: [u8; 3] = [41,115,59];
     put(out, at, &text[..])
 }
 
-fn numeric_text_15(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_15(out: &mut [u8], at: usize) usize {
     let text: [u8; 71] = [108,111,110,103,32,100,111,117,98,108,101,32,115,61,40,108,111,110,103,32,100,111,117,98,108,101,41,36,123,118,97,108,117,101,125,59,32,36,123,101,120,97,99,116,125,61,105,115,102,105,110,105,116,101,40,36,123,118,97,108,117,101,125,41,32,38,38,32,115,62,61];
     put(out, at, &text[..])
 }
 
-fn numeric_text_16(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_16(out: &mut [u8], at: usize) usize {
     let text: [u8; 12] = [45,108,100,101,120,112,108,40,49,46,76,44];
     put(out, at, &text[..])
 }
 
-fn numeric_text_17(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_17(out: &mut [u8], at: usize) usize {
     let text: [u8; 1] = [41];
     put(out, at, &text[..])
 }
 
-fn numeric_text_18(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_18(out: &mut [u8], at: usize) usize {
     let text: [u8; 1] = [48];
     put(out, at, &text[..])
 }
 
-fn numeric_text_19(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_19(out: &mut [u8], at: usize) usize {
     let text: [u8; 17] = [32,38,38,32,115,60,108,100,101,120,112,108,40,49,46,76,44];
     put(out, at, &text[..])
 }
 
-fn numeric_text_20(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_20(out: &mut [u8], at: usize) usize {
     let text: [u8; 46] = [41,32,38,38,32,116,114,117,110,99,108,40,115,41,61,61,115,59,32,105,102,40,36,123,101,120,97,99,116,125,41,32,36,123,99,111,110,118,101,114,116,101,100,125,61,40];
     put(out, at, &text[..])
 }
 
-fn numeric_text_21(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_21(out: &mut [u8], at: usize) usize {
     let text: [u8; 3] = [41,115,59];
     put(out, at, &text[..])
 }
 
-fn numeric_text_22(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_22(out: &mut [u8], at: usize) usize {
     let text: [u8; 4] = [32,102,61,40];
     put(out, at, &text[..])
 }
 
-fn numeric_text_23(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_23(out: &mut [u8], at: usize) usize {
     let text: [u8; 31] = [41,36,123,118,97,108,117,101,125,59,32,36,123,101,120,97,99,116,125,61,105,115,102,105,110,105,116,101,40,102,41];
     put(out, at, &text[..])
 }
 
-fn numeric_text_24(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_24(out: &mut [u8], at: usize) usize {
     let text: [u8; 20] = [32,38,38,32,40,108,111,110,103,32,100,111,117,98,108,101,41,102,62,61];
     put(out, at, &text[..])
 }
 
-fn numeric_text_25(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_25(out: &mut [u8], at: usize) usize {
     let text: [u8; 12] = [45,108,100,101,120,112,108,40,49,46,76,44];
     put(out, at, &text[..])
 }
 
-fn numeric_text_26(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_26(out: &mut [u8], at: usize) usize {
     let text: [u8; 1] = [41];
     put(out, at, &text[..])
 }
 
-fn numeric_text_27(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_27(out: &mut [u8], at: usize) usize {
     let text: [u8; 1] = [48];
     put(out, at, &text[..])
 }
 
-fn numeric_text_28(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_28(out: &mut [u8], at: usize) usize {
     let text: [u8; 30] = [32,38,38,32,40,108,111,110,103,32,100,111,117,98,108,101,41,102,60,108,100,101,120,112,108,40,49,46,76,44];
     put(out, at, &text[..])
 }
 
-fn numeric_text_29(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_29(out: &mut [u8], at: usize) usize {
     let text: [u8; 26] = [41,59,32,105,102,40,36,123,101,120,97,99,116,125,41,32,36,123,101,120,97,99,116,125,61,40];
     put(out, at, &text[..])
 }
 
-fn numeric_text_30(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_30(out: &mut [u8], at: usize) usize {
     let text: [u8; 13] = [41,102,61,61,36,123,118,97,108,117,101,125,59];
     put(out, at, &text[..])
 }
 
-fn numeric_text_31(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_31(out: &mut [u8], at: usize) usize {
     let text: [u8; 27] = [32,38,38,32,105,115,102,105,110,105,116,101,40,36,123,118,97,108,117,101,125,41,32,38,38,32,40];
     put(out, at, &text[..])
 }
 
-fn numeric_text_32(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_32(out: &mut [u8], at: usize) usize {
     let text: [u8; 13] = [41,102,61,61,36,123,118,97,108,117,101,125,59];
     put(out, at, &text[..])
 }
 
-fn numeric_text_33(out: &mut [u8], at: usize) -> usize {
+fn numeric_text_33(out: &mut [u8], at: usize) usize {
     let text: [u8; 29] = [32,105,102,40,36,123,101,120,97,99,116,125,41,32,36,123,99,111,110,118,101,114,116,101,100,125,61,102,59];
     put(out, at, &text[..])
 }
 
-fn conversion_float_init(out: &mut [u8], at: usize) -> usize {
+fn conversion_float_init(out: &mut [u8], at: usize) usize {
     let text: [u8; 55] = [32,61,32,48,46,48,59,32,108,101,116,32,109,117,116,32,101,120,97,99,116,58,32,98,111,111,108,32,61,32,102,97,108,115,101,59,32,64,117,110,99,104,101,99,107,101,100,32,123,32,64,99,32,123,32];
     put(out, at, &text[..])
 }
 
-fn conversion_float_bound(out: &mut [u8], at: usize) -> usize {
+fn conversion_float_bound(out: &mut [u8], at: usize) usize {
     let text: [u8; 84] = [105,102,40,105,115,102,105,110,105,116,101,40,36,123,118,97,108,117,101,125,41,32,38,38,32,36,123,118,97,108,117,101,125,32,62,61,32,45,48,120,49,46,102,102,102,102,102,101,112,49,50,55,32,38,38,32,36,123,118,97,108,117,101,125,32,60,61,32,48,120,49,46,102,102,102,102,102,101,112,49,50,55,41,123];
     put(out, at, &text[..])
 }
 
 /// Classify a for source using ordinary expression inference. Reference mode
 /// remains separate from the indexed layout; unknown sources use next().
-pub fn iteration_mode(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],expression:u64)->i64 {
+pub fn iteration_mode(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],expression:u64)i64 {
     let ty=decoded(type_code(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],expression,0));
     let node=ty.node;
     let mut indexed=ty.slice;

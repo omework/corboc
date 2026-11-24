@@ -1,7 +1,7 @@
 #(if: target.os == "macos" && target.arch == "aarch64")
 use bootstrap::build_driver::{make_workspace, run_command};
 
-fn checkout_path(output: &mut [u8]) -> usize {
+fn checkout_path(output: &mut [u8]) usize {
     let template: [u8; 23] = [
         47, 116, 109, 112, 47, 99, 111, 114, 98, 111, 99, 45, 103, 105, 116, 46,
         88, 88, 88, 88, 88, 88, 0,
@@ -11,7 +11,7 @@ fn checkout_path(output: &mut [u8]) -> usize {
     end - 1
 }
 
-fn git_checkout(directory: &[u8], url: &[u8], rev: &[u8]) -> bool {
+fn git_checkout(directory: &[u8], url: &[u8], rev: &[u8]) bool {
     // Only this fixed script is interpreted. The checkout, URL and revision
     // are separate positional arguments. Git runs with a fresh environment.
     // The commands are init, fetch, check FETCH_HEAD and object type, checkout.
@@ -95,8 +95,8 @@ fn discard_checkout(directory: &[u8]) {
 #(endif)
 
 #(if: target.os == "linux" || target.os == "windows" || target.arch == "x86_64")
-fn checkout_path(output: &mut [u8]) -> usize { drop(output); 0 }
-fn git_checkout(directory: &[u8], url: &[u8], rev: &[u8]) -> bool {
+fn checkout_path(output: &mut [u8]) usize { drop(output); 0 }
+fn git_checkout(directory: &[u8], url: &[u8], rev: &[u8]) bool {
     drop(directory);
     drop(url);
     drop(rev);

@@ -10,7 +10,7 @@ use bootstrap::tasks::copy_task_summary;
 use bootstrap::verify::violation;
 
 /// Distinguishes a pool allocation attempt from ordinary user methods named try.
-pub fn pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],node:u64)->bool {
+pub fn pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],node:u64)bool {
     if nodes[node].kind!=16{return false;}
     let receiver=graph[node].first_child;let pool=graph[receiver].binding;let ty=values[pool].ty;
     if nodes[receiver].kind!=7 || !((ty>=93 && ty<200)||(ty>2000 && ty<2020)||(ty>=2200 && ty<=2227)||(ty>=8501 && ty<=8509)||(ty>=2601 && ty<=2608)){return false;}
@@ -18,7 +18,7 @@ pub fn pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[Check
 }
 
 /// Canonical PoolError remains an ordinary root-STD enum, including through aliases.
-pub fn pool_error(source:&[u8],nodes:&[AstNode],graph:&[StaticNode])->u64 {
+pub fn pool_error(source:&[u8],nodes:&[AstNode],graph:&[StaticNode])u64 {
     let name:[u8;9]=[80,111,111,108,69,114,114,111,114];let full:[u8;4]=[70,117,108,108];let mut item=graph[0].first_child;
     while item!=0 {
         let spelling=&source[nodes[item].name_start..nodes[item].name_end];
@@ -30,7 +30,7 @@ pub fn pool_error(source:&[u8],nodes:&[AstNode],graph:&[StaticNode])->u64 {
 }
 
 /// Recover the concrete allocation descriptor type from its source pool declaration.
-pub fn allocation_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],pool:u64)->i64 {
+pub fn allocation_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],pool:u64)i64 {
     let mut annotation=graph[graph[pool].initializer].first_child;
     if nodes[pool].kind==3 {annotation=graph[graph[pool].first_child].first_child;}
     let inner=graph[annotation].first_child;
@@ -39,7 +39,7 @@ pub fn allocation_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],pool:u6
 }
 
 /// Validate the supplied value once, then wrap its successful graph without discarding dependencies.
-pub fn check_pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
+pub fn check_pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)i64 {
     if mode!=1{return -9;}
     let error=pool_error(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()]);if error==0{return 0-violation_site(1, nodes[node].start, 397);}
     let pool=graph[graph[node].first_child].binding;

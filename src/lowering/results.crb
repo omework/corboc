@@ -11,7 +11,7 @@ fn result_field(ok: bool) {
 }
 
 fn lower_result_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    types: &mut [i64], ctx: &Lowering, node: u64, ty: i64, ok: bool) -> i64 {
+    types: &mut [i64], ctx: &Lowering, node: u64, ty: i64, ok: bool) i64 {
     let operand = graph[graph[node].first_child].next_sibling;
     if operand == 0 || graph[operand].next_sibling != 0 { return -1; }
     let payload = result_payload(copy(ty), copy(ok));
@@ -39,7 +39,7 @@ fn lower_result_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 fn lower_result_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, subject: u64, ty: i64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, subject: u64, ty: i64, expected: i64, slot: u64) i64 {
     let mut arm = graph[subject].next_sibling;
     let mut common = expected;
     let emit = (*ctx).emit;

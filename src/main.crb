@@ -1,3 +1,4 @@
+use bootstrap::definition_syntax::{definition_input, has_typed_receivers, expand_typed_receivers};
 use bootstrap::packages::append;
 use bootstrap::self_type::{has_self_type,expand_self_type};
 use bootstrap::semantic_diagnostics::begin as semantic_begin;
@@ -38,7 +39,20 @@ use bootstrap::packages::{check_target, check_file_present, read_check_input, ch
 
 use bootstrap::lexer::{assignment_width, lexical_name, declaration_name, select_target, mark_nominal_names, dump_lex, scan_tokens};
 
-fn lex(source: &[u8], check: i32) -> i32 {
+fn lex(input: &[u8], check: i32) i32 {
+    if check == 3 {
+        let mut original = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 131075];
+        let (status, count) = scan_tokens(&input[0..input.len()], &mut original[..], check);
+        if status != 0 { return status; }
+        dump_lex(&original[..count + 1], &input[0..input.len()]);
+        return 0;
+    }
+    let mut normalized: [u8; 4194304] = [0; 4194304];
+    let mut offsets: [u64; 4194304] = [0; 4194304];
+    let mut syntax_tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
+    let (error, length) = definition_input(input, &mut normalized[..], &mut offsets[..], &mut syntax_tokens[..], check);
+    if error != 0 { return error; }
+    let source = &normalized[..length];
     // One token per source byte at most, plus EOF and two guards.
     let mut tokens: [Token; 131075] = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 131075];
     let (status, count) = scan_tokens(&source[0..source.len()], &mut tokens[..], copy(check));
@@ -54,15 +68,14 @@ fn lex(source: &[u8], check: i32) -> i32 {
     parse(&source[0..source.len()], &tokens[..selected], check, 0, false, &visibility[..0])
 }
 
-
-fn syntax_leaf(kind: i64, parent: u64, token: &Token) -> AstNode {
+fn syntax_leaf(kind: i64, parent: u64, token: &Token) AstNode {
     AstNode {
         kind: kind, parent: parent, start: (*token).start, end: (*token).end,
         name_start: (*token).start, name_end: (*token).end, public: false,
     }
 }
 
-fn precedence(kind: i64) -> u8 {
+fn precedence(kind: i64) u8 {
     if kind == 30 { return 1; }
     if kind == 31 { return 2; }
     if kind == 27 { return 3; }
@@ -78,7 +91,7 @@ fn precedence(kind: i64) -> u8 {
 
 // Parse a field list for either a declaration or a constructor.
 fn parse_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
-    free: u64, parent: u64, types: bool) -> (u64, u64) {
+    free: u64, parent: u64, types: bool) (u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[open].start); return (0, 0); }
     let mut index = open + 1;
     let mut count = free;
@@ -114,7 +127,7 @@ fn parse_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
 // A positional field has no source name. Its equal name offsets encode the
 // one-based position so the existing aggregate passes can resolve it.
 fn parse_positional_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
-    free: u64, parent: u64, kind: i64) -> (u64, u64) {
+    free: u64, parent: u64, kind: i64) (u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[open].start); return (0, 0); }
     let mut index = open + 1;
     if tokens[index].kind == 3 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
@@ -152,7 +165,7 @@ fn parse_positional_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], 
     return (index + 1, count);
 }
 
-fn parse_import(tokens: &[Token], nodes: &mut [AstNode], first: u64, free: u64) -> (u64, u64) {
+fn parse_import(tokens: &[Token], nodes: &mut [AstNode], first: u64, free: u64) (u64, u64) {
     if !lexical_name(tokens[first + 1].kind) || tokens[first + 2].kind != 43 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let mut index = first + 3;
     let mut count = free + 1;
@@ -211,7 +224,7 @@ fn reparent(nodes: &mut [AstNode], index: u64, parent: u64) {
 }
 
 fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let start = tokens[first].start;
     let mark = tokens[first].kind;
@@ -263,9 +276,9 @@ fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
         index = index + 1;
         if mark == 2 && arity == 1 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
         if mark == 7 {
-            if tokens[index].kind != 12 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+            if tokens[index].kind == 12 { index += 1; }
             let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                index + 1, copy(count), copy(free));
+                copy(index), copy(count), copy(free));
             if next == 0 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
             index = next;
             count = used;
@@ -306,7 +319,7 @@ fn parse_type(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
 }
 
 fn parse_pattern(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let mut index = first + 1;
     let mut count = free + 1;
@@ -379,13 +392,13 @@ fn parse_pattern(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64
 // Return the next token, the next free node, and the expression root.
 // A next token of zero signals a syntax error.
 fn parse_expression(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64, minimum: u8) -> (u64, u64, u64) {
+    free: u64, parent: u64, minimum: u8) (u64, u64, u64) {
     parse_expression_context(depth, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
         first, free, parent, minimum, 0, false)
 }
 
 fn parse_test_and_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     let (next, used, test) = parse_expression_context(copy(depth), &tokens[0..tokens.len()],
         &mut nodes[0..nodes.len()], copy(first), copy(free), copy(parent), 0, 1, false);
     drop(test);
@@ -402,7 +415,7 @@ fn parse_test_and_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], fir
 }
 
 fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64, minimum: u8, context: i64, primary_only: bool) -> (u64, u64, u64) {
+    free: u64, parent: u64, minimum: u8, context: i64, primary_only: bool) (u64, u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[first].start); return (0, 0, 0); }
     let before_block = context != 0;
     let start = tokens[first].start;
@@ -452,10 +465,15 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
                 }
                 index = index + 1;
             }
-            if tokens[index].kind == 12 {
+            let unit_result = (tokens[index].kind == 2 && tokens[index + 1].kind == 3)
+                || (tokens[index].kind == 12 && tokens[index + 1].kind == 2 && tokens[index + 2].kind == 3);
+            if unit_result {
+                index += if tokens[index].kind == 12 { 3 } else { 2 };
+            } else if tokens[index].kind != 4 {
+                if tokens[index].kind == 12 { index += 1; }
                 let (next, used) = parse_type(depth + 1,
                     &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                    index + 1, copy(count), copy(root));
+                    copy(index), copy(count), copy(root));
                 if next == 0 { diagnostic_parse_point(tokens[index].start); return (0, 0, 0); }
                 index = next;
                 count = used;
@@ -902,7 +920,7 @@ fn parse_expression_context(depth: u64, tokens: &[Token], nodes: &mut [AstNode],
 }
 
 fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     if tokens[first].kind != 71 || tokens[first + 1].kind != 2
         || tokens[first + 2].kind != 1 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let tag_token = first + 2;
@@ -1148,7 +1166,7 @@ fn parse_annotation(tokens: &[Token], nodes: &mut [AstNode], first: u64,
 }
 
 fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     if depth % 256 >= 128 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let mut index = copy(first);
     let mut count = free + 1;
@@ -1371,7 +1389,7 @@ fn parse_block(depth: u64, tokens: &[Token], nodes: &mut [AstNode], first: u64,
 }
 
 fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, available: u64, parent: u64, item_start: u64, function_kind: i64) -> (u64, u64) {
+    free: u64, available: u64, parent: u64, item_start: u64, function_kind: i64) (u64, u64) {
     let method_addr = parent != 0 && tokens[first + 1].annotation == -2;
     if tokens[first].kind != 7 || !method_addr && !declaration_name(&tokens[first + 1]) {
         diagnostic_parse_expected(tokens[first + 1].start,113,item_start); return (0,0);
@@ -1412,8 +1430,13 @@ fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
         }
     }
     index = index + 1;
-    if tokens[index].kind == 12 {
-        index = index + 1;
+    // Explicit () and an omitted result have the same unit-return IR.
+    let unit_result = (tokens[index].kind == 2 && tokens[index + 1].kind == 3)
+        || (tokens[index].kind == 12 && tokens[index + 1].kind == 2 && tokens[index + 2].kind == 3);
+    if unit_result {
+        index += if tokens[index].kind == 12 { 3 } else { 2 };
+    } else if tokens[index].kind != 4 && tokens[index].kind != 14 {
+        if tokens[index].kind == 12 { index = index + 1; }
         let (next, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
             copy(index), copy(count), copy(function));
         if next == 0 { diagnostic_parse_expected(tokens[index].start,118,item_start); return (0, 0); }
@@ -1445,11 +1468,11 @@ fn parse_function(tokens: &[Token], nodes: &mut [AstNode], first: u64,
 // A node index also identifies the scope or binding introduced by that node.
 
 struct ExitContext {
-    function: u64,
-    loop_target: u64,
+    function: u64;
+    loop_target: u64;
 }
 
-fn child_order(nodes: &[AstNode], left: u64, right: u64) -> bool {
+fn child_order(nodes: &[AstNode], left: u64, right: u64) bool {
     let left_kind = nodes[left].kind;
     let right_kind = nodes[right].kind;
     // A conditional pattern precedes its subject in source, but match analysis
@@ -1478,7 +1501,7 @@ fn set_sibling(graph: &mut [StaticNode], node: u64, sibling: u64) {
 }
 
 fn find_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    node: u64, visible: u64) -> u64 {
+    node: u64, visible: u64) u64 {
     let spelling = &source[nodes[node].name_start..nodes[node].name_end];
     let mut candidate = visible;
     while candidate != 0 {
@@ -1490,7 +1513,7 @@ fn find_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn resolve_node(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [StaticNode],
-    node: u64, parent_scope: u64, visible: u64, shared_body: u64, context: &ExitContext, track_fields: bool) -> u64 {
+    node: u64, parent_scope: u64, visible: u64, shared_body: u64, context: &ExitContext, track_fields: bool) u64 {
     let kind = nodes[node].kind;
     let first_child = graph[node].first_child;
     let mut scope = copy(parent_scope);
@@ -1589,7 +1612,7 @@ fn resolve_node(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut 
 
 // Child links are the point's operands. Fact-specific payloads select these
 // operands, except for resolved bindings, exit destinations and captures.
-fn fact_kind(kind: i64, is_new: bool) -> i64 {
+fn fact_kind(kind: i64, is_new: bool) i64 {
     if kind == 7 || kind == 52 { return 1; }
     if kind == 57 { return 2; }
     if kind == 13 { return 3; }
@@ -1607,8 +1630,7 @@ fn fact_kind(kind: i64, is_new: bool) -> i64 {
     0
 }
 
-
-fn point_mutable(tokens: &[Token], start: u64, name_start: u64, borrow: bool, declaration: bool) -> bool {
+fn point_mutable(tokens: &[Token], start: u64, name_start: u64, borrow: bool, declaration: bool) bool {
     if !borrow && !declaration { return false; }
     let mut prefix = token_at(&tokens[0..tokens.len()], start);
     if borrow { return tokens[prefix + 1].kind == 16; }
@@ -1711,7 +1733,7 @@ fn build_graph(source: &[u8], nodes: &[AstNode], tokens: &[Token], graph: &mut [
     drop(visible);
 }
 
-fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) i32 {
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false, declaration: false,
         mutable: false, type_node: 0, initializer: 0, fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0, private_start: 0, private_end: 0, private_origin: 0, access_mode: 0, protection: 0 }; 524289];
     build_graph(&source[0..source.len()], &nodes[0..nodes.len()], &tokens[0..tokens.len()], &mut graph[..], true);
@@ -1799,7 +1821,7 @@ fn emit_static_tree(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i
 // Parse top-level items into a flat AST.
 // The lexer always supplies a final EOF token.
 fn parse_constant(tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    item: u64, parent: u64, item_start: u64, public: bool) -> (u64, u64) {
+    item: u64, parent: u64, item_start: u64, public: bool) (u64, u64) {
     if !declaration_name(&tokens[first + 1]) || tokens[first + 2].kind != 10 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
     let (equal, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
         first + 3, item + 1, copy(item));
@@ -1826,7 +1848,7 @@ fn parse_constant(tokens: &[Token], nodes: &mut [AstNode], first: u64,
 }
 
 fn parse_generic_parameters(tokens: &[Token], nodes: &mut [AstNode], first: u64,
-    free: u64, parent: u64) -> (u64, u64) {
+    free: u64, parent: u64) (u64, u64) {
     let mut index = first + 1;
     let mut count = copy(free);
     while true {
@@ -1847,7 +1869,7 @@ fn parse_generic_parameters(tokens: &[Token], nodes: &mut [AstNode], first: u64,
     return (index + 1, count);
 }
 
-fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
+fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) u64 {
     let mut count: u64 = 1;
     let mut index: u64 = 0;
     if tokens[index].kind == 71 && tokens[index + 2].annotation == 1 {
@@ -1992,10 +2014,12 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
             if tokens[index].kind != 4 { diagnostic_parse_point(tokens[index].start); return 0; }
             index = index + 1;
             while tokens[index].kind != 5 {
-                if tokens[index].kind == 81 {
+                if tokens[index].kind == 81 || (tokens[index].kind == 57 && tokens[index + 1].kind == 81) {
+                    let member_public = tokens[index].kind == 57;
+                    if member_public { index += 1; }
                     let start = tokens[index].start;
                     let (next, used) = parse_constant(&tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
-                        copy(index), copy(count), copy(implementation), start, false);
+                        copy(index), copy(count), copy(implementation), start, member_public);
                     if next == 0 { diagnostic_parse_point(tokens[index].start); return 0; }
                     index = next;
                     count = used;
@@ -2062,7 +2086,7 @@ fn parse_nodes(tokens: &[Token], nodes: &mut [AstNode]) -> u64 {
     count
 }
 
-fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bool, visibility: &[LayoutVisibility]) i32 {
     let mut nodes = [AstNode {
         kind: 0, parent: 0, start: 0, end: 0, name_start: 0, name_end: 0, public: false,
     }; 524289];
@@ -2094,6 +2118,9 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()], generic);
     }
+    if check != 0 && has_typed_receivers(&source[0..source.len()], &nodes[..node]) {
+        return parse_callables(&source[0..source.len()], check, env_call, package, visibility);
+    }
     if check != 0 && has_callables(&source[0..source.len()], &nodes[..node]) {
         return parse_callables(&source[0..source.len()], check, env_call, package, visibility);
     }
@@ -2101,7 +2128,7 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
 }
 
 // Recipe detection is reused by the iterative specialization workspace.
-fn generic_recipes(source: &[u8], nodes: &[AstNode]) -> bool {
+fn generic_recipes(source: &[u8], nodes: &[AstNode]) bool {
     let mut generic = false;
     let mut candidate: u64 = 1;
     while candidate < nodes.len() as u64 {
@@ -2128,7 +2155,7 @@ fn generic_recipes(source: &[u8], nodes: &[AstNode]) -> bool {
 
 // Configuration monomorphization precedes generic/callable specialization.
 fn parse_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
-    env_call: u64, package: bool, visibility: &[LayoutVisibility]) -> i32 {
+    env_call: u64, package: bool, visibility: &[LayoutVisibility]) i32 {
     if source.len() >= 4194304 { return 4; }
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
         scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
@@ -2143,7 +2170,7 @@ fn parse_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token], check
         &mut output[..], &mut offsets[..],&visibility[0..visibility.len()], &mut views[..]);
     if error != 0 { return error; }
     diagnostic_rewritten(&output[..written],&offsets[..],source.len());
-    let mut rewritten = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
+    let mut rewritten = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
     let (status, count) = scan_tokens(&output[..written], &mut rewritten[..], copy(check));
     if status != 0 { return status; }
     let selected = select_target(&output[..written], &mut rewritten[..count + 3]);
@@ -2156,7 +2183,7 @@ fn parse_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token], check
 // Callable expansion reuses its syntax and graph workspace. Generated capture
 // records enter the ordinary verifier, summaries and placement plan.
 fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
-    visibility: &[LayoutVisibility]) -> i32 {
+    visibility: &[LayoutVisibility]) i32 {
     if source.len() >= 4194304 { return 4; }
     let mut current: [u8; 4194304] = [0; 4194304];
     let mut expanded: [u8; 4194304] = [0; 4194304];
@@ -2165,7 +2192,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
     let mut impl_origins: [u64; 32769] = [0; 32769];
     let mut syntax = [AstNode { kind: 0, parent: 0, start: 0, end: 0,
         name_start: 0, name_end: 0, public: false }; 524289];
-    let mut tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 524292];
+    let mut tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
     let mut graph = [StaticNode { first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0,
         scope_entry: false, declaration: false, mutable: false, type_node: 0, initializer: 0,
         fact: 0, visible: 0, binding: 0, destination: 0, field_name: 0,
@@ -2230,6 +2257,12 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             written = expanded_length;
         }
         if status != 0 { return status; }
+        if written == 0 && !generic {
+            let (receiver_status, receiver_length) = expand_typed_receivers(&current[..length],
+                &syntax[..used], &graph[..used], &mut expanded[..], &mut offsets[..]);
+            if receiver_status != 0 { return receiver_status; }
+            written = receiver_length;
+        }
         if written == 0 {
             diagnostic_stage_idle();
             return emit_static_tree(&current[..length], &syntax[..used], &tokens[..selected],
@@ -2353,7 +2386,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
 }
 
 fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    generic: bool, factory: u64, expanded: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) -> (i32, u64) {
+    generic: bool, factory: u64, expanded: &mut [u8], offsets: &mut [u64], origins: &mut [u64]) (i32, u64) {
     if factory != 0 {
         return specialize_factory(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], factory, expanded, offsets);
     }
@@ -2372,12 +2405,12 @@ fn rewrite_pipeline(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
 }
 
 fn parse_pipeline(source: &[u8], nodes: &[AstNode], tokens: &[Token], check: i32,
-    env_call: u64, package: bool, visibility: &[LayoutVisibility], generic: bool) -> i32 {
+    env_call: u64, package: bool, visibility: &[LayoutVisibility], generic: bool) i32 {
     drop(nodes); drop(tokens); drop(generic);
     parse_callables(&source[0..source.len()], check, env_call, package, &visibility[0..visibility.len()])
 }
 
-fn main() -> i32 {
+fn main() i32 {
     match args() {
         Err(error) => { drop(error); return 6; },
         Ok(arguments) => {
@@ -2493,7 +2526,7 @@ fn main() -> i32 {
 }
 
 // Package and file checks return before C generation and share verification.
-fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) -> i32 {
+fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) i32 {
     diagnostic_begin();
     if kind == 0 {
         check_message("corboc: checking package\n");
@@ -2518,7 +2551,7 @@ fn check_once(root: &[u8], file: &[u8], stdlib: &[u8], kind: i32) -> i32 {
     result
 }
 
-fn check_package(input: &[u8], watch: bool) -> i32 {
+fn check_package(input: &[u8], watch: bool) i32 {
     diagnostic_begin();
     let mut root: [u8; 4096] = [0; 4096];
     let mut file: [u8; 4096] = [0; 4096];
@@ -2596,7 +2629,7 @@ fn check_package(input: &[u8], watch: bool) -> i32 {
     0
 }
 
-fn compile_file(filename: &[u8], check: i32) -> i32 {
+fn compile_file(filename: &[u8], check: i32) i32 {
     if filename.len() >= 4096 { return 6; }
     let mut path: [u8; 4096] = [0; 4096];
     let mut index: usize = 0;
@@ -2610,18 +2643,18 @@ fn compile_file(filename: &[u8], check: i32) -> i32 {
     lex(&buffer[..filled], check)
 }
 
-fn compile_package(root: &[u8], stdlib: &[u8]) -> i32 {
+fn compile_package(root: &[u8], stdlib: &[u8]) i32 {
     compile_package_mode(root, stdlib, 2)
 }
 
 // Package resolution/linking is identical for verification and code generation.
-fn compile_package_mode(root: &[u8], stdlib: &[u8], mode: i32) -> i32 {
+fn compile_package_mode(root: &[u8], stdlib: &[u8], mode: i32) i32 {
     compile_input_mode(root,stdlib,mode,false)
 }
 
 /// Match a module path against a qualified token sequence without resolving
 /// symbols. The linker still decides visibility, aliases and ambiguities.
-fn check_module_end(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) -> usize {
+fn check_module_end(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) usize {
     let mut at: usize = 0;
     let mut token = first;
     while at < module.len() {
@@ -2655,14 +2688,14 @@ fn check_module_end(source: &[u8], tokens: &[Token], first: usize, module: &[u8]
     token
 }
 
-fn check_module_prefix(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) -> bool {
+fn check_module_prefix(source: &[u8], tokens: &[Token], first: usize, module: &[u8]) bool {
     check_module_end(source, tokens, first, module) != 0
 }
 
 /// Select only the requested module and its transitive qualified/imported
 /// modules. Original source identities are retained through compaction.
 fn focus_check_input(source: &mut [u8], names: &[u8], files: &mut [PackageFile],
-    tokens: &mut [Token], path: &[u8], mode: i32) -> (i32, u64, u64) {
+    tokens: &mut [Token], path: &[u8], mode: i32) (i32, u64, u64) {
     let total = files.len();
     let mut primary: usize = total;
     let mut file: usize = 0;
@@ -2831,12 +2864,12 @@ fn focus_check_input(source: &mut [u8], names: &[u8], files: &mut [PackageFile],
     (0, written as u64, count as u64)
 }
 
-fn compile_input_mode(root: &[u8], stdlib: &[u8], mode: i32, file:bool) -> i32 {
+fn compile_input_mode(root: &[u8], stdlib: &[u8], mode: i32, file:bool) i32 {
     let empty: [u8; 0] = [];
     compile_input_selection(root, stdlib, mode, file, &empty[..])
 }
 
-fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, focus: &[u8]) -> i32 {
+fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, focus: &[u8]) i32 {
     diagnostic_begin();
     // Include the compiler sources and the documented standard library in a single package.
     let mut source: [u8; 4194304] = [0; 4194304];
@@ -2858,6 +2891,24 @@ fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, foc
     let (status, count) = scan_tokens(&source[..source_end], &mut tokens[..], copy(mode));
     if status != 0 { return status; }
     let selected = select_target(&source[..source_end], &mut tokens[..count + 3]);
+    if selected == 0 { return 7; }
+    let mut normalized: [u8; 4194304] = [0; 4194304];
+    let mut syntax_offsets: [u64; 4194304] = [0; 4194304];
+    let (syntax_error, syntax_length) = definition_input(&source[..source_end], &mut normalized[..],
+        &mut syntax_offsets[..], &mut tokens[..], mode);
+    if syntax_error != 0 { return syntax_error; }
+    let mut file_index: u64 = 0;
+    while file_index < files_end {
+        let end = &mut files[file_index].end;
+        *end = syntax_offsets[*end];
+        file_index += 1;
+    }
+    let mut syntax_byte: u64 = 0;
+    while syntax_byte < syntax_length { source[syntax_byte] = normalized[syntax_byte]; syntax_byte += 1; }
+    source_end = syntax_length;
+    let (syntax_status, syntax_count) = scan_tokens(&source[..source_end], &mut tokens[..], mode);
+    if syntax_status != 0 { return syntax_status; }
+    let selected = select_target(&source[..source_end], &mut tokens[..syntax_count + 3]);
     if selected == 0 { return 7; }
     prepare_native_exports(&source[..source_end], &names[..package.names_end],
         &files[..files_end], &mut tokens[..selected]);
@@ -2890,16 +2941,15 @@ fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, foc
     parse(&linked[..length], &tokens[..remaining], mode, env_call, true, &visibility[..])
 }
 
-
 #(if: target.os == "macos" && target.arch == "aarch64")
-fn build_usage() -> i32 {
+fn build_usage() i32 {
     let message: [u8; 42] = [117,115,97,103,101,58,32,99,111,114,98,111,99,32,98,117,105,108,100,32,91,80,65,67,75,65,71,69,93,32,91,45,111,32,79,85,84,80,85,84,93,10]; // usage: corboc build [PACKAGE] [-o OUTPUT]
     diagnostic(&message[..]);
     6
 }
 
 // Default outputs live under the selected package root, independent of the caller's cwd.
-fn build_default(root: &[u8]) -> i32 {
+fn build_default(root: &[u8]) i32 {
     let mut output: [u8; 4096] = [0; 4096];
     let (status, directory, end) = binary_output(&root[0..root.len()], &mut output[..]);
     if status != 0 {
@@ -2919,7 +2969,7 @@ fn build_default(root: &[u8]) -> i32 {
     build_package(root, &output[..end])
 }
 
-fn build_package(root: &[u8], output: &[u8]) -> i32 {
+fn build_package(root: &[u8], output: &[u8]) i32 {
     if output.len() == 0 || output.len() >= 4096 { return build_usage(); }
     let mut stdlib: [u8; 4096] = [0; 4096];
     let std_end = stdlib_path(&mut stdlib[..]);
@@ -2982,7 +3032,7 @@ fn dependency_diagnostic(status: i32) {
     }
 }
 
-fn build_in_workspace(root: &[u8], stdlib: &[u8], source: &[u8], binary: &[u8], output: &[u8]) -> i32 {
+fn build_in_workspace(root: &[u8], stdlib: &[u8], source: &[u8], binary: &[u8], output: &[u8]) i32 {
     let saved = redirect_stdout(&source[0..source.len()]);
     if saved < 0 {
         let message: [u8; 39] = [99, 111, 114, 98, 111, 99, 58, 32, 99, 97, 110, 110, 111, 116, 32, 111, 112, 101, 110, 32, 116, 101, 109, 112, 111, 114, 97, 114, 121, 32, 67, 32, 111, 117, 116, 112, 117, 116, 10]; // corboc: cannot open temporary C output
@@ -3023,9 +3073,9 @@ fn build_in_workspace(root: &[u8], stdlib: &[u8], source: &[u8], binary: &[u8], 
 #(endif)
 
 #(if: target.os == "linux" || target.os == "windows" || target.arch == "x86_64")
-fn build_usage() -> i32 { 6 }
-fn build_default(root: &[u8]) -> i32 { drop(root); 6 }
-fn build_package(root: &[u8], output: &[u8]) -> i32 {
+fn build_usage() i32 { 6 }
+fn build_default(root: &[u8]) i32 { drop(root); 6 }
+fn build_package(root: &[u8], output: &[u8]) i32 {
     drop(root);
     drop(output);
     6

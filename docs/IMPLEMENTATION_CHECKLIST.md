@@ -1,3 +1,14 @@
+## Definition-local methods and arrow-free returns
+
+- [x] Parse definition-local struct/enum methods using existing method-owner nodes.
+- [x] Accept arrow-free function, contract, callable-type and closure return syntax.
+- [x] Select methods using typed receivers that constrain enclosing generic parameters.
+- [x] Migrate STD, compiler sources, grammar, README examples and documentation inventory.
+- [x] Execute six focused positive/refusal cases and the adjacent endian STD validation.
+- [x] Rebuild from migrated sources and update the local PATH compiler with its matching STD.
+
+[Evidence](DEFINITION_METHODS_CYCLE.md).
+
 ## Tuple projections and for patterns
 
 - [x] Distinguish tuple indices from leading-dot floats and accept numeric field suffixes.

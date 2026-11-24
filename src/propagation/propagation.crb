@@ -14,7 +14,7 @@ use bootstrap::declarations::nominal_declaration;
 use bootstrap::verify::{verify_expr,violation};
 
 /// Selects one exact, static Outer::from(Inner)->Outer conversion; zero means absent or ambiguous.
-pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:i64,outer:i64)->u64 {
+pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:i64,outer:i64)u64 {
     if inner==outer{return 0;}
     if outer<3000000{return 0;}
     let owner=unsigned(outer-3000000);let mut item=graph[0].first_child;let mut found:u64=0;
@@ -40,7 +40,7 @@ pub fn error_conversion(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],inner:
 }
 
 /// Checks the continuation payload and the enclosing error/None return boundary.
-pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)->i64 {
+pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],node:u64,expected:i64,mode:i64)i64 {
     let mut function=nodes[node].parent;
     while function!=0 && nodes[function].kind!=1 && nodes[function].kind!=35 && nodes[function].kind!=55 {function=nodes[function].parent;}
     let force=source[nodes[node].name_start]==33;

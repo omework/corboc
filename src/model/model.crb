@@ -1,68 +1,64 @@
 pub struct Token {
-    nominal: bool,
-    annotation: i64,
-    kind: i64,
-    start: u64,
-    end: u64,
+    nominal: bool;
+    annotation: i64;
+    kind: i64;
+    start: u64;
+    end: u64;
 }
-
 
 pub struct AstNode {
-    kind: i64,
-    parent: u64,
-    start: u64,
-    end: u64,
-    name_start: u64,
-    name_end: u64,
-    public: bool,
+    kind: i64;
+    parent: u64;
+    start: u64;
+    end: u64;
+    name_start: u64;
+    name_end: u64;
+    public: bool;
 }
 
-
 pub struct StaticNode {
-    first_child: u64,
-    next_sibling: u64,
-    scope: u64,
-    scope_parent: u64,
-    scope_entry: bool,
-    declaration: bool,
-    mutable: bool,
-    type_node: u64,
-    initializer: u64,
-    fact: i64,
-    visible: u64,
-    binding: u64,
-    destination: u64,
-    field_name: u64,
-    private_start: u64,
-    private_end: u64,
+    first_child: u64;
+    next_sibling: u64;
+    scope: u64;
+    scope_parent: u64;
+    scope_entry: bool;
+    declaration: bool;
+    mutable: bool;
+    type_node: u64;
+    initializer: u64;
+    fact: i64;
+    visible: u64;
+    binding: u64;
+    destination: u64;
+    field_name: u64;
+    private_start: u64;
+    private_end: u64;
     /// Original package-file identity retained across generic specialization.
-    private_origin: u64,
+    private_origin: u64;
     /// Proven content-only access/parameter effect; zero is conservative.
-    access_mode: i64,
+    access_mode: i64;
     /// Canonical lock identity protecting this access or retained capture.
-    protection: u64,
+    protection: u64;
 }
 
 // Linked metadata for private layouts and trusted standard-library runtime hooks.
 pub struct LayoutVisibility {
-    kind: i64,
-    name: u64,
-    start: u64,
-    end: u64,
+    kind: i64;
+    name: u64;
+    start: u64;
+    end: u64;
     /// Original package-file identity; zero means no private source origin.
-    origin: u64,
+    origin: u64;
 }
 
-
-pub fn hex_digit(byte: u8) -> u32 {
+pub fn hex_digit(byte: u8) u32 {
     if byte >= 48 && byte <= 57 { return (byte - 48) as u32; }
     if byte >= 65 && byte <= 70 { return (byte - 55) as u32; }
     if byte >= 97 && byte <= 102 { return (byte - 87) as u32; }
     16
 }
 
-
-pub fn token_at(tokens: &[Token], start: u64) -> u64 {
+pub fn token_at(tokens: &[Token], start: u64) u64 {
     let mut low: u64 = 0;
     let mut high = tokens.len() as u64 - 3;
     while low < high {
@@ -73,25 +69,24 @@ pub fn token_at(tokens: &[Token], start: u64) -> u64 {
 }
 
 
-
 pub struct CheckedValue {
-    ty: i64,
-    state: i64,
-    mutable: bool,
-    target: u64,
-    loan_parent: u64,
-    origin_call: u64,
+    ty: i64;
+    state: i64;
+    mutable: bool;
+    target: u64;
+    loan_parent: u64;
+    origin_call: u64;
     /// Write permission only; explicit lock intervals are separate summary markers.
-    writable: bool,
+    writable: bool;
     /// First field selected below target; zero means whole/unknown storage.
-    projection: u64,
+    projection: u64;
 }
 
 // A constructor call links its field template to its own argument range.
-pub fn constructor_arguments(ty: i64) -> bool { ty == 5011 || ty == 5012 }
+pub fn constructor_arguments(ty: i64) bool { ty == 5011 || ty == 5012 }
 
 pub fn constructor_field_value(graph: &[StaticNode], values: &[CheckedValue],
-    first: u64, field: u64) -> u64 {
+    first: u64, field: u64) u64 {
     if !constructor_arguments(values[first].ty) { return field; }
     if values[first].ty==5012 {
         let mut entry=values[first].origin_call;
@@ -116,7 +111,7 @@ pub fn constructor_field_value(graph: &[StaticNode], values: &[CheckedValue],
 // Result descriptors keep the two payload identities separate.
 // Result keeps compact arm identities and one optional-envelope bit per arm.
 // Existing nonoptional Result codes are unchanged.
-pub fn result_code(ok: i64, err: i64) -> i64 {
+pub fn result_code(ok: i64, err: i64) i64 {
     let mut left = ok;
     let mut right = err;
     let mut flags: i64 = 0;
@@ -130,11 +125,11 @@ pub fn result_code(ok: i64, err: i64) -> i64 {
     9000000000000000000 + flags * 64000000000000 + left * 8000000 + right
 }
 
-pub fn result_type(ty: i64) -> bool {
+pub fn result_type(ty: i64) bool {
     ty > 9000000000000000000 && ty < 9000256000000000000
 }
 
-pub fn result_payload(ty: i64, ok: bool) -> i64 {
+pub fn result_payload(ty: i64, ok: bool) i64 {
     let packed = ty - 9000000000000000000;
     let flags = packed / 64000000000000;
     let pair = packed % 64000000000000;
@@ -143,17 +138,17 @@ pub fn result_payload(ty: i64, ok: bool) -> i64 {
     if wrapped { 5000000000000000000 + payload } else { payload }
 }
 
-pub fn result_arm_nominal(ty: i64) -> bool {
+pub fn result_arm_nominal(ty: i64) bool {
     let leaf = if ty >= 5000000000000000000 && ty < 5001000000000000000 { ty - 5000000000000000000 } else { ty };
     (leaf >= 3000000 && leaf < 4000000) || (leaf>=6000000 && leaf<7000000)
 }
 
-pub fn result_has_nominal_payload(ty: i64) -> bool {
+pub fn result_has_nominal_payload(ty: i64) bool {
     result_type(copy(ty)) && (result_arm_nominal(result_payload(copy(ty), true)) || result_arm_nominal(result_payload(ty, false)))
 }
 
 // The argument list contains evaluation inputs; only fields stored in the result retain their loans.
-pub fn constructor_argument_retained(graph:&[StaticNode],values:&[CheckedValue],marker:u64,argument:u64)->bool {
+pub fn constructor_argument_retained(graph:&[StaticNode],values:&[CheckedValue],marker:u64,argument:u64)bool {
     if values[marker].ty==5012{return true;}
     let shape=values[marker].loan_parent;if shape==0{return true;}
     let mut formal=values[marker].target;let mut actual=values[marker].origin_call;

@@ -1,7 +1,7 @@
 // The build driver is single threaded. These wrappers keep the POSIX ABI
 // and raw C strings at the boundary with the host.
 #(if: target.os == "macos" && target.arch == "aarch64")
-    pub fn executable_path(buffer: &mut [u8]) -> bool {
+    pub fn executable_path(buffer: &mut [u8]) bool {
         if buffer.len() < 4096 { return false; }
         let mut unresolved: [u8; 4096] = [0; 4096];
         let mut resolved: usize = 0;
@@ -27,7 +27,7 @@
         resolved != 0
     }
 
-    pub fn accessible(path: &[u8]) -> bool {
+    pub fn accessible(path: &[u8]) bool {
         let mut status: i32 = -1;
         @unchecked {
             let address = addr(&path[0]);
@@ -41,7 +41,7 @@
         status == 0
     }
 
-    pub fn make_workspace(path: &mut [u8]) -> bool {
+    pub fn make_workspace(path: &mut [u8]) bool {
         let mut result: usize = 0;
         @unchecked {
             let address = addr(&path[0]);
@@ -54,7 +54,7 @@
         result != 0
     }
 
-    pub fn redirect_stdout(path: &[u8]) -> i32 {
+    pub fn redirect_stdout(path: &[u8]) i32 {
         let mut saved: i32 = -1;
         @unchecked {
             let address = addr(&path[0]);
@@ -92,7 +92,7 @@
         saved
     }
 
-    pub fn restore_stdout(saved: i32) -> bool {
+    pub fn restore_stdout(saved: i32) bool {
         let mut status: i32 = -1;
         @unchecked {
             @asm {
@@ -128,7 +128,7 @@
         }
     }
 
-    pub fn publish(from: &[u8], to: &[u8]) -> bool {
+    pub fn publish(from: &[u8], to: &[u8]) bool {
         let mut status: i32 = -1;
         @unchecked {
             let source = addr(&from[0]);
@@ -161,7 +161,7 @@
 
     // argv holds separate arguments and is terminated by NULL.
     pub fn run_command(command: &[u8], first: &[u8], second: &[u8], third: &[u8],
-        fourth: &[u8], fifth: &[u8], sixth: &[u8]) -> i32 {
+        fourth: &[u8], fifth: &[u8], sixth: &[u8]) i32 {
         let mut status: i32 = 127;
         @unchecked {
             let program = addr(&command[0]);
@@ -220,7 +220,7 @@
         status
     }
     // mkdir is idempotent only for a directory; an existing ordinary file is an error.
-    pub fn ensure_directory(path: &[u8]) -> bool {
+    pub fn ensure_directory(path: &[u8]) bool {
         let mut created: i32 = 0;
         @unchecked {
             let address = addr(&path[0]);

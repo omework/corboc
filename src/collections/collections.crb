@@ -10,11 +10,11 @@ use bootstrap::scalar::verify_primitive;
 
 // A map with scalar values has a stable key/value type. Its only loan
 // is the reservation carried by the result of get/get_mut.
-pub fn map_value(ty: i64) -> bool {
+pub fn map_value(ty: i64) bool {
     (ty > 800 && ty < 900) || dependent_map(ty)
 }
 
-pub fn map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let name: [u8; 7] = [72,97,115,104,77,97,112];
     let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     if !spelling.content_eq(&name[..]) { return 0; }
@@ -40,7 +40,7 @@ pub fn map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotati
     800 + key_type * 10 + ty
 }
 
-pub fn map_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> i64 {
+pub fn map_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) i64 {
     if nodes[expression].kind != 15 { return 0; }
     let callee = graph[expression].first_child;
     let method: [u8; 3] = [110,101,119];
@@ -52,7 +52,7 @@ pub fn map_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], e
 }
 
 pub fn verify_map_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, destination: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, destination: u64) i64 {
     let receiver = graph[call].first_child;
     if nodes[call].kind != 16 || nodes[receiver].kind != 7 { return 0; }
     let binding = graph[receiver].binding;
@@ -129,7 +129,7 @@ pub fn verify_map_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 // A scalar or dependent map can cross a transparent by-value relay. The
 // callee changes only the receiver of the entry list.
-pub fn map_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+pub fn map_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) i64 {
     if nodes[function].kind != 1 { return 0; }
     let parameter = graph[function].first_child;
     let result = graph[parameter].next_sibling;
@@ -150,7 +150,7 @@ pub fn map_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
 }
 
 pub fn relay_collection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, function: u64, point: u64) -> i64 {
+    call: u64, function: u64, point: u64) i64 {
     let mut ty = map_relay_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
     if ty == 0 {
         ty = vector_relay_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function);

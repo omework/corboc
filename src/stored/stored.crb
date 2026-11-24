@@ -16,18 +16,18 @@ use bootstrap::tasks::dependent_handle;
 // The array links to its initializer. Each initializer operand stores one
 // dependency edge. An unknown selector can read a shared reference by
 // retaining all candidate roots.
-pub fn stored_loan_array(ty: i64) -> bool {
+pub fn stored_loan_array(ty: i64) bool {
     (ty >= 461 && ty <= 467) || (ty >= 481 && ty <= 487)
 }
 
-pub fn relayed_loan_array(ty: i64) -> bool { ty >= 491 && ty <= 497 }
+pub fn relayed_loan_array(ty: i64) bool { ty >= 491 && ty <= 497 }
 
-pub fn selected_loan_union(ty: i64) -> bool {
+pub fn selected_loan_union(ty: i64) bool {
     (ty >= 61 && ty <= 67) || (ty >= 71 && ty <= 77)
 }
 
 pub fn record_loan_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], literal: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], literal: u64, annotation: u64) i64 {
     let first = graph[literal].first_child;
     if nodes[first].kind != 13 { return 0; }
     if nodes[literal].kind != 44 { return 0 - violation_site(3, nodes[literal].start, 517); }
@@ -99,7 +99,7 @@ pub fn record_loan_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn bind_stored_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) i64 {
     let mut projection = copy(expression);
     let reborrow = nodes[expression].kind == 13;
     let mut exclusive = false;
@@ -227,15 +227,14 @@ pub fn bind_stored_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     return 1;
 }
 
-
 // Array views carry the storage root; their referent edges still live on the
 // owning array. Distinct uses of the view are compared at the selected root.
-pub fn stored_array_view(ty: i64) -> bool {
+pub fn stored_array_view(ty: i64) bool {
     ty == 731 || ty == 732
 }
 
 pub fn bind_stored_array_view(nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, target: u64, annotation: u64, exclusive: bool) -> i64 {
+    values: &mut [CheckedValue], statement: u64, target: u64, annotation: u64, exclusive: bool) i64 {
     if !stored_loan_array(values[target].ty) { return 0; }
     if annotation != 0 { return -9; }
     if exclusive && !values[target].mutable { return 0 - violation_site(5, nodes[statement].start, 535); }
@@ -250,7 +249,7 @@ pub fn bind_stored_array_view(nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn record_loan_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], field: u64, annotation: u64, destination: u64) -> i64 {
+    values: &mut [CheckedValue], field: u64, annotation: u64, destination: u64) i64 {
     if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) {
         let expression=graph[field].first_child;
         let checked=check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(expression),1);
@@ -447,7 +446,7 @@ pub fn record_loan_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 fn bind_field_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     values: &mut [CheckedValue], statement: u64, projection: u64, annotation: u64,
-    reborrow: bool, exclusive: bool) -> i64 {
+    reborrow: bool, exclusive: bool) i64 {
     let mut base = graph[projection].first_child;
     while nodes[base].kind == 19 { base = graph[base].first_child; }
     let mut view: u64 = 0;
@@ -591,7 +590,7 @@ fn bind_field_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
     return 1;
 }
 
-pub fn vector_reference_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn vector_reference_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     if !spelling.content_eq(&vector[..]) { return 0; }
@@ -604,10 +603,10 @@ pub fn vector_reference_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     return 2000 + scalar + (if exclusive { 10 } else { 0 });
 }
 
-pub fn vector_reference_owner(ty: i64) -> bool { ty > 2100 && ty < 2120 }
+pub fn vector_reference_owner(ty: i64) bool { ty > 2100 && ty < 2120 }
 
 pub fn vector_reference_push(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, vector: u64) i64 {
     let receiver = graph[call].first_child;
     let push: [u8; 4] = [112,117,115,104];
     let method = &source[nodes[call].name_start..nodes[call].name_end];
@@ -671,7 +670,7 @@ pub fn vector_reference_push(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 fn bind_vector_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    statement: u64, projection: u64, holder: u64, reborrow: bool, exclusive: bool, annotation: u64) -> i64 {
+    statement: u64, projection: u64, holder: u64, reborrow: bool, exclusive: bool, annotation: u64) i64 {
     if annotation != 0 { return -9; }
     let ty = values[holder].ty;
     if values[holder].state != 1 || values[values[holder].target].state != 1 {
@@ -726,7 +725,7 @@ fn bind_vector_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     return 1;
 }
 
-pub fn vector_reference_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn vector_reference_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     if nodes[annotation].name_end - nodes[annotation].name_start != 1
         || source[nodes[annotation].name_start] != 65 { return 0; }
     let item = graph[annotation].first_child;
@@ -736,7 +735,7 @@ pub fn vector_reference_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     return pool + 100;
 }
 
-pub fn vector_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+pub fn vector_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) i64 {
     if nodes[function].kind != 1 { return 0; }
     let parameter = graph[function].first_child;
     let result = graph[parameter].next_sibling;
@@ -756,7 +755,7 @@ pub fn vector_relay_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 // A shared projection out of an owned argument keeps only the selected
 // loan. The aggregate moves, and the other fields no longer reserve roots.
-pub fn returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, i64) {
+pub fn returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) (u64, i64) {
     if nodes[function].kind != 1 { return (0, 0); }
     let parameter = graph[function].first_child;
     let result = graph[parameter].next_sibling;
@@ -789,7 +788,7 @@ pub fn returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
 
 /// Recognizes a scalar field borrow or a reborrow of a stored scalar reference.
 /// Implicit self receivers use the enclosing implementation's concrete layout.
-pub fn field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, i64) {
+pub fn field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) (u64, i64) {
     if nodes[function].kind != 1 { return (0, 0); }
     let parameter = graph[function].first_child;
     let result = graph[parameter].next_sibling;
@@ -833,7 +832,7 @@ pub fn field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
 }
 
 pub fn apply_field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, destination: u64, nominal: u64, ty: i64) -> i64 {
+    call: u64, destination: u64, nominal: u64, ty: i64) i64 {
     let argument = graph[graph[call].first_child].next_sibling;
     let name = graph[argument].first_child;
     if nodes[argument].kind != 13 || nodes[name].kind != 7 || graph[argument].next_sibling != 0 { return -9; }
@@ -857,7 +856,7 @@ pub fn apply_field_reborrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 pub fn apply_returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, point: u64, field: u64, scalar: i64) -> i64 {
+    call: u64, point: u64, field: u64, scalar: i64) i64 {
     let argument = graph[graph[call].first_child].next_sibling;
     if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(1, nodes[call].start, 600); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -885,7 +884,7 @@ pub fn apply_returned_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 
 // Return a shared reference held in an array element. A dynamic selector
 // keeps every candidate root even when the current actual index is constant.
-pub fn returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, i64) {
+pub fn returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) (u64, i64) {
     if nodes[function].kind != 1 { return (0, 0); }
     let parameter = graph[function].first_child;
     let mut output = graph[parameter].next_sibling;
@@ -927,7 +926,7 @@ pub fn returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn apply_returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], function: u64, call: u64, point: u64, index: u64, scalar: i64) -> i64 {
+    values: &mut [CheckedValue], function: u64, call: u64, point: u64, index: u64, scalar: i64) i64 {
     let argument = graph[graph[call].first_child].next_sibling;
     if nodes[argument].kind != 7 { return -9; }
     let binding = graph[argument].binding;
@@ -986,7 +985,7 @@ pub fn apply_returned_array_loan(source: &[u8], nodes: &[AstNode], graph: &[Stat
 }
 
 /// Compares resolved referent annotations without depending on a concrete STD type.
-fn same_referent(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], left: u64, right: u64, depth: u64) -> bool {
+fn same_referent(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], left: u64, right: u64, depth: u64) bool {
     if left == 0 || right == 0 || depth >= 128 { return false; }
     let a = &source[nodes[left].name_start..nodes[left].name_end];
     if !a.content_eq(&source[nodes[right].name_start..nodes[right].name_end]) { return false; }
@@ -1000,7 +999,7 @@ fn same_referent(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], left: u
 
 /// Validates an effect-free reborrow through a reference field of implicit self.
 /// Works for every resolved referent shape supported by ordinary signatures.
-pub fn forwarded_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> bool {
+pub fn forwarded_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) bool {
     if nodes[function].kind != 1 || nodes[nodes[function].parent].kind != 49 { return false; }
     let receiver = graph[function].first_child;
     let output = graph[receiver].next_sibling;

@@ -7,7 +7,7 @@ use bootstrap::lowering_types::{number, local};
 use bootstrap::lowering_annotations::same_bytes;
 
 /// Only the linker-designated std reactor may invoke the runtime hook.
-pub fn socket_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+pub fn socket_wait_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     if nodes[node].kind != 15 { return false; }
     let callee = graph[node].first_child;
     let name: [u8;20] = [114,117,110,116,105,109,101,58,58,119,97,105,116,95,115,111,99,107,101,116];

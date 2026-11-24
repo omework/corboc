@@ -2,7 +2,7 @@ use bootstrap::model::{AstNode, StaticNode};
 use bootstrap::lowering_types::{c_type, local, number, task_payload};
 use bootstrap::target_c::{byte_text, character};
 
-fn inside(nodes: &[AstNode], node: u64, function: u64) -> bool {
+fn inside(nodes: &[AstNode], node: u64, function: u64) bool {
     let mut parent = nodes[node].parent;
     while parent != 0 {
         if parent == function { return true; }
@@ -96,7 +96,7 @@ pub fn prototype(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], functio
     character(41);
 }
 
-pub fn suspends(nodes: &[AstNode], ancestor: u64) -> bool {
+pub fn suspends(nodes: &[AstNode], ancestor: u64) bool {
     let mut node: u64 = 1;
     while node < nodes.len() as u64 {
         if nodes[node].kind == 25 || nodes[node].kind == 38 {

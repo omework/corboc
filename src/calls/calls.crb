@@ -2,7 +2,7 @@ use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::verify::violation;
 
-pub fn identity_aggregate(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn identity_aggregate(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let parameter = graph[function].first_child;
     if nodes[parameter].kind != 3 { return 0; }
     let result = graph[parameter].next_sibling;
@@ -51,7 +51,7 @@ pub fn identity_aggregate(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 }
 
 pub fn same_type_spelling(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    left: u64, right: u64) -> bool {
+    left: u64, right: u64) bool {
     if left == 0 || right == 0 { return left == right; }
     let a = &source[nodes[left].name_start..nodes[left].name_end];
     let b = &source[nodes[right].name_start..nodes[right].name_end];
@@ -62,7 +62,7 @@ pub fn same_type_spelling(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
             graph[left].next_sibling, graph[right].next_sibling)
 }
 
-pub fn bootstrap_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+pub fn bootstrap_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
     let callee = graph[call].first_child;
     if nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
     let name = &source[nodes[callee].name_start..nodes[callee].name_end];
@@ -75,7 +75,7 @@ pub fn bootstrap_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     0
 }
 
-pub fn spawned_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+pub fn spawned_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
     let callee = graph[call].first_child;
     let task = graph[callee].next_sibling;
     if nodes[call].kind != 15 || nodes[callee].kind != 36 || nodes[task].kind != 15
@@ -95,7 +95,7 @@ pub fn spawned_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     0
 }
 
-pub fn joined_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+pub fn joined_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) u64 {
     if nodes[expression].kind != 16 { return 0; }
     let name = &source[nodes[expression].name_start..nodes[expression].name_end];
     let word: [u8; 4] = [106,111,105,110];
@@ -104,7 +104,7 @@ pub fn joined_binding(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ex
     graph[receiver].binding
 }
 
-pub fn check_identity_move(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], call: u64) -> u64 {
+pub fn check_identity_move(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], call: u64) u64 {
     let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call));
     let nominal = identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], function);
     if nominal == 0 { return 0; }
@@ -118,7 +118,7 @@ pub fn check_identity_move(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 // The package linker has already resolved the type prefix.
-pub fn associated_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> u64 {
+pub fn associated_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
     let callee = graph[call].first_child;
     if nodes[callee].kind != 36 || graph[callee].first_child != 0 { return 0; }
     let start = nodes[callee].start;
@@ -132,7 +132,7 @@ pub fn associated_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn lookup_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owner: &[u8], name: &[u8], receiver: bool) -> u64 {
+    owner: &[u8], name: &[u8], receiver: bool) u64 {
     let mut found: u64 = 0;
     let mut item = graph[0].first_child;
     while item != 0 {
@@ -160,13 +160,13 @@ pub fn lookup_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     found
 }
 
-pub fn borrowed_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) -> bool {
+pub fn borrowed_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) bool {
     let first = graph[method].first_child;
     nodes[nodes[method].parent].kind == 49 && nodes[first].kind == 3
         && graph[first].first_child == 0 && source[nodes[first].start] == 38
 }
 
-pub fn value_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) -> bool {
+pub fn value_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], method: u64) bool {
     let first = graph[method].first_child;
     if nodes[nodes[method].parent].kind != 49 || nodes[first].kind != 3 || graph[first].first_child == 0 {
         return false;
@@ -176,7 +176,7 @@ pub fn value_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], me
     spelling.content_eq(&self_name[..])
 }
 
-pub fn next_declaration(nodes: &[AstNode], graph: &[StaticNode], current: u64) -> u64 {
+pub fn next_declaration(nodes: &[AstNode], graph: &[StaticNode], current: u64) u64 {
     let sibling = graph[current].next_sibling;
     if sibling != 0 { return sibling; }
     let parent = nodes[current].parent;
@@ -184,7 +184,7 @@ pub fn next_declaration(nodes: &[AstNode], graph: &[StaticNode], current: u64) -
     0
 }
 
-pub fn destructor_method(source: &[u8], nodes: &[AstNode], method: u64) -> bool {
+pub fn destructor_method(source: &[u8], nodes: &[AstNode], method: u64) bool {
     if nodes[nodes[method].parent].kind != 49 { return false; }
     let drop_name: [u8; 4] = [100,114,111,112];
     let name = &source[nodes[method].name_start..nodes[method].name_end];

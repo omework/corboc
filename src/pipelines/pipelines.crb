@@ -21,27 +21,27 @@ use bootstrap::task_vectors::record_with_handle_vector;
 // Captureless adapters share the initial loan as their runtime state.
 // A capturing adapter introduces storage for its predecessor and captures.
 struct Stage {
-    action: u8,
-    source: u64,
-    root: u64,
-    item: i64,
-    annotation: u64,
-    previous: u64,
-    mapper: u64,
-    state: u64,
-    captures: u64,
-    owned: bool,
+    action: u8;
+    source: u64;
+    root: u64;
+    item: i64;
+    annotation: u64;
+    previous: u64;
+    mapper: u64;
+    state: u64;
+    captures: u64;
+    owned: bool;
 }
 
 struct Capture {
-    binding: u64,
-    annotation: u64,
-    ty: i64,
-    next: u64,
-    copied: bool,
+    binding: u64;
+    annotation: u64;
+    ty: i64;
+    next: u64;
+    copied: bool;
 }
 
-fn new_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) -> bool {
+fn new_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) bool {
     if nodes[node].kind != 15 { return false; }
     let callee = graph[node].first_child;
     if nodes[callee].kind != 36 { return false; }
@@ -80,7 +80,7 @@ fn new_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[To
 }
 
 /// Finds a library factory whose generic forwarding body must be instantiated first.
-pub fn iterator_factory(source: &[u8], nodes: &[AstNode]) -> u64 {
+pub fn iterator_factory(source: &[u8], nodes: &[AstNode]) u64 {
     let name: [u8; 17] = [95,95,99,111,114,98,111,95,105,116,101,114,95,105,116,101,114];
     let mut node: u64 = 1;
     while node < nodes.len() as u64 {
@@ -93,7 +93,7 @@ pub fn iterator_factory(source: &[u8], nodes: &[AstNode]) -> u64 {
 /// Inlines the source factory's single forwarding expression, retaining every
 /// argument expression and its evaluation count. No collection algorithm lives here.
 pub fn specialize_factory(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], factory: u64,
-    out: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    out: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut parameter = graph[factory].first_child;
     while parameter != 0 && nodes[parameter].kind != 3 { parameter = graph[parameter].next_sibling; }
     let mut body = graph[factory].first_child;
@@ -132,7 +132,7 @@ pub fn specialize_factory(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     (0, pos)
 }
 
-pub fn has_pipeline(source: &[u8], tokens: &[Token]) -> bool {
+pub fn has_pipeline(source: &[u8], tokens: &[Token]) bool {
     let plain: [u8; 4] = [73,116,101,114];
     let imported: [u8; 18] = [95,95,100,105,110,95,105,116,101,114,95,97,100,97,112,116,101,114];
     let new: [u8; 3] = [110,101,119];
@@ -156,13 +156,13 @@ pub fn has_pipeline(source: &[u8], tokens: &[Token]) -> bool {
     false
 }
 
-fn group(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+fn group(nodes: &[AstNode], graph: &[StaticNode], node: u64) u64 {
     let mut item = node;
     while nodes[item].kind == 19 { item = graph[item].first_child; }
     item
 }
 
-fn tail(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> u64 {
+fn tail(nodes: &[AstNode], graph: &[StaticNode], block: u64) u64 {
     let mut item = graph[block].first_child;
     while item != 0 {
         if nodes[item].kind == 10 { return graph[item].first_child; }
@@ -171,7 +171,7 @@ fn tail(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> u64 {
     0
 }
 
-fn stage_at(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], node: u64) -> u64 {
+fn stage_at(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], node: u64) u64 {
     let mut item = node;
     let mut depth: u64 = 0;
     while item != 0 && depth < 128 {
@@ -188,14 +188,14 @@ fn stage_at(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], node: u64
 }
 
 // A block with only a result needs no runtime scope for the erased stage.
-fn simple_result(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> u64 {
+fn simple_result(nodes: &[AstNode], graph: &[StaticNode], block: u64) u64 {
     if nodes[block].kind != 2 { return 0; }
     let result = graph[block].first_child;
     if nodes[result].kind != 10 || graph[result].next_sibling != 0 { return 0; }
     graph[result].first_child
 }
 
-fn fresh_loan(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], expression: u64) -> u64 {
+fn fresh_loan(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], expression: u64) u64 {
     let mut node = expression;
     while node != 0 {
         let first = graph[node].first_child;
@@ -211,7 +211,7 @@ fn fresh_loan(nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], express
     0
 }
 
-fn source_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64) -> u64 {
+fn source_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64) u64 {
     let mut declaration = binding;
     let mut depth: u64 = 0;
     while declaration != 0 && depth < 128 {
@@ -241,7 +241,7 @@ fn source_layout(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding
     0
 }
 
-fn mutable_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) -> bool {
+fn mutable_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) bool {
     if binding == 0 || depth >= 128 { return false; }
     let annotation = graph[binding].type_node;
     if annotation != 0 && source[nodes[annotation].start] == 38 {
@@ -257,7 +257,7 @@ fn mutable_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], bin
         graph[init].binding, depth + 1)
 }
 
-fn destination_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) -> i64 {
+fn destination_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, depth: u64) i64 {
     if binding == 0 || depth >= 128 { return 0; }
     let annotation = graph[binding].type_node;
     if annotation != 0 {
@@ -282,7 +282,7 @@ fn destination_item(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], bind
     item_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], graph[vector].first_child)
 }
 
-fn item_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+fn item_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let option = scalar_option_annotation(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(annotation));
     if option != 0 { return option; }
@@ -301,7 +301,7 @@ fn item_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation:
 
 // A declared type can seed specialization. The ordinary verifier still
 // checks the generated function on every path, including explicit returns.
-fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) -> u64 {
+fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) u64 {
     if node == 0 || depth >= 128 { return 0; }
     let child = graph[node].first_child;
     let kind = nodes[node].kind;
@@ -336,7 +336,7 @@ fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], nod
 }
 
 fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    captures: &[Capture], first_capture: u64, mapper: u64, parameter: u64, input: i64) -> (i64, u64) {
+    captures: &[Capture], first_capture: u64, mapper: u64, parameter: u64, input: i64) (i64, u64) {
     let next = graph[parameter].next_sibling;
     let body = if nodes[next].kind == 4 { graph[next].next_sibling } else { copy(next) };
     if nodes[body].kind != 2 || graph[body].next_sibling != 0 { return (0, 0); }
@@ -389,7 +389,7 @@ fn mapper_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens:
 }
 
 fn plan_captures(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], captures: &mut [Capture],
-    mapper: u64, parameter: u64) -> (i32, u64) {
+    mapper: u64, parameter: u64) (i32, u64) {
     let mut first: u64 = 0;
     let mut name = parameter + 1;
     while name < nodes.len() as u64 && nodes[name].start < nodes[mapper].end {
@@ -445,7 +445,7 @@ fn plan_captures(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], capture
 }
 
 fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    stages: &mut [Stage], captures: &mut [Capture], edits: &mut [u64]) -> i32 {
+    stages: &mut [Stage], captures: &mut [Capture], edits: &mut [u64]) i32 {
     let next_name: [u8; 4] = [110,101,120,116];
     let map_name: [u8; 3] = [109,97,112];
     let filter_name: [u8; 6] = [102,105,108,116,101,114];
@@ -639,7 +639,7 @@ fn plan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token]
     0
 }
 
-fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
+fn put(out: &mut [u8], cursor: u64, text: &[u8]) u64 {
     if text.len() as u64 >= out.len() as u64 - cursor { return out.len() as u64; }
     diagnostic_copy(cursor,&text[0..text.len()]);
     let mut i: u64 = 0;
@@ -650,7 +650,7 @@ fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
     cursor + i
 }
 
-fn identifier(out: &mut [u8], cursor: u64, kind: u8, node: u64) -> u64 {
+fn identifier(out: &mut [u8], cursor: u64, kind: u8, node: u64) u64 {
     let prefix: [u8; 13] = [100,105,110,95,112,105,112,101,108,105,110,101,95];
     let alphabet: [u8; 10] = [48,49,50,51,52,53,54,55,56,57];
     let mut digits: [u8; 20] = [0; 20];
@@ -673,7 +673,7 @@ fn identifier(out: &mut [u8], cursor: u64, kind: u8, node: u64) -> u64 {
     pos
 }
 
-fn spelling(source: &[u8], nodes: &[AstNode], out: &mut [u8], cursor: u64, ty: i64, annotation: u64) -> u64 {
+fn spelling(source: &[u8], nodes: &[AstNode], out: &mut [u8], cursor: u64, ty: i64, annotation: u64) u64 {
     if annotation != 0 {
         return put(&mut out[0..out.len()], cursor, &source[nodes[annotation].start..nodes[annotation].end]);
     }
@@ -710,7 +710,7 @@ fn spelling(source: &[u8], nodes: &[AstNode], out: &mut [u8], cursor: u64, ty: i
 }
 
 fn state_type(source: &[u8], nodes: &[AstNode], stages: &[Stage], out: &mut [u8],
-    cursor: u64, node: u64) -> u64 {
+    cursor: u64, node: u64) u64 {
     let state = stages[node].state;
     if state != 0 { return identifier(&mut out[0..out.len()], cursor, 116, state); }
     let layout = stages[node].source;
@@ -718,7 +718,7 @@ fn state_type(source: &[u8], nodes: &[AstNode], stages: &[Stage], out: &mut [u8]
 }
 
 fn captured_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], captures: &[Capture],
-    first: u64, body: u64, out: &mut [u8], cursor: u64) -> u64 {
+    first: u64, body: u64, out: &mut [u8], cursor: u64) u64 {
     let open: [u8; 2] = [123,32];
     let bind: [u8; 4] = [108,101,116,32];
     let borrow: [u8; 26] = [32,61,32,38,40,42,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,41,46];
@@ -786,7 +786,7 @@ fn captured_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], capture
 
 // The library owns control flow. This pass only resolves concrete receiver,
 // callable and type identities; its output is checked by the ordinary verifier.
-fn library_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], action: u8) -> u64 {
+fn library_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], action: u8) u64 {
     let iter: [u8; 17] = [95,95,99,111,114,98,111,95,105,116,101,114,95,73,116,101,114];
     let map: [u8; 16] = [95,95,99,111,114,98,111,95,105,116,101,114,95,77,97,112];
     let filter: [u8; 19] = [95,95,99,111,114,98,111,95,105,116,101,114,95,70,105,108,116,101,114];
@@ -820,12 +820,12 @@ fn library_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], action: 
     0
 }
 
-fn collector_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], stage: u64) -> u64 {
+fn collector_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], stage: u64) u64 {
     library_body(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], stages[stage].action + 10)
 }
 
 fn library_render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage],
-    out: &mut [u8], cursor: u64, stage: u64, body: u64, start: u64, end: u64) -> u64 {
+    out: &mut [u8], cursor: u64, stage: u64, body: u64, start: u64, end: u64) u64 {
     if end - nodes[body].start >= 16384 { return out.len() as u64; }
     let mut edits: [u64; 16384] = [0; 16384];
     let next: [u8; 4] = [110,101,120,116];
@@ -902,7 +902,7 @@ fn library_render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages
 }
 
 fn helpers(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], captures: &[Capture],
-    out: &mut [u8], cursor: u64, node: u64) -> u64 {
+    out: &mut [u8], cursor: u64, node: u64) u64 {
     let function: [u8; 4] = [10,102,110,32];
     let method: [u8; 13] = [40,115,116,97,116,101,58,32,38,109,117,116,32];
     let mapper_state: [u8; 26] = [40,100,105,110,95,112,105,112,101,108,105,110,101,95,115,116,97,116,101,58,32,38,109,117,116,32];
@@ -1016,7 +1016,7 @@ fn helpers(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Sta
 }
 
 fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stage], edits: &[u64],
-    captures: &[Capture], out: &mut [u8], offsets: &mut [u64], cursor: u64, start: u64, end: u64, parent: u64, depth: u64) -> u64 {
+    captures: &[Capture], out: &mut [u8], offsets: &mut [u64], cursor: u64, start: u64, end: u64, parent: u64, depth: u64) u64 {
     if depth >= 128 { return out.len() as u64; }
     let mut pos = cursor;
     let mut byte = start;
@@ -1132,7 +1132,7 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], stages: &[Stag
 }
 
 pub fn specialize_pipelines(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    out: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    out: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut stages = [Stage { action: 0, source: 0, root: 0, item: 0, annotation: 0, previous: 0, mapper: 0, state: 0, captures: 0, owned: false }; 524289];
     let mut captures = [Capture { binding: 0, annotation: 0, ty: 0, next: 0, copied: false }; 524289];
     let mut edits: [u64; 3145728] = [0; 3145728];

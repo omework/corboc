@@ -4,16 +4,16 @@ use bootstrap::model::{Token, hex_digit};
 use bootstrap::lowering_types::signed as source_offset;
 use bootstrap::diagnostics::diagnostic_emit;
 
-pub fn name_start(byte: u8) -> bool {
+pub fn name_start(byte: u8) bool {
     (byte >= 97 && byte <= 122) || (byte >= 65 && byte <= 90) || byte == 95
 }
 
-pub fn digit(byte: u8) -> bool {
+pub fn digit(byte: u8) bool {
     byte >= 48 && byte <= 57
 }
 
 // Decode one UTF-8 scalar. A zero width signals invalid input.
-pub fn utf8_scalar(source: &[u8], start: usize) -> (usize, u32) {
+pub fn utf8_scalar(source: &[u8], start: usize) (usize, u32) {
     let lead = source[start];
     if lead >> 7 == 0 { return (1, lead as u32); }
 
@@ -40,7 +40,7 @@ pub fn utf8_scalar(source: &[u8], start: usize) -> (usize, u32) {
 }
 
 // Read four hexadecimal digits. 65536 signals an invalid UTF-16 unit.
-pub fn hex_unit(source: &[u8], start: usize) -> u32 {
+pub fn hex_unit(source: &[u8], start: usize) u32 {
     if source.len() - start < 4 { return 65536; }
     let mut unit: u32 = 0;
     let mut offset: usize = 0;
@@ -54,7 +54,7 @@ pub fn hex_unit(source: &[u8], start: usize) -> u32 {
 }
 
 // Return the next escape position, or its diagnostic code and byte.
-pub fn scan_escape(source: &[u8], start: usize) -> (usize, i64, usize) {
+pub fn scan_escape(source: &[u8], start: usize) (usize, i64, usize) {
     let marker = start + 1;
     if marker == source.len() { return (0, 4, marker); }
     let byte = source[marker];
@@ -75,7 +75,7 @@ pub fn scan_escape(source: &[u8], start: usize) -> (usize, i64, usize) {
     return (start + 12, 0, 0);
 }
 
-pub fn name_kind(spelling: &[u8]) -> i64 {
+pub fn name_kind(spelling: &[u8]) i64 {
     let for_word = "for";
     let in_word = "in";
     let for_bytes=for_word.as_bytes();
@@ -142,7 +142,7 @@ pub fn name_kind(spelling: &[u8]) -> i64 {
 
 // The expression parser uses these same token numbers to determine precedence.
 // Keep right angle brackets separate so nested generic types can end next to '='.
-pub fn assignment_width(tokens: &[Token], index: u64) -> u64 {
+pub fn assignment_width(tokens: &[Token], index: u64) u64 {
     let kind = tokens[index].kind;
     if kind == 13 || (kind >= 51 && kind <= 55) || (kind >= 77 && kind <= 80) { return 1; }
     if kind == 24 && tokens[index + 1].kind == 24 && tokens[index + 2].kind == 13
@@ -151,7 +151,7 @@ pub fn assignment_width(tokens: &[Token], index: u64) -> u64 {
     0
 }
 
-pub fn punctuation(byte: u8, next: u8) -> (i64, usize) {
+pub fn punctuation(byte: u8, next: u8) (i64, usize) {
     if byte == 46 && next == 46 { return (42, 2); }
     if byte == 58 && next == 58 { return (43, 2); }
     if next == 61 {
@@ -201,8 +201,7 @@ pub fn punctuation(byte: u8, next: u8) -> (i64, usize) {
     return (0, 1);
 }
 
-
-pub fn annotation_word(word: &[u8]) -> i64 {
+pub fn annotation_word(word: &[u8]) i64 {
     let key_1: [u8; 9] = [100, 97, 116, 97, 115, 116, 97, 99, 107];
     if word.content_eq(&key_1[..]) { return 1; }
     let key_2: [u8; 12] = [115, 116, 97, 99, 107, 95, 114, 101, 103, 105, 111, 110];
@@ -276,7 +275,7 @@ pub fn annotation_word(word: &[u8]) -> i64 {
     0
 }
 
-pub fn builtin_or_placeholder(word: &[u8]) -> bool {
+pub fn builtin_or_placeholder(word: &[u8]) bool {
     let word_0: [u8; 1] = [95];
     if word.content_eq(&word_0[..]) { return true; }
     let word_1: [u8; 7] = [114,117,110,116,105,109,101];
@@ -329,13 +328,13 @@ pub fn builtin_or_placeholder(word: &[u8]) -> bool {
     word.content_eq(&adapter[..])
 }
 
-pub fn lexical_name(kind: i64) -> bool {
+pub fn lexical_name(kind: i64) bool {
     kind == 1 || kind == 7 || (kind >= 15 && kind <= 18) || kind == 41
         || (kind >= 44 && kind <= 50) || (kind >= 56 && kind <= 62)
         || kind == 65 || kind == 66 || kind == 70 || kind == 72 || kind == 73 || kind == 76
 }
 
-pub fn declaration_name(token: &Token) -> bool {
+pub fn declaration_name(token: &Token) bool {
     let kind = (*token).kind;
     (*token).annotation >= 0 && (kind == 1 || kind == 50 || kind == 56 || kind == 57
         || kind == 60 || kind == 61 || kind == 70 || kind == 72 || kind == 73 || kind == 76)
@@ -343,18 +342,18 @@ pub fn declaration_name(token: &Token) -> bool {
 
 // A leading-dot float is allowed only where a new operand can begin.
 // After a value, the same dot starts a tuple/member projection.
-pub fn ends_operand(kind: i64) -> bool {
+pub fn ends_operand(kind: i64) bool {
     kind == 1 || kind == 3 || kind == 5 || kind == 8 || kind == 9
         || kind == 18 || kind == 40 || kind == 61 || kind == 64
         || kind == 66 || kind == 84
 }
 
-pub fn whitespace(byte: u8) -> bool {
+pub fn whitespace(byte: u8) bool {
     byte == 32 || byte == 10 || byte == 9 || byte == 13 || byte == 12
 }
 
 // The reference lexer permits Unicode whitespace between @asm and its brace.
-pub fn asm_open(source: &[u8], after_name: usize) -> usize {
+pub fn asm_open(source: &[u8], after_name: usize) usize {
     let mut cursor = after_name;
     while cursor < source.len() {
         if source[cursor] == 123 { return cursor; }
@@ -371,13 +370,13 @@ pub fn asm_open(source: &[u8], after_name: usize) -> usize {
 
 // Each operand receives its own parser token after the opaque assembly token.
 struct AssemblyLex {
-    end: u64,
-    used: u64,
-    error: i64,
-    offset: u64,
+    end: u64;
+    used: u64;
+    error: i64;
+    offset: u64;
 }
 
-pub fn lex_assembly(source: &[u8], tokens: &mut [Token], open: usize, position: usize) -> AssemblyLex {
+pub fn lex_assembly(source: &[u8], tokens: &mut [Token], open: usize, position: usize) AssemblyLex {
     let mut cursor = open + 1;
     let mut count = position + 1;
     while cursor < source.len() {
@@ -408,11 +407,11 @@ pub fn lex_assembly(source: &[u8], tokens: &mut [Token], open: usize, position: 
 }
 
 // Foreign C remains opaque to the Corbo grammar. Only header paths and ${bindings} cross the boundary.
-pub fn c_space(source:&[u8], after:usize)->usize {
+pub fn c_space(source:&[u8], after:usize)usize {
     let mut at=after; while at<source.len() && whitespace(source[at]) { at=at+1; } at
 }
 
-pub fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)->AssemblyLex {
+pub fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)AssemblyLex {
     let mut at=c_space(&source[0..source.len()],after_name); let mut count=position+1;
     if at<source.len() && source[at]==40 {
         at=c_space(&source[0..source.len()],at+1);
@@ -479,36 +478,35 @@ pub fn lex_c(source:&[u8],tokens:&mut [Token],after_name:usize,position:usize)->
 
 // The compiler selects these functions using the target of the bootstrap binary.
 #(if: target.family == "unix")
-    fn target_family() -> i64 { 1 }
+    fn target_family() i64 { 1 }
 #(endif)
 #(if: target.family == "windows")
-    fn target_family() -> i64 { 2 }
+    fn target_family() i64 { 2 }
 #(endif)
 #(if: target.os == "macos")
-    fn target_os() -> i64 { 3 }
+    fn target_os() i64 { 3 }
 #(endif)
 #(if: target.os == "linux")
-    fn target_os() -> i64 { 4 }
+    fn target_os() i64 { 4 }
 #(endif)
 #(if: target.os == "windows")
-    fn target_os() -> i64 { 2 }
+    fn target_os() i64 { 2 }
 #(endif)
 #(if: target.arch == "aarch64")
-    fn target_arch() -> i64 { 5 }
+    fn target_arch() i64 { 5 }
 #(endif)
 #(if: target.arch == "x86_64")
-    fn target_arch() -> i64 { 6 }
+    fn target_arch() i64 { 6 }
 #(endif)
 #(if: target.pointer_width == "32")
-    fn target_pointer_width() -> i64 { 7 }
+    fn target_pointer_width() i64 { 7 }
 #(endif)
 #(if: target.pointer_width == "64")
-    fn target_pointer_width() -> i64 { 8 }
+    fn target_pointer_width() i64 { 8 }
 #(endif)
 
-
 /// Byte order of the compiler's configured target, resolved by its native build.
-fn target_endian() -> i64 {
+fn target_endian() i64 {
     let mut order: i64 = 0;
     @unchecked {
         @c {
@@ -526,8 +524,7 @@ fn target_endian() -> i64 {
     order
 }
 
-
-pub fn target_key(key: &[u8]) -> i64 {
+pub fn target_key(key: &[u8]) i64 {
     let os: [u8; 2] = [111, 115];
     if key.content_eq(&os[..]) { return target_os(); }
     let family: [u8; 6] = [102, 97, 109, 105, 108, 121];
@@ -541,7 +538,7 @@ pub fn target_key(key: &[u8]) -> i64 {
     return 0;
 }
 
-pub fn target_text_eq(text: &[u8], expected: &[u8]) -> bool {
+pub fn target_text_eq(text: &[u8], expected: &[u8]) bool {
     let mut index: usize = 1;
     let mut position: usize = 0;
     while index < text.len() - 1 {
@@ -561,7 +558,7 @@ pub fn target_text_eq(text: &[u8], expected: &[u8]) -> bool {
     position == expected.len()
 }
 
-pub fn target_value_matches(text: &[u8], key: i64) -> bool {
+pub fn target_value_matches(text: &[u8], key: i64) bool {
     if key == 1 {
         let value: [u8; 4] = [117, 110, 105, 120];
         return target_text_eq(&text[0..text.len()], &value[..]);
@@ -607,7 +604,7 @@ pub fn target_value_matches(text: &[u8], key: i64) -> bool {
 
 // Compact the selected token stream in place. Keeping source spans intact
 // preserves the byte locations of declarations and assembly operands.
-pub fn select_target(source: &[u8], tokens: &mut [Token]) -> usize {
+pub fn select_target(source: &[u8], tokens: &mut [Token]) usize {
     let mut index: u64 = 0;
     let mut count: usize = 0;
     let mut active: [bool;128] = [false;128];
@@ -720,7 +717,7 @@ pub fn mark_enum_paths(source:&[u8],tokens:&mut [Token]) {
     }
 }
 
-pub fn valid_utf8(source: &[u8]) -> bool {
+pub fn valid_utf8(source: &[u8]) bool {
     let mut cursor: usize = 0;
     while cursor < source.len() {
         let (width, scalar) = utf8_scalar(&source[0..source.len()], copy(cursor));
@@ -754,13 +751,13 @@ pub fn dump_lex(tokens: &[Token], source: &[u8]) {
     }
 }
 
-pub fn lex_error(mode: i32, diagnostic: i64, offset: usize) -> i32 {
+pub fn lex_error(mode: i32, diagnostic: i64, offset: usize) i32 {
     drop(diagnostic_emit(3,diagnostic,offset as u64));
     if mode == 3 { print(diagnostic); print(offset); }
     3
 }
 
-pub fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) -> (i32, usize) {
+pub fn scan_tokens(source: &[u8], tokens: &mut [Token], check: i32) (i32, usize) {
     if !valid_utf8(&source[0..source.len()]) { return (3, 0); }
     if tokens.len() < 3 { return (4, 0); }
     let mut count: usize = 0;

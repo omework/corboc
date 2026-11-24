@@ -7,7 +7,7 @@ use bootstrap::tuples::{tuple_annotation, tuple_value};
 
 // The enclosing expression has a different result destination from return.
 fn check_inner_return(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64) i64 {
     let function = graph[statement].destination;
     let mut annotation = graph[function].first_child;
     while nodes[annotation].kind == 3 { annotation = graph[annotation].next_sibling; }

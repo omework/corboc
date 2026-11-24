@@ -13,7 +13,7 @@ use bootstrap::places::{slice_parameter,record_parameter};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::declarations::{nominal_declaration,verification_field};
 
-fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,formal:u64)->u64 {
+fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,formal:u64)u64 {
     if values[call].ty==5015 {
         let mut entry=values[call].origin_call;
         while entry!=0{if values[entry].origin_call==formal{return values[entry].target;}entry=values[entry].loan_parent;}
@@ -29,7 +29,7 @@ fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],
 }
 
 // Resolve the external root of a place through local aliases and projections.
-fn external_place(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,place:u64,depth:u64)->u64 {
+fn external_place(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,place:u64,depth:u64)u64 {
     if place==0 || depth>=128{return 0;}
     let kind=nodes[place].kind;
     if kind==7 {
@@ -65,7 +65,7 @@ fn external_place(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],fu
     }0
 }
 
-pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64)->i64 {
+pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64)i64 {
     if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return argument_text_type();}
     let reference=scalar_reference_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));
     if reference!=0{return reference;}
@@ -80,7 +80,7 @@ pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotat
 }
 
 fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
-    function:u64,call:u64,expression:u64,annotation:u64,depth:u64)->u64 {
+    function:u64,call:u64,expression:u64,annotation:u64,depth:u64)u64 {
     if expression==0 || depth>=128{return 0;}
     let kind=nodes[expression].kind;
     if kind==19{return instantiate_value(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),graph[expression].first_child,copy(annotation),depth+1);}
@@ -141,7 +141,7 @@ fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&m
 
 /// Maps each returned tuple position to an independent immutable caller-side value graph.
 fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
-    function:u64,call:u64,annotation:u64,depth:u64)->i64 {
+    function:u64,call:u64,annotation:u64,depth:u64)i64 {
     if depth>=128{return -9;}
     let body=graph[annotation].next_sibling;let mut tail=graph[body].first_child;
     while tail!=0 && graph[tail].next_sibling!=0{tail=graph[tail].next_sibling;}
@@ -177,7 +177,7 @@ fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
     values[call] = CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(annotation),writable:false, projection: 0,}; record_checked(&values[0..values.len()],call);475
 }
 
-fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)->u64 {
+fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)u64 {
     let direct=bootstrap_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if direct!=0{return direct;}
     let associated=associated_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if associated!=0{return associated;}
     if nodes[call].kind!=16{return 0;}
@@ -189,7 +189,7 @@ fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[Che
     lookup_record_method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&source[nodes[owner].name_start..nodes[owner].name_end],&source[nodes[call].name_start..nodes[call].name_end],true)
 }
 
-fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,outer:u64,call:u64,callee:u64,depth:u64)->u64 {
+fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,outer:u64,call:u64,callee:u64,depth:u64)u64 {
     let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return 0;}
     let mut formal=graph[callee].first_child;let name=graph[call].first_child;
     let mut argument=if nodes[call].kind==16{copy(name)}else{graph[name].next_sibling};
@@ -206,7 +206,7 @@ fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
 }
 
 /// Instantiates return dependencies with one independent caller environment per activation.
-pub fn instantiate_tuple(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,call:u64,annotation:u64)->i64 {
+pub fn instantiate_tuple(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,call:u64,annotation:u64)i64 {
     let mut field=graph[annotation].first_child;let mut dependent=false;
     while field!=0 {
         let ty=annotation_kind(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(field));
@@ -217,7 +217,7 @@ pub fn instantiate_tuple(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
 }
 
 /// Accepts finite record graphs with ordinary scalar, record and reference fields.
-pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],nominal:u64,depth:u64)->bool {
+pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],nominal:u64,depth:u64)bool {
     if nodes[nominal].kind!=28 || depth>=128{return false;}
     let mut field=graph[nominal].first_child;
     while field!=0 {
@@ -232,7 +232,7 @@ pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],no
 }
 
 /// Gives an owned record parameter independent symbolic external roots for its borrowed fields.
-pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],point:u64,formal:u64,nominal:u64,depth:u64)->bool {
+pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],point:u64,formal:u64,nominal:u64,depth:u64)bool {
     if depth>=128{return false;}
     let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return false;}
     let mut first:u64=0;let mut last:u64=0;let mut field=graph[nominal].first_child;
@@ -263,7 +263,7 @@ pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:
 /// Instantiate a returned record using the same per-field graph as tuple components.
 /// Call arguments have already been evaluated and reserved by signature checking.
 pub fn instantiate_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], function: u64, call: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], function: u64, call: u64, annotation: u64) i64 {
     let body = graph[annotation].next_sibling;
     let mut tail = graph[body].first_child;
     while tail != 0 && graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
@@ -286,7 +286,7 @@ pub fn instantiate_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 }
 
 /// Retains the successful record's caller-side dependency graph through Result/Option.
-pub fn instantiate_envelope_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,call:u64,annotation:u64,wrapped:i64)->i64 {
+pub fn instantiate_envelope_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,call:u64,annotation:u64,wrapped:i64)i64 {
     let mut inner=graph[annotation].first_child;
     let mut payload=if bootstrap::model::result_type(copy(wrapped)){bootstrap::model::result_payload(copy(wrapped),true)}else{bootstrap::lowering_types::option_payload(copy(wrapped))};
     let mut envelopes:u64=1;

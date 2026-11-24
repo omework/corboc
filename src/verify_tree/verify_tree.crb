@@ -33,18 +33,18 @@ use bootstrap::collections::{map_type, map_value, map_relay_type};
 use bootstrap::loan_contracts::infer_loan_contracts;
 use bootstrap::check_flow::LoopEdge;
 
-fn unsupported_declaration(nodes: &[AstNode], item: u64) -> i32 {
+fn unsupported_declaration(nodes: &[AstNode], item: u64) i32 {
     unsupported_declaration_reason(nodes,item,"this declaration form is not implemented by the checker")
 }
 
-fn unsupported_declaration_reason(nodes:&[AstNode],item:u64,reason:&str)->i32 {
+fn unsupported_declaration_reason(nodes:&[AstNode],item:u64,reason:&str)i32 {
     if diagnostic_limitation(&nodes[0..nodes.len()],item,reason) {return 9;}
     print(9);
     print(nodes[item].start);
     9
 }
 
-pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) -> i32 {
+pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) i32 {
     let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; 524289];
     semantic_begin(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[..],diagnostic_enabled());
     let result=check_tree_impl(source,nodes,graph,tokens,&mut values[..],custom_destructors,whole_program,env_call,package,library);
@@ -52,7 +52,7 @@ pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens
     result
 }
 
-fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], values:&mut [CheckedValue], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) -> i32 {
+fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], values:&mut [CheckedValue], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) i32 {
     if whole_program {
         let status = validate_standalone_declarations(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(env_call), package);
         if status != 0 { return status; }

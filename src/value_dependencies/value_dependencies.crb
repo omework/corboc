@@ -13,7 +13,7 @@ use bootstrap::tasks::task_value;
 use bootstrap::stored::{stored_loan_array, stored_array_view, vector_reference_owner};
 use bootstrap::task_vectors::handle_vector;
 
-pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u64) -> bool {
+pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u64) bool {
     let ty = values[owner].ty;
     if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
@@ -84,7 +84,7 @@ pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u
     true
 }
 
-pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, pool: u64) -> bool {
+pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, pool: u64) bool {
     let ty = values[holder].ty;
     if result_type(copy(ty)) {
         if values[holder].target==pool{return true;}
@@ -188,7 +188,7 @@ pub fn holds_pool(graph: &[StaticNode], values: &[CheckedValue], holder: u64, po
     false
 }
 
-pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) -> bool {
+pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) bool {
     let mut current = scope;
     while current != 0 {
         if current == parent { return true; }
@@ -197,7 +197,7 @@ pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) -> bool {
     false
 }
 
-pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner: u64, scope: u64) -> bool {
+pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner: u64, scope: u64) bool {
     let ty = values[owner].ty;
     if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
@@ -306,11 +306,10 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
     true
 }
 
-
 // The constructor retains the field dependencies. A function can export a
 // dependency originating in one of its inputs, including a source pool.
 pub fn result_fields_external(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    owner: u64, function: u64) -> bool {
+    owner: u64, function: u64) bool {
     let ty = values[owner].ty;
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
@@ -362,7 +361,7 @@ pub fn result_fields_external(nodes: &[AstNode], graph: &[StaticNode], values: &
 // Compare alternatives by nominal field, not by constructor position. A
 // common shape may stand for both paths only if every dependency agrees.
 pub fn equivalent_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], left: u64, right: u64, depth: u64) -> bool {
+    values: &[CheckedValue], left: u64, right: u64, depth: u64) bool {
     let ty = values[left].ty;
     if depth >= 64 || ty != values[right].ty || values[left].target != values[right].target
         || values[left].writable != values[right].writable { return false; }
@@ -406,7 +405,7 @@ pub fn equivalent_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-pub fn plain_enum_payload(graph: &[StaticNode], values: &[CheckedValue], allocation: u64) -> bool {
+pub fn plain_enum_payload(graph: &[StaticNode], values: &[CheckedValue], allocation: u64) bool {
     let name = graph[values[allocation].origin_call].first_child;
     let mut field = graph[name].next_sibling;
     while field != 0 {
@@ -418,7 +417,7 @@ pub fn plain_enum_payload(graph: &[StaticNode], values: &[CheckedValue], allocat
 
 // Whether a value graph retains storage outside its owned inline fields.
 // Immutable caller summaries and source constructors use the same edge walk.
-pub fn external_dependencies(graph:&[StaticNode],values:&[CheckedValue],owner:u64,depth:u64)->bool {
+pub fn external_dependencies(graph:&[StaticNode],values:&[CheckedValue],owner:u64,depth:u64)bool {
     if owner==0{return false;}if depth>=128{return true;}
     let ty=values[owner].ty;
     if ty>=1 && ty<=9{return false;}

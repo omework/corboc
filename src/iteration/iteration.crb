@@ -7,7 +7,7 @@ use bootstrap::generics::{iteration_mode, declared_reference_method, allocation_
 use bootstrap::verify::report_violation_site;
 use bootstrap::diagnostics::diagnostic_emit;
 
-fn reference_method(source:&[u8],node:&AstNode)->i64 {
+fn reference_method(source:&[u8],node:&AstNode)i64 {
     if (*node).kind!=16 {return 0;}
     let name=&source[(*node).name_start..(*node).name_end];
     let shared="ref";let mutable="mut_ref";
@@ -18,7 +18,7 @@ fn reference_method(source:&[u8],node:&AstNode)->i64 {
 }
 
 /// Detect syntax requiring normalization without affecting other programs.
-pub fn has_iteration_syntax(source:&[u8],nodes:&[AstNode])->bool {
+pub fn has_iteration_syntax(source:&[u8],nodes:&[AstNode])bool {
     let mut n:usize=1;
     let mut dereference=false;let mut declared=false;
     let shared:[u8;3]=[114,101,102];let mutable:[u8;7]=[109,117,116,95,114,101,102];
@@ -34,13 +34,13 @@ pub fn has_iteration_syntax(source:&[u8],nodes:&[AstNode])->bool {
     dereference && declared
 }
 
-fn text(out:&mut [u8],pos:usize,value:&str)->usize {
+fn text(out:&mut [u8],pos:usize,value:&str)usize {
     let bytes=value.as_bytes();
     if pos>=out.len() || bytes.len()>out.len()-pos {return out.len();}
     append(out,pos,bytes)
 }
 
-fn span(source:&[u8],out:&mut [u8],offsets:&mut [u64],pos:usize,start:u64,end:u64)->usize {
+fn span(source:&[u8],out:&mut [u8],offsets:&mut [u64],pos:usize,start:u64,end:u64)usize {
     if pos>=out.len() || end<start || end-start>out.len()-pos {return out.len();}
     let mut n=start;
     while n<=end && n<offsets.len() as u64 {offsets[n]=(pos as u64)+n-start;n+=1;}
@@ -49,7 +49,7 @@ fn span(source:&[u8],out:&mut [u8],offsets:&mut [u64],pos:usize,start:u64,end:u6
 
 /// Names are checked against every source identifier, including names introduced
 /// by previous normalization passes; source code cannot capture these temporaries.
-fn fresh(source:&[u8],tokens:&[Token],name:&mut [u8])->usize {
+fn fresh(source:&[u8],tokens:&[Token],name:&mut [u8])usize {
     let prefix="corbo_for";let bytes=prefix.as_bytes();
     let mut length=bytes.len();let mut n:usize=0;
     while n<length {name[n]=bytes[n];n+=1;}
@@ -67,7 +67,7 @@ fn fresh(source:&[u8],tokens:&[Token],name:&mut [u8])->usize {
     0
 }
 
-fn named(out:&mut [u8],pos:usize,name:&[u8],suffix:&str)->usize {
+fn named(out:&mut [u8],pos:usize,name:&[u8],suffix:&str)usize {
     if pos>=out.len() || name.len()>out.len()-pos {return out.len();}
     let next=append(&mut out[0..out.len()],pos,name);
     text(out,next,suffix)
@@ -76,7 +76,7 @@ fn named(out:&mut [u8],pos:usize,name:&[u8],suffix:&str)->usize {
 // Keep a returned loan in a real local while its place is used. The envelope
 // remains at the operand's original evaluation position; it never hoists an
 // operand across another argument, a short-circuit boundary or a branch.
-fn dereference_envelope(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+fn dereference_envelope(nodes: &[AstNode], graph: &[StaticNode], node: u64) u64 {
     let mut current = node;
     loop {
         let parent = nodes[current].parent;
@@ -92,7 +92,7 @@ fn dereference_envelope(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u
     current
 }
 
-fn stable_receiver(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+fn stable_receiver(nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     let kind = nodes[node].kind;
     if kind == 7 { return true; }
     if kind == 19 || kind == 17 || kind == 18 || kind == 14 {
@@ -104,7 +104,7 @@ fn stable_receiver(nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
 /// Rewrite one expression/loop per pass; the caller reparses and composes source
 /// provenance, visibility and environment offsets before processing the next one.
 pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],
-    out:&mut [u8],offsets:&mut [u64])->(i32,u64) {
+    out:&mut [u8],offsets:&mut [u64])(i32,u64) {
     let mut chosen:u64=0;let mut reference:i64=0;let mut n:u64=1;
     let mut overload=false;
     let shared:[u8;3]=[114,101,102];let mutable:[u8;7]=[109,117,116,95,114,101,102];

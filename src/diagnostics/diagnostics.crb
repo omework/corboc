@@ -7,7 +7,7 @@ use bootstrap::semantic_diagnostics::describe as semantic_describe;
 //! The serial compiler driver owns this context and resets it for every check.
 
 /// Trusted storage/I/O boundary; pointers are consumed only inside this call.
-fn control(op:i64,a:usize,b:usize,c:usize,d:usize,input:&[u8],path:&[u8],offsets:&[u64])->bool {
+fn control(op:i64,a:usize,b:usize,c:usize,d:usize,input:&[u8],path:&[u8],offsets:&[u64])bool {
     let mut result:bool=false;
     @unchecked { @c(includes={"stdio.h","stdint.h","string.h"}) {
 /* The controller owns bounded copies, never pointers into expired Corbo scopes.
@@ -290,16 +290,15 @@ do {
     result
 }
 
-
 /// Marshal signed diagnostic codes at the trusted native boundary. No language
 /// numeric conversion rule is relaxed; these are controller tags, not user data.
-fn code_word(value:i64)->usize {
+fn code_word(value:i64)usize {
     let mut result:usize=0;
     @unchecked { @c { ${result}=(uintptr_t)${value}; } }
     result
 }
 /// Scalar controller operations carry empty typed slices, never fabricated pointers.
-fn scalar(op:i64,a:usize,b:usize,c:usize,d:usize)->bool {
+fn scalar(op:i64,a:usize,b:usize,c:usize,d:usize)bool {
     let bytes:[u8;0]=[];
     let words:[u64;0]=[];
     control(op,a,b,c,d,&bytes[..],&bytes[..],&words[..])
@@ -333,7 +332,7 @@ pub fn diagnostic_rewritten(source:&[u8],offsets:&[u64],old:usize) {
     drop(control(6,0,source.len(),0,old,&empty[..],&empty[..],offsets));
 }
 /// Render a rule/limitation at its source location; false preserves raw output.
-pub fn diagnostic_emit(kind:i64,code:i64,offset:u64)->bool {
+pub fn diagnostic_emit(kind:i64,code:i64,offset:u64)bool {
     if kind==1 && diagnostic_enabled() {
         let mut message:[u8;4096]=[0;4096];let mut notes:[u64;16]=[18446744073709551615;16];
         let written=semantic_describe(offset,code,&mut message[..],&mut notes[..]);
@@ -377,11 +376,11 @@ pub fn diagnostic_parse_expected(offset:u64, expected:usize, statement:u64) {
 }
 
 /// Query the diagnostic mode without changing raw frontend protocols.
-pub fn diagnostic_enabled()->bool {scalar(15,0,0,0,0)}
+pub fn diagnostic_enabled()bool {scalar(15,0,0,0,0)}
 
 /// Preserve the unsupported construct and declaration owner before returning E0009.
 /// This is diagnostic context only: it neither changes a verdict nor claims validity.
-pub fn diagnostic_limitation(nodes:&[AstNode],point:u64,reason:&str)->bool {
+pub fn diagnostic_limitation(nodes:&[AstNode],point:u64,reason:&str)bool {
     if !diagnostic_enabled() { return false; }
     if point>=nodes.len() { return diagnostic_emit(4,9,0); }
     let mut message:[u8;2048]=[0;2048];
@@ -415,7 +414,7 @@ pub fn diagnostic_limitation(nodes:&[AstNode],point:u64,reason:&str)->bool {
 }
 
 /// Original-source location for generated abort diagnostics, including raw emit modes.
-pub fn runtime_location(offset:u64,output:&mut [u8])->usize {
+pub fn runtime_location(offset:u64,output:&mut [u8])usize {
     let bytes:[u8;0]=[];let words:[u64;0]=[];
     drop(control(31,offset as usize,0,0,0,&output[0..output.len()],&bytes[..],&words[..]));
     let mut length:usize=0;

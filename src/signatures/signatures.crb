@@ -43,7 +43,7 @@ use bootstrap::map_entries::{dependent_map, direct_entry_effect};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::verify::{verify_expr, violation, readonly_scalar, scalar_known_type};
 
-fn readonly_argument_use(nodes: &[AstNode], graph: &[StaticNode], point: u64, argument: u64, record: bool) -> bool {
+fn readonly_argument_use(nodes: &[AstNode], graph: &[StaticNode], point: u64, argument: u64, record: bool) bool {
     let mut parent = nodes[point].parent;
     if parent == 0 || graph[parent].first_child != point { return false; }
     let kind = nodes[parent].kind;
@@ -64,7 +64,7 @@ fn readonly_argument_use(nodes: &[AstNode], graph: &[StaticNode], point: u64, ar
 }
 
 pub fn argument_conflicts(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    previous: u64, input: u64) -> bool {
+    previous: u64, input: u64) bool {
     if values[previous].ty==300 || values[previous].ty==475 {
         let mut at=copy(input);
         while at<nodes.len() as u64 && nodes[at].start<nodes[input].end {
@@ -91,7 +91,7 @@ pub fn argument_conflicts(nodes: &[AstNode], graph: &[StaticNode], values: &[Che
 }
 
 pub fn move_slice_argument(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    input: u64, expected: i64) -> i64 {
+    input: u64, expected: i64) i64 {
     let binding = graph[input].binding;
     if values[binding].state != 1 { return 0 - violation_site(6, nodes[input].start, 480); }
     if values[binding].ty != expected { return 0 - type_violation(nodes[input].start,expected,values[binding].ty,481); }
@@ -115,7 +115,7 @@ pub fn move_slice_argument(nodes: &[AstNode], graph: &[StaticNode], values: &mut
 }
 
 pub fn check_slice_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], input: u64, slice: i64, element: u64, exclusive: bool) -> i64 {
+    values: &mut [CheckedValue], input: u64, slice: i64, element: u64, exclusive: bool) i64 {
     // An unborrowed range is not an unsupported operand: this signature
     // requires an explicit shared or mutable slice reference.
     let mut expression = input;
@@ -160,7 +160,7 @@ pub fn check_slice_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 // Resolve a field summary through borrowed record layers and constructor
 // argument mappings. A unique concrete origin is required.
 pub fn shared_result_member(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], owner: u64, field: u64, depth: u64) -> u64 {
+    values: &[CheckedValue], owner: u64, field: u64, depth: u64) u64 {
     if owner == 0 || depth >= 128 { return 0; }
     if values[owner].ty == 734 {
         return shared_result_member(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -193,7 +193,7 @@ pub fn shared_result_member(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 
 pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], function: u64, argument: u64,
-    expected: i64, mode: i64, call: u64) -> i64 {
+    expected: i64, mode: i64, call: u64) i64 {
     let start = nodes[call].start;
     let deferred = nodes[function].kind == 35;
     if !deferred && mode == 0 && expected == 0 {

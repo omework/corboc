@@ -51,7 +51,7 @@ fn emit_option(kind: i64) {
     drop_value(payload, 0, false); { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
 }
 
-pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool, freestanding: bool) -> bool {
+pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool, freestanding: bool) bool {
     let mut types: [i64;524289] = [0;524289];
     let mut point: u64 = 1;
     let mut storage = false;

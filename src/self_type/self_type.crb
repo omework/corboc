@@ -5,14 +5,14 @@ use bootstrap::packages::append;
 use bootstrap::diagnostics::diagnostic_emit;
 
 /// Self is a scoped type alias; lowercase self remains the receiver binding.
-fn self_word(source: &[u8], start: u64, end: u64) -> bool {
+fn self_word(source: &[u8], start: u64, end: u64) bool {
     let word = "Self";
     let bytes = word.as_bytes();
     let spelling = &source[start..end];
     spelling.content_eq(bytes)
 }
 
-pub fn has_self_type(source: &[u8], tokens: &[Token]) -> bool {
+pub fn has_self_type(source: &[u8], tokens: &[Token]) bool {
     let mut token: usize = 0;
     while token < tokens.len() && tokens[token].kind != 0 {
         if tokens[token].kind == 1 && self_word(&source[0..source.len()], tokens[token].start, tokens[token].end) { return true; }
@@ -23,7 +23,7 @@ pub fn has_self_type(source: &[u8], tokens: &[Token]) -> bool {
 
 /// Rewrite one alias and retain the source mapping used by all normalizers.
 pub fn expand_self_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    output: &mut [u8], offsets: &mut [u64]) -> (i32, u64) {
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
     let mut token: u64 = 0;
     while token < tokens.len() as u64 && tokens[token].kind != 0 {
         if tokens[token].kind == 1 && self_word(&source[0..source.len()], tokens[token].start, tokens[token].end) { break; }

@@ -26,19 +26,19 @@ fn spelling(source: &[u8], start: u64, end: u64) {
 // Emit only positive, bounded decimal constants in this backend.
 // Restrict this lowering to i64 pools so the generated payload representation
 // and printf format match the verified type.
-fn i64_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> bool {
+fn i64_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) bool {
     let ty = graph[graph[pool].first_child].first_child;
     let name = &source[nodes[ty].name_start..nodes[ty].name_end];
     let expected: [u8; 3] = [105, 54, 52];
     name.content_eq(&expected[..])
 }
 
-fn nominal_pool_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+fn nominal_pool_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) u64 {
     let ty = graph[graph[pool].first_child].first_child;
     nominal_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty)
 }
 
-fn nominal_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) -> u64 {
+fn nominal_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64) u64 {
     let mut item = graph[0].first_child;
     while item != 0 {
         if (nodes[item].kind == 28 || nodes[item].kind == 29) && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -48,7 +48,7 @@ fn nominal_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ty: u64)
     0
 }
 
-fn vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> bool {
+fn vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) bool {
     let ty = graph[graph[pool].first_child].first_child;
     let word: [u8; 6] = [86,101,99,116,111,114];
     let string: [u8; 6] = [83,116,114,105,110,103];
@@ -56,7 +56,7 @@ fn vector_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64
         || matches_word(&source[0..source.len()], &nodes[0..nodes.len()], ty, &string[..])
 }
 
-fn vector_width(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+fn vector_width(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) u64 {
     let ty = graph[graph[pool].first_child].first_child;
     let element = graph[ty].first_child;
     let narrow: [u8; 2] = [117,56];
@@ -67,7 +67,7 @@ fn vector_width(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u6
     8
 }
 
-fn text_unit(source: &[u8], start: u64) -> u64 {
+fn text_unit(source: &[u8], start: u64) u64 {
     let mut cursor = copy(start);
     let mut value: u64 = 0;
     while cursor < start + 4 {
@@ -79,7 +79,7 @@ fn text_unit(source: &[u8], start: u64) -> u64 {
 
 // The scanner has already validated all escape sequences. Decode to UTF-8
 // bytes, keeping embedded NUL in the same length-delimited payload.
-fn text_payload(source: &[u8], start: u64, end: u64, emit: bool) -> u64 {
+fn text_payload(source: &[u8], start: u64, end: u64, emit: bool) u64 {
     let mut at = start + 1;
     let mut len: u64 = 0;
     while at + 1 < end {
@@ -129,7 +129,7 @@ fn text_payload(source: &[u8], start: u64, end: u64, emit: bool) -> u64 {
     len
 }
 
-fn text_growth(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+fn text_growth(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) u64 {
     if nodes[node].kind == 16 {
         let arg = graph[graph[node].first_child].next_sibling;
         let push: [u8; 8] = [112,117,115,104,95,115,116,114];
@@ -158,12 +158,12 @@ fn text_growth(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64
     total
 }
 
-fn region_annotation(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+fn region_annotation(source: &[u8], nodes: &[AstNode], node: u64) bool {
     let region: [u8; 12] = [115,116,97,99,107,95,114,101,103,105,111,110];
     nodes[node].kind == 58 && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], node, &region[..])
 }
 
-pub fn datastack_property(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], word: &[u8]) -> u64 {
+pub fn datastack_property(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], word: &[u8]) u64 {
     let header = graph[0].first_child;
     let datastack: [u8; 9] = [100,97,116,97,115,116,97,99,107];
     if nodes[header].kind != 58 || !matches_word(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -177,7 +177,7 @@ pub fn datastack_property(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     0
 }
 
-fn size_multiplier(source: &[u8], nodes: &[AstNode], property: u64) -> u64 {
+fn size_multiplier(source: &[u8], nodes: &[AstNode], property: u64) u64 {
     let unit = source[nodes[property].end - 1];
     if unit == 75 { return 1024; }
     if unit == 77 { return 1048576; }
@@ -193,7 +193,7 @@ pub fn emit_size(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], propert
     number(size_multiplier(&source[0..source.len()], &nodes[0..nodes.len()], property));
 }
 
-fn decimal(source: &[u8], start: u64, end: u64) -> bool {
+fn decimal(source: &[u8], start: u64, end: u64) bool {
     if end <= start || end - start > 9 { return false; }
     if source[start] < 49 || source[start] > 57 { return false; }
     let mut cursor = start + 1;
@@ -205,18 +205,18 @@ fn decimal(source: &[u8], start: u64, end: u64) -> bool {
 }
 
 // C decimal literals must not accidentally be emitted as octal.
-fn decimal_value(source: &[u8], start: u64, end: u64) -> bool {
+fn decimal_value(source: &[u8], start: u64, end: u64) bool {
     (end - start == 1 && source[start] == 48)
         || decimal(&source[0..source.len()], start, end)
 }
 
-fn integer_literal(nodes: &[AstNode], graph: &[StaticNode], source: &[u8], expr: u64) -> bool {
+fn integer_literal(nodes: &[AstNode], graph: &[StaticNode], source: &[u8], expr: u64) bool {
     if nodes[expr].kind == 9 { return true; }
     nodes[expr].kind == 12 && source[nodes[expr].name_start] == 45
         && nodes[graph[expr].first_child].kind == 9
 }
 
-fn emit_signed_integer(source: &[u8], start: u64, end: u64, negative: bool, emit: bool) -> bool {
+fn emit_signed_integer(source: &[u8], start: u64, end: u64, negative: bool, emit: bool) bool {
     let mut cursor = copy(start);
     let mut base: u64 = 10;
     let mut limit: u64 = 9223372036854775807;
@@ -247,25 +247,25 @@ fn emit_signed_integer(source: &[u8], start: u64, end: u64, negative: bool, emit
 
 // The verifier supplies the binding links. A zero means no active owner.
 struct Owner {
-    slot: u64,
-    pool: u64,
-    constructor: u64,
-    region: bool,
+    slot: u64;
+    pool: u64;
+    constructor: u64;
+    region: bool;
 }
 
-fn same_name(source: &[u8], nodes: &[AstNode], left: u64, right: u64) -> bool {
+fn same_name(source: &[u8], nodes: &[AstNode], left: u64, right: u64) bool {
     let a = &source[nodes[left].name_start..nodes[left].name_end];
     let b = &source[nodes[right].name_start..nodes[right].name_end];
     a.content_eq(&b[0..b.len()])
 }
 
-fn matches_word(source: &[u8], nodes: &[AstNode], node: u64, word: &[u8]) -> bool {
+fn matches_word(source: &[u8], nodes: &[AstNode], node: u64, word: &[u8]) bool {
     let name = &source[nodes[node].name_start..nodes[node].name_end];
     name.content_eq(&word[0..word.len()])
 }
 
 // Check the destructor signature separately from its statement sequence.
-fn destructor_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], implementation: u64) -> u64 {
+fn destructor_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], implementation: u64) u64 {
     let method = graph[implementation].first_child;
     let receiver = graph[method].first_child;
     let mut body = graph[receiver].next_sibling;
@@ -292,7 +292,7 @@ fn destructor_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], i
 }
 
 fn declared_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    nominal: u64, projection: u64) -> u64 {
+    nominal: u64, projection: u64) u64 {
     let mut field = graph[nominal].first_child;
     while field != 0 {
         if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(projection)) {
@@ -303,7 +303,7 @@ fn declared_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     0
 }
 
-fn receiver_path(nodes: &[AstNode], graph: &[StaticNode], receiver: u64, projection: u64) -> bool {
+fn receiver_path(nodes: &[AstNode], graph: &[StaticNode], receiver: u64, projection: u64) bool {
     if nodes[projection].kind != 17 { return false; }
     let base = graph[projection].first_child;
     if nodes[base].kind == 17 {
@@ -316,7 +316,7 @@ fn receiver_path(nodes: &[AstNode], graph: &[StaticNode], receiver: u64, project
 }
 
 fn projection_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    nominal: u64, base: u64) -> u64 {
+    nominal: u64, base: u64) u64 {
     if nodes[base].kind != 17 { return nominal; }
     let parent = projection_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         nominal, graph[base].first_child);
@@ -329,7 +329,7 @@ fn projection_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn inline_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    initializer: u64, projection: u64) -> u64 {
+    initializer: u64, projection: u64) u64 {
     let base = graph[projection].first_child;
     let object = if nodes[base].kind == 17 {
         let outer = inline_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -344,7 +344,7 @@ fn inline_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn destructor_field_kind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    declaration: u64, projection: u64) -> i64 {
+    declaration: u64, projection: u64) i64 {
     let mut field = graph[declaration].first_child;
     while field != 0 {
         if same_name(&source[0..source.len()], &nodes[0..nodes.len()], copy(field), copy(projection)) {
@@ -369,7 +369,7 @@ fn destructor_field_kind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn field_position(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    nominal: u64, projection: u64) -> u64 {
+    nominal: u64, projection: u64) u64 {
     let mut field = graph[nominal].first_child;
     let mut index: u64 = 0;
     while field != 0 {
@@ -382,7 +382,7 @@ fn field_position(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     index
 }
 
-fn pool_width(graph: &[StaticNode], nominal: u64) -> u64 {
+fn pool_width(graph: &[StaticNode], nominal: u64) u64 {
     if nominal == 0 { return 1; }
     let mut field = graph[nominal].first_child;
     let mut width: u64 = 0;
@@ -394,7 +394,7 @@ fn pool_width(graph: &[StaticNode], nominal: u64) -> u64 {
     width
 }
 
-fn payload_width(nodes: &[AstNode], graph: &[StaticNode], nominal: u64) -> u64 {
+fn payload_width(nodes: &[AstNode], graph: &[StaticNode], nominal: u64) u64 {
     if nodes[nominal].kind != 29 { return pool_width(&graph[0..graph.len()], nominal); }
     let mut width: u64 = 1;
     let mut variant = graph[nominal].first_child;
@@ -407,7 +407,7 @@ fn payload_width(nodes: &[AstNode], graph: &[StaticNode], nominal: u64) -> u64 {
 }
 
 fn enum_offset(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    nominal: u64, expression: u64) -> u64 {
+    nominal: u64, expression: u64) u64 {
     let mut variant = graph[nominal].first_child;
     let mut index: u64 = 0;
     while variant != 0 {
@@ -426,7 +426,7 @@ fn slot_field(pool: u64, slot: u64, width: u64, index: u64) {
     character(93);
 }
 
-fn local_destructor_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, block: u64) -> bool {
+fn local_destructor_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], binding: u64, block: u64) bool {
     let pool = graph[binding].first_child;
     nodes[binding].parent == block && nodes[pool].kind == 66
         && mutable_local(&source[0..source.len()], &nodes[0..nodes.len()], binding)
@@ -434,7 +434,7 @@ fn local_destructor_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn local_destructor_slot(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    binding: u64, block: u64) -> bool {
+    binding: u64, block: u64) bool {
     let constructor = graph[binding].first_child;
     let receiver = graph[constructor].first_child;
     let new_word: [u8; 3] = [110,101,119];
@@ -446,7 +446,7 @@ fn local_destructor_slot(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn destructor_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    context: &Destructor, expr: u64, condition: bool, emit: bool) -> bool {
+    context: &Destructor, expr: u64, condition: bool, emit: bool) bool {
     let start = nodes[expr].start;
     let end = nodes[expr].end;
     let kind = nodes[expr].kind;
@@ -582,14 +582,14 @@ fn destructor_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 struct Destructor {
-    receiver: u64,
-    nominal: u64,
-    constructor: u64,
-    slot: u64,
-    pool: u64,
+    receiver: u64;
+    nominal: u64;
+    constructor: u64;
+    slot: u64;
+    pool: u64;
 }
 
-fn destructor_move(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> bool {
+fn destructor_move(nodes: &[AstNode], graph: &[StaticNode], expression: u64) bool {
     let mut value = expression;
     while nodes[value].kind == 19 { value = graph[value].first_child; }
     if nodes[value].kind == 11 {
@@ -614,13 +614,13 @@ fn destructor_move(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> 
     true
 }
 
-fn scalar_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+fn scalar_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) bool {
     let word: [u8; 3] = [105,54,52];
     nodes[annotation].kind == 4 && graph[annotation].first_child == 0
         && matches_word(&source[0..source.len()], &nodes[0..nodes.len()], annotation, &word[..])
 }
 
-fn mutable_local(source: &[u8], nodes: &[AstNode], binding: u64) -> bool {
+fn mutable_local(source: &[u8], nodes: &[AstNode], binding: u64) bool {
     if nodes[binding].kind != 5 { return false; }
     let end = nodes[binding].name_start;
     let mut word = nodes[binding].start + 3;
@@ -630,7 +630,7 @@ fn mutable_local(source: &[u8], nodes: &[AstNode], binding: u64) -> bool {
     end - word >= 4 && source[word] == 109 && source[word + 1] == 117 && source[word + 2] == 116
 }
 
-fn plain_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], callee: u64) -> u64 {
+fn plain_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], callee: u64) u64 {
     let mut item = graph[0].first_child;
     while item != 0 {
         if nodes[item].kind == 1 && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -646,7 +646,7 @@ fn plain_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], callee
 }
 
 fn print_kind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    context: &Destructor, expression: u64) -> i64 {
+    context: &Destructor, expression: u64) i64 {
     if nodes[expression].kind == 17 && receiver_path(&nodes[0..nodes.len()], &graph[0..graph.len()],
         (*context).receiver, copy(expression)) {
         let nominal = projection_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -677,7 +677,7 @@ fn print_end(kind: i64) {
 }
 
 fn destructor_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    context: &Destructor, block: u64, looping: bool, emit: bool) -> bool {
+    context: &Destructor, block: u64, looping: bool, emit: bool) bool {
     let mut statement = graph[block].first_child;
     while statement != 0 {
         let child = graph[statement].first_child;
@@ -855,7 +855,7 @@ fn destructor_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn emit_destructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    constructor: u64, nominal: u64, slot: u64, pool: u64, emit: bool) -> bool {
+    constructor: u64, nominal: u64, slot: u64, pool: u64, emit: bool) bool {
     let mut item = graph[0].first_child;
     while item != 0 {
         if nodes[item].kind == 49 && same_name(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -892,13 +892,13 @@ fn emit_destructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners: &mut [Owner], binding: u64, clear: bool, emit: bool) -> bool {
+fn cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners: &mut [Owner], binding: u64, clear: bool, emit: bool) bool {
     cleanup_order(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut owners[0..owners.len()], binding, clear, false, emit)
 }
 
 fn cleanup_order(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners: &mut [Owner],
-    binding: u64, clear: bool, forward: bool, emit: bool) -> bool {
+    binding: u64, clear: bool, forward: bool, emit: bool) bool {
     let slot = owners[binding].slot;
     let constructor = owners[binding].constructor;
     if constructor != 0 {
@@ -942,7 +942,7 @@ fn cleanup_order(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], owners:
 }
 
 fn default_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    field: u64, depth: u64, emit: bool) -> bool {
+    field: u64, depth: u64, emit: bool) bool {
     if depth >= 64 { return false; }
     let annotation = graph[field].first_child;
     if graph[annotation].first_child != 0 { return true; }
@@ -956,7 +956,7 @@ fn default_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn default_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    field: u64, depth: u64, emit: bool) -> bool {
+    field: u64, depth: u64, emit: bool) bool {
     if field == 0 { return true; }
     default_fields(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         graph[field].next_sibling, copy(depth), copy(emit))
@@ -965,7 +965,7 @@ fn default_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn cleanup_children(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], first_field: u64, declaration: u64, clear: bool, forward: bool, emit: bool) -> bool {
+    owners: &mut [Owner], first_field: u64, declaration: u64, clear: bool, forward: bool, emit: bool) bool {
     if declaration == 0 { return true; }
     let next = graph[declaration].next_sibling;
     if !forward && !cleanup_children(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -983,7 +983,7 @@ fn cleanup_children(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         &mut owners[0..owners.len()], first_field, next, clear, forward, emit)
 }
 
-fn transfer_owner(owners: &mut [Owner], original: u64, destination: u64) -> bool {
+fn transfer_owner(owners: &mut [Owner], original: u64, destination: u64) bool {
     let slot = owners[original].slot;
     let constructor = owners[original].constructor;
     if slot == 0 && constructor == 0 { return false; }
@@ -995,7 +995,7 @@ fn transfer_owner(owners: &mut [Owner], original: u64, destination: u64) -> bool
 }
 
 fn emit_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], target: u64, call: u64, emit: bool) -> bool {
+    owners: &mut [Owner], target: u64, call: u64, emit: bool) bool {
     let callee = graph[call].first_child;
     let function = plain_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(callee));
     let input = regional_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
@@ -1039,7 +1039,7 @@ fn emit_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn emit_region_result(owners: &mut [Owner], destination: u64, binding: u64, emit: bool) -> bool {
+fn emit_region_result(owners: &mut [Owner], destination: u64, binding: u64, emit: bool) bool {
     if !owners[binding].region || owners[binding].slot == 0 { return false; }
     if emit {
         character(113); number(destination); character(61); character(114);
@@ -1049,7 +1049,7 @@ fn emit_region_result(owners: &mut [Owner], destination: u64, binding: u64, emit
     true
 }
 
-fn dedicated_region(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], allocation: u64) -> bool {
+fn dedicated_region(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], allocation: u64) bool {
     let mut parent = nodes[allocation].parent;
     while parent != 0 && nodes[parent].kind != 1 {
         if nodes[parent].kind == 22 || nodes[parent].kind == 27 {
@@ -1078,12 +1078,12 @@ fn dedicated_region(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], allo
     false
 }
 
-fn named_object(nodes: &[AstNode], expression: u64, declaration: u64) -> bool {
+fn named_object(nodes: &[AstNode], expression: u64, declaration: u64) bool {
     declaration != 0 && nodes[declaration].kind == 28 && nodes[expression].kind == 7
 }
 
 fn emit_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], statement: u64, expr: u64, emit: bool) -> bool {
+    owners: &mut [Owner], statement: u64, expr: u64, emit: bool) bool {
     if nodes[expr].kind == 16 {
         let receiver = graph[expr].first_child;
         let pool = graph[receiver].binding;
@@ -1254,7 +1254,7 @@ fn emit_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 // Each scope drops its live owners in reverse declaration order. A move
 // clears the original owner while retaining its pool slot.
 fn emit_vector_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    argument: u64, nominal: u64, slot: u64, emit: bool) -> bool {
+    argument: u64, nominal: u64, slot: u64, emit: bool) bool {
     if emit {
         let push: [u8; 17] = [114,101,103,105,111,110,95,112,117,115,104,95,114,111,119,40,114];
         byte_text(&push[..]); number(slot); character(44);
@@ -1280,7 +1280,7 @@ fn emit_vector_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn branch_preserves_owners(nodes: &[AstNode], graph: &[StaticNode], arm: u64) -> bool {
+fn branch_preserves_owners(nodes: &[AstNode], graph: &[StaticNode], arm: u64) bool {
     let mut node = graph[arm].first_child;
     while node != 0 {
         let kind = nodes[node].kind;
@@ -1298,7 +1298,7 @@ fn branch_preserves_owners(nodes: &[AstNode], graph: &[StaticNode], arm: u64) ->
 
 // Pool storage can own inline fields allocated on the same datastack.
 fn storage_escapes(nodes: &[AstNode], graph: &[StaticNode], owners: &[Owner],
-    binding: u64, block: u64) -> bool {
+    binding: u64, block: u64) bool {
     let constructor = owners[binding].constructor;
     if constructor == 0 { return false; }
     if owners[binding].slot == 0
@@ -1316,7 +1316,7 @@ fn storage_escapes(nodes: &[AstNode], graph: &[StaticNode], owners: &[Owner],
     false
 }
 
-fn inside_loop(nodes: &[AstNode], block: u64) -> bool {
+fn inside_loop(nodes: &[AstNode], block: u64) bool {
     let mut parent = nodes[block].parent;
     while parent != 0 && nodes[parent].kind != 1 {
         if nodes[parent].kind == 22 || nodes[parent].kind == 27 { return true; }
@@ -1325,11 +1325,10 @@ fn inside_loop(nodes: &[AstNode], block: u64) -> bool {
     false
 }
 
-
 // A lowered call site initializes a concrete frame. Scalar capture leaves
 // keep their field identities when the worker reconstructs the owner tree.
 fn task_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    object: u64, phase: u64, emit: bool) -> bool {
+    object: u64, phase: u64, emit: bool) bool {
     if nodes[object].kind != 37 { return false; }
     let mut field = graph[object].first_child;
     while field != 0 {
@@ -1362,7 +1361,7 @@ fn task_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn task_arguments(nodes: &[AstNode], graph: &[StaticNode], site: u64) -> u64 {
+fn task_arguments(nodes: &[AstNode], graph: &[StaticNode], site: u64) u64 {
     let launch = graph[site].first_child;
     let task = graph[graph[launch].first_child].next_sibling;
     if nodes[task].kind != 15 { return 0; }
@@ -1370,7 +1369,7 @@ fn task_arguments(nodes: &[AstNode], graph: &[StaticNode], site: u64) -> u64 {
 }
 
 fn task_frame(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    site: u64, function: u64, phase: u64, emit: bool) -> bool {
+    site: u64, function: u64, phase: u64, emit: bool) bool {
     let mut arg = task_arguments(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(site));
     while arg != 0 {
         if !task_capture(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -1443,7 +1442,7 @@ fn task_frame(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn emit_task_site(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    site: u64, function: u64, emit: bool) -> bool {
+    site: u64, function: u64, emit: bool) bool {
     if emit {
         { let code: [u8; 28] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,32,123,32,84,97,115,107,32,116,97,115,107,59,10]; byte_text(&code[..]); }
     }
@@ -1465,7 +1464,7 @@ fn emit_task_site(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn emit_task_launch(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], site: u64, function: u64, emit: bool) -> bool {
+    owners: &mut [Owner], site: u64, function: u64, emit: bool) bool {
     let main = nodes[nodes[site].parent].parent;
     let main_name: [u8; 4] = [109,97,105,110];
     if nodes[main].kind != 1
@@ -1503,7 +1502,7 @@ fn emit_task_launch(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn emit_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], block: u64, destination: u64, loop_node: u64, emit: bool) -> i64 {
+    owners: &mut [Owner], block: u64, destination: u64, loop_node: u64, emit: bool) i64 {
     if emit {
         let mark: [u8; 10] = [115, 105, 122, 101, 95, 116, 32, 109, 97, 114];
         byte_text(&mark[..]); number(copy(block));
@@ -1989,7 +1988,7 @@ fn emit_loop_jump(outcome: i64) {
 }
 
 fn emit_block_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owners: &mut [Owner], block: u64, last: u64, clear: bool, rewind_cursor: bool, emit: bool) -> bool {
+    owners: &mut [Owner], block: u64, last: u64, clear: bool, rewind_cursor: bool, emit: bool) bool {
     let mut last = last;
     while last != 0 {
         if !cleanup(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -2014,7 +2013,7 @@ fn emit_block_cleanup(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn emit_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    scalar: &Destructor, callee: u64, arg: u64, emit: bool) -> bool {
+    scalar: &Destructor, callee: u64, arg: u64, emit: bool) bool {
     let function = plain_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], callee);
     if function == 0 { return false; }
     let mut parameter = graph[function].first_child;
@@ -2034,7 +2033,7 @@ fn emit_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-fn helper_uses_pools(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> bool {
+fn helper_uses_pools(nodes: &[AstNode], graph: &[StaticNode], block: u64) bool {
     let mut statement = graph[block].first_child;
     while statement != 0 {
         if nodes[graph[statement].first_child].kind == 66 { return true; }
@@ -2044,7 +2043,7 @@ fn helper_uses_pools(nodes: &[AstNode], graph: &[StaticNode], block: u64) -> boo
 }
 
 fn emit_helper(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64, prototype: bool, emit: bool) -> bool {
+    function: u64, prototype: bool, emit: bool) bool {
     if identity_aggregate(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function)) != 0 { return true; }
     let mut parameter = graph[function].first_child;
     let pool = regional_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
@@ -2133,7 +2132,7 @@ fn emit_helper(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     true
 }
 
-pub fn emit_pool_c(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool) -> i32 {
+pub fn emit_pool_c(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool) i32 {
     let mut item = graph[0].first_child;
     while item != 0 {
         if nodes[item].kind == 76 { return 9; }

@@ -7,11 +7,11 @@ use bootstrap::constants::resolve_constant;
 
 // Primitive values have no owned resources: by-value evaluation copies them.
 // usize resolves to the target's ordinary unsigned primitive type code.
-pub fn is_primitive_value(ty: i64) -> bool { ty >= 1 && ty <= 9 }
+pub fn is_primitive_value(ty: i64) bool { ty >= 1 && ty <= 9 }
 
 // Eligibility is a property of the complete enum, never its current tag.
 // References and nested aggregates are deliberately not primitive payloads.
-pub fn primitive_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> bool {
+pub fn primitive_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) bool {
     if declaration == 0 || nodes[declaration].kind != 29 { return false; }
     let mut variant = graph[declaration].first_child;
     while variant != 0 {
@@ -31,7 +31,7 @@ pub fn primitive_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], de
 }
 
 // Builtin Option/Result use compact type codes but obey the same payload rule.
-pub fn primitive_envelope(ty: i64) -> bool {
+pub fn primitive_envelope(ty: i64) bool {
     if ty > 910 && ty < 920 { return true; }
     if result_type(ty) {
         let ok = result_payload(ty, true);
@@ -41,20 +41,20 @@ pub fn primitive_envelope(ty: i64) -> bool {
     false
 }
 
-pub fn value_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) -> u64 {
+pub fn value_enum(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) u64 {
     let mut origin = values[value].origin_call;
     if nodes[origin].kind == 29 { return origin; }
     if nodes[origin].kind != 4 && nodes[origin].kind != 49 { origin = graph[origin].first_child; }
     nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], origin)
 }
 
-pub fn implicit_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) -> bool {
+pub fn implicit_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], value: u64) bool {
     let ty = values[value].ty;
     if is_primitive_value(ty) || primitive_envelope(ty) { return true; }
     ty == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], value_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &values[0..values.len()], value))
 }
 
-pub fn verify_primitive(source: &[u8], start: u64, end: u64) -> i64 {
+pub fn verify_primitive(source: &[u8], start: u64, end: u64) i64 {
     let spelling = &source[start..end];
     let signed32: [u8; 3] = [105, 51, 50];
     let signed64: [u8; 3] = [105, 54, 52];
@@ -79,7 +79,7 @@ pub fn verify_primitive(source: &[u8], start: u64, end: u64) -> i64 {
     0
 }
 
-pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bool) -> i64 {
+pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bool) i64 {
     let first = (*node).start;
     let end = (*node).end;
     if source[first] == 116 || source[first] == 102 {
@@ -147,16 +147,15 @@ pub fn verify_literal(source: &[u8], node: &AstNode, expected: i64, negative: bo
     ty
 }
 
-
 // The sign and magnitude are separate so the complete u64 domain and the
 // minimum signed values can be checked without overflowing the verifier.
 pub struct IntegerAtom {
-    known: bool,
-    negative: bool,
-    magnitude: u64,
+    known: bool;
+    negative: bool;
+    magnitude: u64;
 }
 
-pub fn integer_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> IntegerAtom {
+pub fn integer_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) IntegerAtom {
     let mut node = expression;
     while nodes[node].kind == 19 { node = graph[node].first_child; }
     let constant = resolve_constant(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
@@ -182,11 +181,11 @@ pub fn integer_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], exp
     IntegerAtom { known: true, negative: negative && n != 0, magnitude: n }
 }
 
-pub fn is_integer(ty: i64) -> bool {
+pub fn is_integer(ty: i64) bool {
     ty == 1 || ty == 2 || (ty >= 4 && ty <= 7)
 }
 
-pub fn integer_width(ty: i64) -> u64 {
+pub fn integer_width(ty: i64) u64 {
     if ty == 1 || ty == 6 { return 32; }
     if ty == 4 { return 8; }
     if ty == 5 { return 16; }
@@ -194,11 +193,11 @@ pub fn integer_width(ty: i64) -> u64 {
     0
 }
 
-fn signed_integer(ty: i64) -> bool {
+fn signed_integer(ty: i64) bool {
     ty == 1 || ty == 2
 }
 
-fn magnitude_limit(ty: i64, negative: bool) -> u64 {
+fn magnitude_limit(ty: i64, negative: bool) u64 {
     if ty == 1 { return if negative { 2147483648 } else { 2147483647 }; }
     if ty == 2 { return if negative { 9223372036854775808 } else { 9223372036854775807 }; }
     if ty == 4 { return 255; }
@@ -207,11 +206,11 @@ fn magnitude_limit(ty: i64, negative: bool) -> u64 {
     18446744073709551615
 }
 
-pub fn is_float(ty: i64) -> bool {
+pub fn is_float(ty: i64) bool {
     ty == 8 || ty == 9
 }
 
-pub fn float_zero(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> bool {
+pub fn float_zero(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) bool {
     let mut operand = expression;
     while nodes[operand].kind == 19 || (nodes[operand].kind == 12 && source[nodes[operand].name_start] == 45) {
         operand = graph[operand].first_child;
@@ -232,7 +231,7 @@ pub fn float_zero(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expres
     dot
 }
 
-pub fn exact_numeric_cast(input: i64, output: i64) -> bool {
+pub fn exact_numeric_cast(input: i64, output: i64) bool {
     if is_float(copy(input)) { return is_float(copy(output)) && (input == output || output == 9); }
     if !is_integer(copy(input)) { return false; }
     let from_signed = signed_integer(copy(input));
@@ -249,7 +248,7 @@ pub fn exact_numeric_cast(input: i64, output: i64) -> bool {
 }
 
 // 1 = within range; 0 = outside range. Inputs have passed literal checking.
-pub fn check_constant_arithmetic(ty: i64, op: u8, left: &IntegerAtom, right: &IntegerAtom) -> bool {
+pub fn check_constant_arithmetic(ty: i64, op: u8, left: &IntegerAtom, right: &IntegerAtom) bool {
     let a = (*left).magnitude;
     let b = (*right).magnitude;
     let a_neg = (*left).negative;
@@ -278,7 +277,7 @@ pub fn check_constant_arithmetic(ty: i64, op: u8, left: &IntegerAtom, right: &In
     true
 }
 
-pub fn check_constant_shift(ty: i64, amount: u64, left: &IntegerAtom) -> bool {
+pub fn check_constant_shift(ty: i64, amount: u64, left: &IntegerAtom) bool {
     let limit = magnitude_limit(ty, (*left).negative);
     (*left).magnitude <= (limit >> amount)
 }
@@ -371,21 +370,20 @@ fn fold_into(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression:
     }
 }
 
-pub fn folded_integer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> IntegerAtom {
+pub fn folded_integer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) IntegerAtom {
     let mut output: [u64; 3] = [0; 3];
     fold_into(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], expression, &mut output[..]);
     IntegerAtom { known: output[0] != 0, negative: output[1] != 0, magnitude: output[2] }
 }
 
-
 #(if: target.pointer_width == "64")
-pub fn pointer_integer_type() -> i64 { 7 }
+pub fn pointer_integer_type() i64 { 7 }
 #(endif)
 #(if: target.pointer_width == "32")
-pub fn pointer_integer_type() -> i64 { 6 }
+pub fn pointer_integer_type() i64 { 6 }
 #(endif)
 
-pub fn verify_literal_hint(source: &[u8], literal: &AstNode) -> i64 {
+pub fn verify_literal_hint(source: &[u8], literal: &AstNode) i64 {
     let start = (*literal).start;
     if source[start] < 48 || source[start] > 57 {
         return if source[start] == 46 { 9 } else { 0 };
@@ -399,7 +397,7 @@ pub fn verify_literal_hint(source: &[u8], literal: &AstNode) -> i64 {
 }
 
 pub fn scalar_hint(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    left: u64, right: u64, expected: i64) -> i64 {
+    left: u64, right: u64, expected: i64) i64 {
     if expected != 0 { return expected; }
     let l = scalar_known_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &values[0..values.len()], left);

@@ -3,7 +3,7 @@ use bootstrap::scalar::{integer_value, verify_literal};
 use bootstrap::lowering_types::{declaration, number};
 use bootstrap::target_c::{byte_text, character};
 
-fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, destination: u64, expected: i64, emit: bool) -> i64 {
+fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, destination: u64, expected: i64, emit: bool) i64 {
     let negative = nodes[node].kind == 12;
     let value = if negative { graph[node].first_child } else { copy(node) };
     let ty = verify_literal(&source[0..source.len()], &nodes[value], expected, copy(negative));

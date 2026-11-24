@@ -48,7 +48,7 @@ use bootstrap::scalar::{verify_primitive, verify_literal, folded_integer, intege
 use bootstrap::declarations::{validate_region_capacities, nonzero_integer, known_constructor, verification_field, nominal_declaration};
 use bootstrap::model::{Token, AstNode, StaticNode, CheckedValue, token_at};
 
-pub fn regional_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn regional_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut entry = graph[function].first_child;
     let mut pool: u64 = 0;
     while nodes[entry].kind == 3 {
@@ -69,7 +69,7 @@ pub fn regional_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) i64 {
     semantic_enter(&values[0..values.len()],node,expected,mode);
     let result=verify_expr_impl(source,nodes,graph,values,node,expected,mode);
     semantic_leave();
@@ -77,7 +77,7 @@ pub fn verify_expr(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) i64 {
     let kind = nodes[node].kind;
     let start = nodes[node].start;
     let child = graph[node].first_child;

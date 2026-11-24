@@ -13,12 +13,12 @@ use bootstrap::generics::expression_layout;
 use bootstrap::scalar::{verify_primitive, verify_literal_hint, primitive_enum};
 use bootstrap::verify::report_violation;
 
-fn put(out: &mut [u8], cursor: u64, text: &[u8]) -> u64 {
+fn put(out: &mut [u8], cursor: u64, text: &[u8]) u64 {
     if cursor > out.len() as u64 || text.len() as u64 > out.len() as u64 - cursor { return out.len() as u64; }
     append(&mut out[0..out.len()], cursor as usize,&text[0..text.len()]) as u64
 }
 
-fn digits(out: &mut [u8], cursor: u64, value: u64) -> u64 {
+fn digits(out: &mut [u8], cursor: u64, value: u64) u64 {
     let mut bytes: [u8; 20] = [0; 20];
     let mut used: u64 = 20;
     let mut n = copy(value);
@@ -32,24 +32,24 @@ fn digits(out: &mut [u8], cursor: u64, value: u64) -> u64 {
     put(&mut out[0..out.len()],copy(cursor), &bytes[used..20])
 }
 
-fn generated(out: &mut [u8], cursor: u64, node: u64) -> u64 {
+fn generated(out: &mut [u8], cursor: u64, node: u64) u64 {
     let pos = text_0(&mut out[0..out.len()],copy(cursor));
     digits(&mut out[0..out.len()],copy(pos),copy(node))
 }
 
-fn field_name(out: &mut [u8], cursor: u64, node: u64) -> u64 {
+fn field_name(out: &mut [u8], cursor: u64, node: u64) u64 {
     let pos = text_1(&mut out[0..out.len()],copy(cursor));
     digits(&mut out[0..out.len()],copy(pos),copy(node))
 }
 
-fn function_output(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn function_output(nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut child = graph[function].first_child;
     while nodes[child].kind == 3 { child = graph[child].next_sibling; }
     if nodes[child].kind == 4 { return child; }
     0
 }
 
-fn callable_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+fn callable_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     let mut node = copy(annotation);
     while node != 0 && nodes[node].kind == 4 {
         let text = &source[nodes[node].name_start..nodes[node].name_end];
@@ -61,7 +61,7 @@ fn callable_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotat
     0
 }
 
-fn callable_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> bool {
+fn callable_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) bool {
     if nodes[function].kind != 1 { return false; }
     let mut child = graph[function].first_child;
     while nodes[child].kind == 3 {
@@ -71,7 +71,7 @@ fn callable_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fun
     false
 }
 
-fn in_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+fn in_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     let mut owner = nodes[node].parent;
     while owner != 0 {
         if callable_function(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(owner)) { return true; }
@@ -80,14 +80,14 @@ fn in_template(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64
     false
 }
 
-fn is_generated(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+fn is_generated(source: &[u8], nodes: &[AstNode], node: u64) bool {
     let name = &source[nodes[node].name_start..nodes[node].name_end];
     let prefix: [u8; 17] = [95,95,99,111,114,98,111,95,99,97,108,108,97,98,108,101,95];
     name.len() >= 17 && same_bytes(&name[0..17], &prefix[..])
 }
 
 /// A cheap syntactic gate; the graph-based pass reports an unchanged input.
-pub fn has_callables(source: &[u8], nodes: &[AstNode]) -> bool {
+pub fn has_callables(source: &[u8], nodes: &[AstNode]) bool {
     let mut node: u64 = 1;
     while node < nodes.len() as u64 {
         let fn_name: [u8; 2] = [102,110];
@@ -99,7 +99,7 @@ pub fn has_callables(source: &[u8], nodes: &[AstNode]) -> bool {
     false
 }
 
-fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], layout: u64, name: &[u8]) -> u64 {
+fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], layout: u64, name: &[u8]) u64 {
     let owner = &source[nodes[layout].name_start..nodes[layout].name_end];
     let mut item = graph[0].first_child;
     while item != 0 {
@@ -115,7 +115,7 @@ fn method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], layout: u64, n
     0
 }
 
-fn scalar(out: &mut [u8], cursor: u64, ty: i64) -> u64 {
+fn scalar(out: &mut [u8], cursor: u64, ty: i64) u64 {
     if ty == 1 { return text_2(&mut out[0..out.len()],copy(cursor)); }
     if ty == 2 { return text_3(&mut out[0..out.len()],copy(cursor)); }
     if ty == 3 { return text_4(&mut out[0..out.len()],copy(cursor)); }
@@ -131,7 +131,7 @@ fn scalar(out: &mut [u8], cursor: u64, ty: i64) -> u64 {
 // Resolve spelling from declarations and expression structure, never from an
 // iterator API. The generated method is subsequently typechecked normally.
 fn infer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    expression: u64, dereferences: u64, out: &mut [u8], cursor: u64, depth: u64) -> u64 {
+    expression: u64, dereferences: u64, out: &mut [u8], cursor: u64, depth: u64) u64 {
     if depth >= 128 || expression == 0 { return out.len() as u64; }
     let node = copy(expression);
     let kind = nodes[node].kind;
@@ -227,7 +227,7 @@ fn infer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token
     out.len() as u64
 }
 
-fn capture_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) -> bool {
+fn capture_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) bool {
     let mut spelling: [u8; 4096] = [0; 4096];
     let length = infer(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],copy(node), 0, &mut spelling[..], 0, 0);
     if length >= 4096 { return false; }
@@ -241,20 +241,19 @@ fn capture_copy(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: 
     length > 1 && spelling[0] == 38 && !(length >= 4 && spelling[1] == 109 && spelling[2] == 117 && spelling[3] == 116)
 }
 
-
-fn shared_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) -> bool {
+fn shared_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], node: u64) bool {
     let mut text: [u8; 4096] = [0; 4096];
     let length = infer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], node, 0, &mut text[..], 0, 0);
     length < 4096 && text[0] == 38 && !(length >= 4 && text[1] == 109 && text[2] == 117 && text[3] == 116)
 }
 
-fn closure_body(nodes: &[AstNode], graph: &[StaticNode], closure: u64) -> u64 {
+fn closure_body(nodes: &[AstNode], graph: &[StaticNode], closure: u64) u64 {
     let mut body = graph[closure].first_child;
     while graph[body].next_sibling != 0 { body = graph[body].next_sibling; }
     body
 }
 
-fn template_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> u64 {
+fn template_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) u64 {
     let mut at = copy(node);
     while at != 0 {
         if callable_function(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(at)) { return at; }
@@ -266,7 +265,7 @@ fn template_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: 
 // A graph-bound name is replaced, not a textual spelling. Shadowed names in
 // nested scopes therefore keep their own identity.
 fn materialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    closure: u64, out: &mut [u8], offsets: &mut [u64]) -> (i32,u64) {
+    closure: u64, out: &mut [u8], offsets: &mut [u64]) (i32,u64) {
     let identity = next_identity(&source[0..source.len()], &nodes[0..nodes.len()]);
     let mut captured: [u64; 524289] = [0; 524289];
     let body = closure_body(&nodes[0..nodes.len()],&graph[0..graph.len()],copy(closure));
@@ -414,7 +413,7 @@ fn materialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &
     (0,copy(cursor))
 }
 
-fn equal_type(source: &[u8], nodes: &[AstNode], a: u64, b: u64) -> bool {
+fn equal_type(source: &[u8], nodes: &[AstNode], a: u64, b: u64) bool {
     let mut left = nodes[a].start;
     let mut right = nodes[b].start;
     while left < nodes[a].end || right < nodes[b].end {
@@ -427,7 +426,7 @@ fn equal_type(source: &[u8], nodes: &[AstNode], a: u64, b: u64) -> bool {
     true
 }
 
-fn signature_matches(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expected: u64, invoke: u64) -> bool {
+fn signature_matches(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expected: u64, invoke: u64) bool {
     let mut input = graph[expected].first_child;
     let receiver = graph[invoke].first_child;
     let mut actual = graph[receiver].next_sibling;
@@ -440,7 +439,7 @@ fn signature_matches(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], exp
 }
 
 fn specialization_name(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    function: u64, call: u64, out: &mut [u8], cursor: u64) -> u64 {
+    function: u64, call: u64, out: &mut [u8], cursor: u64) u64 {
     let mut pos = text_30(&mut out[0..out.len()],copy(cursor));
     pos = put(&mut out[0..out.len()],copy(pos), &source[nodes[function].name_start..nodes[function].name_end]);
     let mut parameter = graph[function].first_child;
@@ -458,7 +457,7 @@ fn specialization_name(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
 }
 
 fn specialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    function: u64, call: u64, out: &mut [u8], offsets: &mut [u64]) -> (i32,u64) {
+    function: u64, call: u64, out: &mut [u8], offsets: &mut [u64]) (i32,u64) {
     let mut parameter = graph[function].first_child;
     let mut argument = graph[graph[call].first_child].next_sibling;
     let invoke_name: [u8; 14] = [95,95,99,111,114,98,111,95,105,110,118,111,107,101];
@@ -522,7 +521,7 @@ fn specialize(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[
 /// Rewrite one capture object or specialization at a time. Reparse between
 /// steps so all subsequent decisions use resolved, fresh binding identities.
 pub fn specialize_callables(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    out: &mut [u8], offsets: &mut [u64]) -> (i32,u64) {
+    out: &mut [u8], offsets: &mut [u64]) (i32,u64) {
     let mut node: u64 = 1;
     while node < nodes.len() as u64 {
         if nodes[node].kind == 55 && !in_template(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(node)) {
@@ -603,193 +602,193 @@ pub fn specialize_callables(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     (0,copy(cursor))
 }
 
-fn text_0(out: &mut [u8], cursor: u64) -> u64 {
+fn text_0(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 17] = [95,95,99,111,114,98,111,95,99,97,108,108,97,98,108,101,95];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_1(out: &mut [u8], cursor: u64) -> u64 {
+fn text_1(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 10] = [95,95,99,97,112,116,117,114,101,95];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_2(out: &mut [u8], cursor: u64) -> u64 {
+fn text_2(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [105,51,50];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_3(out: &mut [u8], cursor: u64) -> u64 {
+fn text_3(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [105,54,52];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_4(out: &mut [u8], cursor: u64) -> u64 {
+fn text_4(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 4] = [98,111,111,108];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_5(out: &mut [u8], cursor: u64) -> u64 {
+fn text_5(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [117,56];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_6(out: &mut [u8], cursor: u64) -> u64 {
+fn text_6(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [117,49,54];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_7(out: &mut [u8], cursor: u64) -> u64 {
+fn text_7(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [117,51,50];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_8(out: &mut [u8], cursor: u64) -> u64 {
+fn text_8(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [117,54,52];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_9(out: &mut [u8], cursor: u64) -> u64 {
+fn text_9(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [102,51,50];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_10(out: &mut [u8], cursor: u64) -> u64 {
+fn text_10(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [102,54,52];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_11(out: &mut [u8], cursor: u64) -> u64 {
+fn text_11(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [38,109,117,116,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_12(out: &mut [u8], cursor: u64) -> u64 {
+fn text_12(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [38];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_13(out: &mut [u8], cursor: u64) -> u64 {
+fn text_13(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 4] = [86,111,105,100];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_14(out: &mut [u8], cursor: u64) -> u64 {
+fn text_14(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [32,123];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_15(out: &mut [u8], cursor: u64) -> u64 {
+fn text_15(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [58,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_16(out: &mut [u8], cursor: u64) -> u64 {
+fn text_16(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [99,111,112,121,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_17(out: &mut [u8], cursor: u64) -> u64 {
+fn text_17(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [41];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_18(out: &mut [u8], cursor: u64) -> u64 {
+fn text_18(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [44,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_19(out: &mut [u8], cursor: u64) -> u64 {
+fn text_19(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [32,125];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_20(out: &mut [u8], cursor: u64) -> u64 {
+fn text_20(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 8] = [10,115,116,114,117,99,116,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_21(out: &mut [u8], cursor: u64) -> u64 {
+fn text_21(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [32,123,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_22(out: &mut [u8], cursor: u64) -> u64 {
+fn text_22(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 8] = [32,125,10,105,109,112,108,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_23(out: &mut [u8], cursor: u64) -> u64 {
+fn text_23(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 21] = [32,123,32,102,110,32,95,95,99,111,114,98,111,95,105,110,118,111,107,101,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_24(out: &mut [u8], cursor: u64) -> u64 {
+fn text_24(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 9] = [38,109,117,116,32,115,101,108,102];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_25(out: &mut [u8], cursor: u64) -> u64 {
+fn text_25(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [38,115,101,108,102];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_26(out: &mut [u8], cursor: u64) -> u64 {
+fn text_26(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [41,32,45,62,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_27(out: &mut [u8], cursor: u64) -> u64 {
+fn text_27(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_28(out: &mut [u8], cursor: u64) -> u64 {
+fn text_28(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 8] = [40,42,115,101,108,102,41,46];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_29(out: &mut [u8], cursor: u64) -> u64 {
+fn text_29(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [32,125,10];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_30(out: &mut [u8], cursor: u64) -> u64 {
+fn text_30(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 14] = [95,95,99,111,114,98,111,95,97,112,112,108,121,95];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_31(out: &mut [u8], cursor: u64) -> u64 {
+fn text_31(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [95];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_32(out: &mut [u8], cursor: u64) -> u64 {
+fn text_32(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [10];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn text_33(out: &mut [u8], cursor: u64) -> u64 {
+fn text_33(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 15] = [46,95,95,99,111,114,98,111,95,105,110,118,111,107,101];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn shared_prefix(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 2] = [38,42]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn shared_prefix(out: &mut [u8], cursor: u64) u64 { let text: [u8; 2] = [38,42]; put(&mut out[0..out.len()], cursor, &text[..]) }
 
-fn body_open(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 2] = [123,32]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn body_open(out: &mut [u8], cursor: u64) u64 { let text: [u8; 2] = [123,32]; put(&mut out[0..out.len()], cursor, &text[..]) }
 
-fn alias_semi(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 2] = [59,32]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn alias_semi(out: &mut [u8], cursor: u64) u64 { let text: [u8; 2] = [59,32]; put(&mut out[0..out.len()], cursor, &text[..]) }
 
-fn alias_deref(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 2] = [40,42]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn alias_deref(out: &mut [u8], cursor: u64) u64 { let text: [u8; 2] = [40,42]; put(&mut out[0..out.len()], cursor, &text[..]) }
 
-fn alias_close(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 1] = [41]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn alias_close(out: &mut [u8], cursor: u64) u64 { let text: [u8; 1] = [41]; put(&mut out[0..out.len()], cursor, &text[..]) }
 
-fn alias_let(out: &mut [u8], cursor: u64, mutable: bool) -> u64 {
+fn alias_let(out: &mut [u8], cursor: u64, mutable: bool) u64 {
     let yes: [u8; 8] = [108,101,116,32,109,117,116,32];
     let no: [u8; 4] = [108,101,116,32];
     if mutable { return put(&mut out[0..out.len()], cursor, &yes[..]); }
     put(&mut out[0..out.len()], cursor, &no[..])
 }
-fn alias_borrow(out: &mut [u8], cursor: u64, mutable: bool, reference: bool) -> u64 {
+fn alias_borrow(out: &mut [u8], cursor: u64, mutable: bool, reference: bool) u64 {
     let a: [u8; 10] = [32,61,32,38,40,42,115,101,108,102];
     let b: [u8; 14] = [32,61,32,38,109,117,116,32,40,42,115,101,108,102];
     let c: [u8; 11] = [32,61,32,38,42,40,42,115,101,108,102];
@@ -802,7 +801,7 @@ fn alias_borrow(out: &mut [u8], cursor: u64, mutable: bool, reference: bool) -> 
 }
 
 // A stable concrete identity is independent of the changing AST node indices.
-fn next_identity(source: &[u8], nodes: &[AstNode]) -> u64 {
+fn next_identity(source: &[u8], nodes: &[AstNode]) u64 {
     let mut identity: u64 = 1;
     let mut node: u64 = 1;
     while node < nodes.len() as u64 {
@@ -847,7 +846,7 @@ fn insert_helpers(nodes: &[AstNode], out: &mut [u8], offsets: &mut [u64],
 // Constructor and invocation thunks are ordinary functions. There is no erased
 // capture pointer: the verifier sees the concrete fields and all their roots.
 fn constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    captured: &[u64], closure: u64, identity: u64, out: &mut [u8], cursor: u64) -> u64 {
+    captured: &[u64], closure: u64, identity: u64, out: &mut [u8], cursor: u64) u64 {
     let mut pos = call_text_2(&mut out[0..out.len()],copy(cursor));
     let mut point = closure + 1;
     while point < nodes.len() as u64 && nodes[point].start < nodes[closure].end {
@@ -880,7 +879,7 @@ fn constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &
 }
 
 fn runner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    closure: u64, identity: u64, mode: i64, out: &mut [u8], cursor: u64) -> u64 {
+    closure: u64, identity: u64, mode: i64, out: &mut [u8], cursor: u64) u64 {
     let mut pos = if mode == 0 { call_text_8(&mut out[0..out.len()],copy(cursor)) }
         else if mode == 1 { call_text_9(&mut out[0..out.len()],copy(cursor)) }
         else { call_text_10(&mut out[0..out.len()],copy(cursor)) };
@@ -906,7 +905,7 @@ fn runner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
 }
 
 fn invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    call: u64, layout: u64, out: &mut [u8], offsets: &mut [u64]) -> u64 {
+    call: u64, layout: u64, out: &mut [u8], offsets: &mut [u64]) u64 {
     let callee = graph[call].first_child;
     let mut base = copy(callee);
     while nodes[base].kind == 19 { base = graph[base].first_child; }
@@ -950,99 +949,99 @@ fn invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
     cursor
 }
 
-fn call_text_0(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_0(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 6] = [58,58,110,101,119,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_1(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_1(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [41];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_2(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_2(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 8] = [32,102,110,32,110,101,119,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_3(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_3(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [58,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_4(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_4(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 2] = [44,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_5(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_5(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [41,32,45,62,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_6(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_6(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 3] = [32,123,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_7(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_7(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [32,125,32,125,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_8(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_8(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 36] = [32,102,110,32,95,95,99,111,114,98,111,95,114,117,110,40,109,117,116,32,95,95,99,111,114,98,111,95,116,97,114,103,101,116,58,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_9(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_9(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 40] = [32,102,110,32,95,95,99,111,114,98,111,95,115,104,97,114,101,100,40,109,117,116,32,95,95,99,111,114,98,111,95,116,97,114,103,101,116,58,32,38];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_10(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_10(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 47] = [32,102,110,32,95,95,99,111,114,98,111,95,101,120,99,108,117,115,105,118,101,40,109,117,116,32,95,95,99,111,114,98,111,95,116,97,114,103,101,116,58,32,38,109,117,116,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_11(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_11(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 33] = [32,123,32,95,95,99,111,114,98,111,95,116,97,114,103,101,116,46,95,95,99,111,114,98,111,95,105,110,118,111,107,101,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_12(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_12(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 4] = [41,32,125,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_13(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_13(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 15] = [46,95,95,99,111,114,98,111,95,105,110,118,111,107,101];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_14(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_14(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 14] = [58,58,95,95,99,111,114,98,111,95,114,117,110,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_15(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_15(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 17] = [58,58,95,95,99,111,114,98,111,95,115,104,97,114,101,100,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_16(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_16(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 20] = [58,58,95,95,99,111,114,98,111,95,101,120,99,108,117,115,105,118,101,40];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_17(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_17(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 1] = [38];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn call_text_18(out: &mut [u8], cursor: u64) -> u64 {
+fn call_text_18(out: &mut [u8], cursor: u64) u64 {
     let bytes: [u8; 5] = [38,109,117,116,32];
     put(&mut out[0..out.len()],copy(cursor), &bytes[..])
 }
 
-fn alias_star(out: &mut [u8], cursor: u64) -> u64 { let text: [u8; 1] = [42]; put(&mut out[0..out.len()], cursor, &text[..]) }
+fn alias_star(out: &mut [u8], cursor: u64) u64 { let text: [u8; 1] = [42]; put(&mut out[0..out.len()], cursor, &text[..]) }

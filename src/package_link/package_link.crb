@@ -7,19 +7,19 @@ use bootstrap::verify::{unknown_qualified_function, missing_direct_dependency, r
 use bootstrap::declarations::private_socket_field;
 
 struct Import {
-    file: u64,
-    start: u64,
-    end: u64,
-    target: u64,
-    module: u64,
+    file: u64;
+    start: u64;
+    end: u64;
+    target: u64;
+    module: u64;
 }
 
 struct Edit {
-    end: u64,
-    target: u64,
+    end: u64;
+    target: u64;
 }
 
-fn file_at(files: &[PackageFile], position: u64) -> u64 {
+fn file_at(files: &[PackageFile], position: u64) u64 {
     let mut low: u64 = 0;
     let mut high = files.len() as u64;
     while low < high {
@@ -30,18 +30,18 @@ fn file_at(files: &[PackageFile], position: u64) -> u64 {
     low
 }
 
-fn same_module(names: &[u8], files: &[PackageFile], left: u64, right: u64) -> bool {
+fn same_module(names: &[u8], files: &[PackageFile], left: u64, right: u64) bool {
     let a = &names[files[left].module_start..files[left].module_end];
     let b = &names[files[right].module_start..files[right].module_end];
     a.content_eq(&b[0..b.len()])
 }
 
-fn spelled(source: &[u8], left: u64, end: u64, right: u64, last: u64) -> bool {
+fn spelled(source: &[u8], left: u64, end: u64, right: u64, last: u64) bool {
     let a = &source[left..end];
     a.content_eq(&source[right..last])
 }
 
-fn module_matches(source: &[u8], tokens: &[Token], module: &[u8], start: u64, end: u64, offset: usize) -> bool {
+fn module_matches(source: &[u8], tokens: &[Token], module: &[u8], start: u64, end: u64, offset: usize) bool {
     let mut part = start;
     let mut written = offset;
     while part < end {
@@ -54,16 +54,16 @@ fn module_matches(source: &[u8], tokens: &[Token], module: &[u8], start: u64, en
     written == module.len()
 }
 
-fn component(kind: i64) -> bool {
+fn component(kind: i64) bool {
     kind == 1 || kind == 28 || kind == 29 || kind == 35 || kind == 64 || kind == 76
 }
 
-fn nominal(kind: i64) -> bool {
+fn nominal(kind: i64) bool {
     kind == 28 || kind == 29
 }
 
 fn declared(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], symbols: &[u64],
-    file: u64, start: u64, end: u64) -> u64 {
+    file: u64, start: u64, end: u64) u64 {
     let mut index: usize = 0;
     while index < symbols.len() {
         let node = symbols[index];
@@ -77,7 +77,7 @@ fn declared(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode
 }
 
 fn qualified(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
-    nodes: &[AstNode], symbols: &[u64], first: u64, separator: u64, member: u64, current: u64, alias: u64) -> u64 {
+    nodes: &[AstNode], symbols: &[u64], first: u64, separator: u64, member: u64, current: u64, alias: u64) u64 {
     let mut index: usize = 0;
     while index < symbols.len() {
         let node = symbols[index];
@@ -113,7 +113,7 @@ fn qualified(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token
     0
 }
 
-fn imported(source: &[u8], imports: &[Import], file: u64, start: u64, end: u64) -> u64 {
+fn imported(source: &[u8], imports: &[Import], file: u64, start: u64, end: u64) u64 {
     let mut index: usize = 0;
     while index < imports.len() {
         if imports[index].file == file
@@ -127,7 +127,7 @@ fn imported(source: &[u8], imports: &[Import], file: u64, start: u64, end: u64) 
 
 fn enter_import(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
     nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64,
-    separator: u64, member: u64, local: u64) -> i32 {
+    separator: u64, member: u64, local: u64) i32 {
     if used == entries.len() { return 4; }
     let target = qualified(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()], copy(first), copy(separator), copy(member), copy(file), 0);
     let spelling = &source[tokens[member].start..tokens[member].end];
@@ -166,7 +166,7 @@ fn enter_import(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[To
 }
 
 fn install_imports(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
-    nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64) -> (i32, usize) {
+    nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64) (i32, usize) {
     let mut last = copy(first);
     while tokens[last + 1].kind == 43 { last = last + 2; }
     let separator = copy(last) - 1;
@@ -194,8 +194,7 @@ fn install_imports(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &
     return (0, count);
 }
 
-
-fn native_type_name(name: &[u8]) -> bool {
+fn native_type_name(name: &[u8]) bool {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let map: [u8; 7] = [72,97,115,104,77,97,112];
     let string: [u8; 6] = [83,116,114,105,110,103];
@@ -229,7 +228,7 @@ pub fn prepare_native_exports(source: &[u8], names: &[u8], files: &[PackageFile]
 
 // Root STD declarations bind existing native types. Their source declarations
 // are exports, not nominal record layouts; user packages cannot install these bindings.
-fn native_std_type(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) -> bool {
+fn native_std_type(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) bool {
     if nodes[item].kind != 28 { return false; }
     let owner = file_at(&files[0..files.len()], nodes[item].start);
     let root: [u8; 3] = [115,116,100];
@@ -240,14 +239,14 @@ fn native_std_type(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[
 }
 
 // The intrinsic fallible allocator returns this ordinary STD enum by stable identity.
-fn std_pool_error(source:&[u8],names:&[u8],files:&[PackageFile],nodes:&[AstNode],item:u64)->bool {
+fn std_pool_error(source:&[u8],names:&[u8],files:&[PackageFile],nodes:&[AstNode],item:u64)bool {
     if nodes[item].kind!=29{return false;}
     let owner=file_at(&files[0..files.len()],nodes[item].start);let root:[u8;3]=[115,116,100];let error:[u8;9]=[80,111,111,108,69,114,114,111,114];
     let module=&names[files[owner].module_start..files[owner].module_end];let name=&source[nodes[item].name_start..nodes[item].name_end];
     files[owner].package==64 && module.content_eq(&root[..]) && name.content_eq(&error[..])
 }
 
-fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) -> u64 {
+fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode], item: u64) u64 {
     let module: [u8; 9] = [115,116,100,58,58,105,116,101,114];
     let owner = file_at(&files[0..files.len()], nodes[item].start);
     let path = &names[files[owner].module_start..files[owner].module_end];
@@ -269,7 +268,7 @@ fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstN
     0
 }
 
-fn write_target(output: &mut [u8], cursor: usize, target: u64, type_name: bool) -> usize {
+fn write_target(output: &mut [u8], cursor: usize, target: u64, type_name: bool) usize {
     let prefix_bytes: [u8; 14] = [95, 95, 100, 105, 110, 95, 112, 97, 99, 107, 97, 103, 101, 95]; // __din_package_
     let prefix = &prefix_bytes[..];
     let mut digits: [u8; 20] = [0; 20];
@@ -302,7 +301,7 @@ fn write_target(output: &mut [u8], cursor: usize, target: u64, type_name: bool) 
 // Only the standard argument wrapper can access the process entry data.
 // Preserve the call's byte location when import removal changes offsets.
 fn process_arguments(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode],
-    graph: &[StaticNode], function: u64, file: u64) -> u64 {
+    graph: &[StaticNode], function: u64, file: u64) u64 {
     let env: [u8; 8] = [115, 116, 100, 58, 58, 101, 110, 118]; // std::env
     let args: [u8; 4] = [97, 114, 103, 115];
     let primitive: [u8; 21] = [114, 117, 110, 116, 105, 109, 101, 58, 58, 112, 114, 111, 99, 101, 115, 115, 95, 97, 114, 103, 115];
@@ -321,14 +320,14 @@ fn process_arguments(source: &[u8], names: &[u8], files: &[PackageFile], nodes: 
     0
 }
 
-fn standard_module(module: &[u8]) -> bool {
+fn standard_module(module: &[u8]) bool {
     let name: [u8; 3] = [115,116,100];
     if module.len() < 3 { return false; }
     let prefix = &module[0..3];
     prefix.content_eq(&name[..]) && (module.len() == 3 || (module.len() > 4 && module[3] == 58 && module[4] == 58))
 }
 
-fn can_import(names: &[u8], files: &[PackageFile], owner: u64, dependency: u64) -> bool {
+fn can_import(names: &[u8], files: &[PackageFile], owner: u64, dependency: u64) bool {
     let module = &names[files[dependency].module_start..files[dependency].module_end];
     if files[dependency].package < 64 {
         let mask: u64 = 1 << files[dependency].package;
@@ -344,7 +343,7 @@ fn can_import(names: &[u8], files: &[PackageFile], owner: u64, dependency: u64) 
 }
 
 // A package can be present in the build graph through a transitive edge.
-fn inaccessible_package(names: &[u8], files: &[PackageFile], owner: u64, namespace: &[u8]) -> bool {
+fn inaccessible_package(names: &[u8], files: &[PackageFile], owner: u64, namespace: &[u8]) bool {
     let length = namespace.len();
     let mut file: u64 = 0;
     while file < files.len() as u64 {
@@ -420,7 +419,7 @@ fn select_units(source:&[u8], names: &[u8], files: &[PackageFile], nodes: &[AstN
     }
 }
 
-fn private_layout(module: &[u8], name: &[u8]) -> bool {
+fn private_layout(module: &[u8], name: &[u8]) bool {
     let root: [u8;3] = [115,116,100];
     let bounded: [u8;13] = [66,111,117,110,100,101,100,83,116,114,105,110,103];
     if module.content_eq(&root[..]) && name.content_eq(&bounded[..]) { return true; }
@@ -522,7 +521,7 @@ fn private_layout(module: &[u8], name: &[u8]) -> bool {
 }
 
 pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
-    nodes: &[AstNode], graph: &[StaticNode], output: &mut [u8], visibility: &mut [LayoutVisibility], library: bool) -> (i32, usize, u64) {
+    nodes: &[AstNode], graph: &[StaticNode], output: &mut [u8], visibility: &mut [LayoutVisibility], library: bool) (i32, usize, u64) {
     let mut token: u64 = 0;
     while token < tokens.len() as u64 {
         let start = tokens[token].start;

@@ -5,7 +5,7 @@ use bootstrap::lowering_text::string_bytes;
 use bootstrap::process_arguments::argument_text_type;
 use bootstrap::target_c::{byte_text, character};
 
-fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64, emit: bool) -> i64 {
+fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64, emit: bool) i64 {
     let ty = argument_text_type();
     if expected != 0 && expected != ty { return -1; }
     let length = string_bytes(&source[0..source.len()], (*literal).start, (*literal).end, false);
@@ -26,7 +26,7 @@ fn lower_text_literal(source: &[u8], literal: &AstNode, node: u64, expected: i64
 }
 
 fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    types:&mut [i64], ctx: &Lowering, node: u64) -> i64 {
+    types:&mut [i64], ctx: &Lowering, node: u64) i64 {
     let receiver = graph[node].first_child;
     let actual=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(receiver),2000138);if actual!=2000138{return -1;}
     let byte_len: [u8; 8] = [98,121,116,101,95,108,101,110];
@@ -48,7 +48,7 @@ fn argument_bytes(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     2000004
 }
 
-fn lower_process_arguments(nodes: &[AstNode], graph: &[StaticNode], ctx: &Lowering, node: u64, ty: i64) -> i64 {
+fn lower_process_arguments(nodes: &[AstNode], graph: &[StaticNode], ctx: &Lowering, node: u64, ty: i64) i64 {
     let error = nominal_type(result_payload(copy(ty), false));
     let invalid = graph[error].first_child;
     let unavailable = graph[invalid].next_sibling;
@@ -66,7 +66,7 @@ fn lower_process_arguments(nodes: &[AstNode], graph: &[StaticNode], ctx: &Loweri
     ty
 }
 
-fn lower_text_view(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)->i64 {
+fn lower_text_view(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)i64 {
     let place=graph[node].first_child;let base=graph[place].first_child;let range=graph[base].next_sibling;
     if nodes[node].kind!=13 || graph[node].mutable || nodes[place].kind!=18 || nodes[range].kind!=46{return 0;}
     let binding=graph[base].binding;let shape=guess(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[0..types.len()],copy(base));

@@ -14,10 +14,10 @@ use bootstrap::ownership::check_owned_struct;
 use bootstrap::tasks::copy_task_summary;
 use bootstrap::lowering_types::{signed, unsigned, optional, option_code, option_payload};
 
-pub fn unit_result_payload(ty: i64) -> bool { ty == 10 }
+pub fn unit_result_payload(ty: i64) bool { ty == 10 }
 
 // Keep usize distinct in result identity, even on a 64-bit target.
-pub fn scalar_result_payload(ty: i64) -> i64 {
+pub fn scalar_result_payload(ty: i64) i64 {
     if ty>=6000000 && ty<7000000{return ty;}
     if ty == 11 { return pointer_integer_type(); }
     if ty == 2000138 || optional(copy(ty)) { return ty; }
@@ -27,7 +27,7 @@ pub fn scalar_result_payload(ty: i64) -> i64 {
 
 // Verification retains its established scalar-Option codes; lowering retains
 // canonical Option descriptors. Both denote the same Result arm identity.
-pub fn checked_result_payload(ty: i64) -> i64 {
+pub fn checked_result_payload(ty: i64) i64 {
     if optional(copy(ty)) {
         let inner = option_payload(copy(ty));
         if inner >= 1 && inner <= 9 { return 910 + inner; }
@@ -36,17 +36,17 @@ pub fn checked_result_payload(ty: i64) -> i64 {
 }
 
 // Payload admissibility follows the fixed data layout through nominal fields.
-pub fn plain_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) -> bool {
+pub fn plain_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) bool {
     data_payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, depth, false)
 }
 
 // Moving a payload may invoke a destructor; unlike replication, it does not
 // require that destruction be trivial.
-pub fn owned_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) -> bool {
+pub fn owned_data_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) bool {
     data_payload_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, depth, true)
 }
 
-fn data_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64, destructors: bool) -> bool {
+fn data_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64, destructors: bool) bool {
     if annotation == 0 || depth >= 128 || source[nodes[annotation].start] == 38 { return false; }
     if verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end) != 0 {
         return graph[annotation].first_child == 0;
@@ -83,7 +83,7 @@ fn data_payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], ann
     true
 }
 
-pub fn payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     if shared_text_annotation(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation)) { return argument_text_type(); }
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     let allocation:[u8;1]=[65];
@@ -130,7 +130,7 @@ pub fn payload_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], anno
     3000000 + signed(nominal)
 }
 
-pub fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let name: [u8; 6] = [82,101,115,117,108,116];
     let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     if !spelling.content_eq(&name[..]) { return 0; }
@@ -143,7 +143,7 @@ pub fn result_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     result_code(left, right)
 }
 
-pub fn result_variant(source: &[u8], nodes: &[AstNode], name: u64) -> i64 {
+pub fn result_variant(source: &[u8], nodes: &[AstNode], name: u64) i64 {
     let ok: [u8; 2] = [79, 107];
     let err: [u8; 3] = [69, 114, 114];
     let spelling = &source[nodes[name].name_start..nodes[name].name_end];
@@ -153,7 +153,7 @@ pub fn result_variant(source: &[u8], nodes: &[AstNode], name: u64) -> i64 {
 }
 
 pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], node: u64, expected: i64, variant: i64) -> i64 {
+    values: &mut [CheckedValue], node: u64, expected: i64, variant: i64) i64 {
     if !result_type(copy(expected)) { return -9; }
     let argument = graph[graph[node].first_child].next_sibling;
     if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(1, nodes[node].start, 437); }
@@ -170,7 +170,7 @@ pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn check_envelope_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], argument: u64, payload: i64) -> i64 {
+    values: &mut [CheckedValue], argument: u64, payload: i64) i64 {
     if payload == argument_list_type() { return -9; }
     if payload>=6000000 && payload<7000000 {
         if nodes[argument].kind!=7{return -9;}

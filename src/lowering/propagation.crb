@@ -22,7 +22,7 @@ fn drop_partial_evaluation(nodes:&[AstNode],graph:&[StaticNode],types:&[i64],nod
 }
 
 // The error arm uses the same visible-binding cleanup and region unwind as an explicit return.
-fn lower_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)->i64 {
+fn lower_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],types:&mut [i64],ctx:&Lowering,node:u64)i64 {
     let child=graph[node].first_child;let outer=(*ctx).result;let emit=(*ctx).emit;
     let inner=expression(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(child),0);
     let result=result_type(copy(inner));let mut conversion:u64=0;

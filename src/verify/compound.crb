@@ -8,7 +8,7 @@ use bootstrap::check_flow::LoopEdge;
 use bootstrap::scalar::{integer_width, is_integer, is_float, folded_integer, float_zero};
 
 fn check_compound(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], values: &mut [CheckedValue], edges: &mut [LoopEdge], statement: u64) -> i64 {
+    tokens: &[Token], values: &mut [CheckedValue], edges: &mut [LoopEdge], statement: u64) i64 {
     let place = graph[statement].first_child;
     let right = graph[place].next_sibling;
     let kind = nodes[place].kind;

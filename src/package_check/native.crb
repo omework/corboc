@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Native executable-location boundary for installed package checking.
 #(if: target.os == "macos" )
-fn executable_path(output: &mut [u8]) -> usize {
+fn executable_path(output: &mut [u8]) usize {
     let capacity = output.len();
     if capacity < 4096 { return 0; }
     let mut length: usize = 0;
@@ -19,7 +19,7 @@ fn executable_path(output: &mut [u8]) -> usize {
 #(endif)
 
 #(if: target.os == "linux" )
-fn executable_path(output: &mut [u8]) -> usize {
+fn executable_path(output: &mut [u8]) usize {
     let capacity = output.len();
     if capacity < 4096 { return 0; }
     let mut length: usize = 0;
@@ -35,7 +35,7 @@ fn executable_path(output: &mut [u8]) -> usize {
 #(endif)
 
 #(if: target.os == "windows" )
-fn executable_path(output: &mut [u8]) -> usize {
+fn executable_path(output: &mut [u8]) usize {
     let capacity = output.len();
     if capacity < 4096 { return 0; }
     let mut length: usize = 0;

@@ -43,13 +43,13 @@ use bootstrap::declarations::{validate_region_capacities, nonzero_integer, known
 use bootstrap::model::{Token, AstNode, StaticNode, CheckedValue, token_at};
 
 pub fn check_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool) -> (i64, i64) {
+    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool) (i64, i64) {
     check_block_with_destination(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[0..values.len()],
         &mut edges[0..edges.len()], block, result, root, 0)
 }
 
-fn unsupported_statement(nodes: &[AstNode], point: u64) -> i64 {
+fn unsupported_statement(nodes: &[AstNode], point: u64) i64 {
     if diagnostic_limitation(&nodes[0..nodes.len()],point,"the checker does not implement this operand or dependency form") {return 9;}
     print(9);
     print(nodes[point].start);
@@ -57,7 +57,7 @@ fn unsupported_statement(nodes: &[AstNode], point: u64) -> i64 {
 }
 
 pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool, destination: u64) -> (i64, i64) {
+    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool, destination: u64) (i64, i64) {
     semantic_enter(&values[0..values.len()],block,0,0);
     let result=check_block_impl(source,nodes,graph,tokens,values,edges,block,result,root,destination);
     semantic_leave();
@@ -65,7 +65,7 @@ pub fn check_block_with_destination(source: &[u8], nodes: &[AstNode], graph: &[S
 }
 
 fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool, destination: u64) -> (i64, i64) {
+    values: &mut [CheckedValue], edges: &mut [LoopEdge], block: u64, result: i64, root: bool, destination: u64) (i64, i64) {
     let mut node = graph[block].first_child;
     let mut final_statement: u64 = 0;
     while node != 0 {

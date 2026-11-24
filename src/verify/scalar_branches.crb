@@ -8,7 +8,7 @@ use bootstrap::calls::bootstrap_callee;
 
 // A scalar used in a larger expression can be read from a conditional
 // without merging binding states if its test and both arms are pure.
-pub fn readonly_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) -> bool {
+pub fn readonly_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64, depth: u64) bool {
     if depth >= 128 || node == 0 { return false; }
     let kind = nodes[node].kind;
     if kind != 2 && kind != 4 && kind != 7 && kind != 9 && kind != 10
@@ -38,7 +38,7 @@ pub fn readonly_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], n
     true
 }
 
-pub fn scalar_arm(nodes: &[AstNode], graph: &[StaticNode], arm: u64) -> u64 {
+pub fn scalar_arm(nodes: &[AstNode], graph: &[StaticNode], arm: u64) u64 {
     if nodes[arm].kind == 26 { return arm; }
     let tail = graph[arm].first_child;
     if nodes[arm].kind != 2 || nodes[tail].kind != 10 || graph[tail].next_sibling != 0 { return 0; }
@@ -46,7 +46,7 @@ pub fn scalar_arm(nodes: &[AstNode], graph: &[StaticNode], arm: u64) -> u64 {
 }
 
 fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], branch: u64, expected: i64, consume: bool) -> i64 {
+    values: &mut [CheckedValue], branch: u64, expected: i64, consume: bool) i64 {
     if !readonly_scalar(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(branch), 0) { return -9; }
     let condition = graph[branch].first_child;
     let yes = graph[condition].next_sibling;
@@ -80,7 +80,7 @@ fn verify_scalar_if(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 // Primitive tails copy. Retain move merging for non-primitive bindings only.
 pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    expression: u64, merge: bool) -> i64 {
+    expression: u64, merge: bool) i64 {
     let mut node = expression;
     while nodes[node].kind == 19 { node = graph[node].first_child; }
     if nodes[node].kind == 26 {
@@ -112,7 +112,7 @@ pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Check
 
 // A scalar call is safe in the read-only expression walk when its arguments
 // cannot move bindings. The caller still verifies the argument expressions.
-pub fn readonly_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) -> bool {
+pub fn readonly_scalar_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) bool {
     let callee = graph[call].first_child;
     let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], call);
     if function == 0 {

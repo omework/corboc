@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Minimal host directory/diagnostic boundaries for package scaffolding.
 #(if: target.os == "macos" && target.arch == "aarch64")
-fn create_directory(path: &[u8]) -> bool {
+fn create_directory(path: &[u8]) bool {
     let mut status: i32 = -1;
     @unchecked {
         let address = addr(&path[0]);
@@ -29,7 +29,7 @@ fn report(bytes: &[u8]) {
 #(endif)
 
 #(if: target.os == "macos" && target.arch == "x86_64")
-fn create_directory(path: &[u8]) -> bool {
+fn create_directory(path: &[u8]) bool {
     let mut status: i32 = -1;
     @unchecked {
         let address = addr(&path[0]);
@@ -57,7 +57,7 @@ fn report(bytes: &[u8]) {
 #(endif)
 
 #(if: target.os == "linux" && target.arch == "x86_64")
-fn create_directory(path: &[u8]) -> bool {
+fn create_directory(path: &[u8]) bool {
     let mut status: i32 = -1;
     @unchecked {
         let address = addr(&path[0]);
@@ -85,7 +85,7 @@ fn report(bytes: &[u8]) {
 #(endif)
 
 #(if: target.os == "windows" && target.arch == "aarch64")
-fn create_directory(path: &[u8]) -> bool {
+fn create_directory(path: &[u8]) bool {
     let mut status: u32 = 0;
     @unchecked {
         let address = addr(&path[0]);
@@ -118,7 +118,7 @@ fn report(bytes: &[u8]) {
 #(endif)
 
 #(if: target.os == "windows" && target.arch == "x86_64")
-fn create_directory(path: &[u8]) -> bool {
+fn create_directory(path: &[u8]) bool {
     let mut status: u32 = 0;
     @unchecked {
         let address = addr(&path[0]);

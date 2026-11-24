@@ -4,13 +4,13 @@ use bootstrap::scalar::{verify_primitive, verify_literal};
 use bootstrap::declarations::nominal_declaration;
 use bootstrap::verify::report_violation;
 
-pub fn constant_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> i64 {
+pub fn constant_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) i64 {
     let annotation = graph[declaration].first_child;
     if graph[annotation].first_child != 0 { return 0; }
     verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end)
 }
 
-pub fn constant_name_reserved(name: &[u8], associated: bool) -> bool {
+pub fn constant_name_reserved(name: &[u8], associated: bool) bool {
     let drop_name: [u8;4] = [100,114,111,112];
     if name.content_eq(&drop_name[..]) { return true; }
     if associated { return false; }
@@ -20,7 +20,7 @@ pub fn constant_name_reserved(name: &[u8], associated: bool) -> bool {
     name.content_eq(&main_name[..]) || name.content_eq(&print_name[..]) || name.content_eq(&copy_name[..])
 }
 
-fn skip_path_trivia(source: &[u8], start: u64, end: u64) -> u64 {
+fn skip_path_trivia(source: &[u8], start: u64, end: u64) u64 {
     let mut cursor = start;
     while cursor < end {
         let byte = source[cursor];
@@ -35,7 +35,7 @@ fn skip_path_trivia(source: &[u8], start: u64, end: u64) -> u64 {
     cursor
 }
 
-pub fn resolve_constant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], use_node: u64) -> u64 {
+pub fn resolve_constant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], use_node: u64) u64 {
     let kind = nodes[use_node].kind;
     if kind == 7 {
         if graph[use_node].binding != 0 { return 0; }
@@ -78,7 +78,7 @@ pub fn resolve_constant(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     0
 }
 
-pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i32 {
+pub fn validate_constants(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) i32 {
     let mut constant: u64 = 1;
     while constant < nodes.len() as u64 {
         if nodes[constant].kind != 76 {

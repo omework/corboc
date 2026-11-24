@@ -1,7 +1,7 @@
 #(if: target.os == "macos" && target.arch == "aarch64")
 use bootstrap::packages::append;
 
-pub fn stdlib_path(output: &mut [u8]) -> usize {
+pub fn stdlib_path(output: &mut [u8]) usize {
     if !executable_path(&mut output[0..output.len()]) { return 0; }
     let mut last: usize = 0;
     let mut index: usize = 0;
@@ -18,7 +18,7 @@ pub fn stdlib_path(output: &mut [u8]) -> usize {
     end
 }
 
-pub fn workspace_path(output_file: &[u8], path: &mut [u8]) -> usize {
+pub fn workspace_path(output_file: &[u8], path: &mut [u8]) usize {
     let mut parent_end: usize = 0;
     let mut index: usize = 0;
     while index < output_file.len() {
@@ -39,7 +39,7 @@ pub fn workspace_path(output_file: &[u8], path: &mut [u8]) -> usize {
     end
 }
 
-pub fn toolchain(input: &[u8], output: &[u8]) -> i32 {
+pub fn toolchain(input: &[u8], output: &[u8]) i32 {
     let command: [u8; 3] = [99, 99, 0]; // cc
     let standard: [u8; 9] = [45, 115, 116, 100, 61, 99, 49, 49, 0]; // -std=c11
     let threads: [u8; 9] = [45, 112, 116, 104, 114, 101, 97, 100, 0]; // -pthread

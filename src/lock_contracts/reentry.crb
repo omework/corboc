@@ -14,7 +14,7 @@ fn mentions_held(
     value: u64,
     held: u64,
     depth: u64
-) -> bool {
+) bool {
     if value == 0 || depth > 64 {
         return false;
     }
@@ -67,7 +67,7 @@ fn may_be_held(
     graph: &[StaticNode],
     actual: u64,
     held: u64
-) -> bool {
+) bool {
     if mentions_held(
         &nodes[0..nodes.len()],
         &graph[0..graph.len()],
@@ -130,7 +130,7 @@ fn carries_reference(
     nodes: &[AstNode],
     graph: &[StaticNode],
     parameter: u64
-) -> bool {
+) bool {
     let annotation = graph[parameter].first_child;
     if annotation == 0 {
         return true;
@@ -155,7 +155,7 @@ fn acquisition_path(
     functions: &mut [u64],
     parameters: &mut [u64],
     depth: u64
-) -> u64 {
+) u64 {
     let mut prior: u64 = 0;
     while prior < depth {
         if functions[prior] == function && parameters[prior] == held {
@@ -277,7 +277,7 @@ fn acquisition_path(
 }
 
 /// Every effective lock contract must avoid reacquiring its held object through checked calls.
-pub fn validate_lock_reentry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+pub fn validate_lock_reentry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) i64 {
     let mut function: u64 = 1;
     while function < nodes.len() as u64 {
         if nodes[function].kind == 1 || nodes[function].kind == 35 {

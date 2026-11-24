@@ -38,24 +38,24 @@ use bootstrap::scalar::primitive_enum;
 use bootstrap::target_c::{byte_text, character};
 
 pub struct Lowering {
-    emit: bool,
-    result: i64,
-    loop_result: i64,
-    loop_slot: u64,
-    function: u64,
-    loop_node: u64,
-    storage: bool,
-    poll_body: u64,
+    emit: bool;
+    result: i64;
+    loop_result: i64;
+    loop_slot: u64;
+    function: u64;
+    loop_node: u64;
+    storage: bool;
+    poll_body: u64;
 }
 
-fn function_result(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn function_result(nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut next = graph[function].first_child;
     while nodes[next].kind == 3 { next = graph[next].next_sibling; }
     if nodes[next].kind == 4 { return next; }
     0
 }
 
-fn guess(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64], node: u64) -> i64 {
+fn guess(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64], node: u64) i64 {
     let child = graph[node].first_child;
     let kind = nodes[node].kind;
     if kind == 9 && (source[nodes[node].start] == 116 || source[nodes[node].start] == 102) { return 3; }
@@ -104,7 +104,7 @@ fn guess(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64], 
     0
 }
 
-fn outcome(ctx: &Lowering, slot: u64, expression: u64, expected: i64, found: i64) -> i64 {
+fn outcome(ctx: &Lowering, slot: u64, expression: u64, expected: i64, found: i64) i64 {
     if found < 0 || (expected != 0 && expected != found) { return -1; }
     if (*ctx).emit && found != 0 {
         if slot == 0 && (*ctx).function == 0 { { let code: [u8;12] = [109,97,105,110,95,115,116,97,116,117,115,61]; byte_text(&code[..]); } }
@@ -118,7 +118,7 @@ fn outcome(ctx: &Lowering, slot: u64, expression: u64, expected: i64, found: i64
 }
 
 fn map_operation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, binding: u64, map: i64) -> i64 {
+    ctx: &Lowering, node: u64, binding: u64, map: i64) i64 {
     let insert_word: [u8;6] = [105,110,115,101,114,116];
     let remove_word: [u8;6] = [114,101,109,111,118,101];
     let get_word: [u8;3] = [103,101,116];
@@ -180,13 +180,13 @@ fn joined_payload(ty: i64, destination: u64, source: u64, awaited: bool) {
 
 // Cache the lowered type of every evaluated value, including unbound temporaries.
 fn expression(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let ty=expression_inner(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut types[0..types.len()],ctx,copy(node),expected);
     if ty>0{types[node]=copy(ty);}ty
 }
 
 fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let kind = nodes[node].kind;
     let child = graph[node].first_child;
     let emit = (*ctx).emit;
@@ -637,7 +637,7 @@ fn expression_inner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
 }
 
 fn dereference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     let child = graph[node].first_child;
     let emit = (*ctx).emit;
     if nodes[child].kind == 14 {
@@ -699,7 +699,7 @@ fn dereference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &m
 }
 
 fn indexed(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     let base = graph[node].first_child;
     let index = graph[base].next_sibling;
     let mut place = copy(base);
@@ -758,7 +758,7 @@ fn indexed(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [
 }
 
 fn array_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let repeated = nodes[node].kind == 45;
     let first = graph[node].first_child;
     let mut count: u64 = 0;
@@ -827,7 +827,7 @@ fn array_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &m
 }
 
 fn prepare_member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> bool {
+    ctx: &Lowering, node: u64) bool {
     let kind = nodes[node].kind;
     if kind == 17 || kind == 19 || kind == 14 {
         return prepare_member_place(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -843,7 +843,7 @@ fn prepare_member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
 }
 
 fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64],
-    node: u64, emit: bool) -> i64 {
+    node: u64, emit: bool) i64 {
     let kind = nodes[node].kind;
     let base = graph[node].first_child;
     if kind == 7 {
@@ -894,7 +894,7 @@ fn member_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 }
 
 fn record_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let record = nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
     if record == 0 || !layout_visible(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(record), copy(node)) { return -1; }
     let ty = 3000000 + signed(copy(record));
@@ -922,7 +922,7 @@ fn record_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
     ty
 }
 
-pub fn record_types(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], record: u64) -> bool {
+pub fn record_types(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], record: u64) bool {
     let tagged = nodes[record].kind == 29;
     let mut group = if tagged { graph[record].first_child } else { record };
     while group != 0 {
@@ -944,9 +944,8 @@ pub fn record_types(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
 }
 
 
-
 fn enum_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, record: u64) -> i64 {
+    ctx: &Lowering, node: u64, record: u64) i64 {
     let variant = nominal_variant(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(record), copy(node));
     if variant == 0 { return -1; }
@@ -975,7 +974,7 @@ fn enum_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
 }
 
 fn option_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, subject: u64, payload: i64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, subject: u64, payload: i64, expected: i64, slot: u64) i64 {
     let some: [u8;4] = [83,111,109,101];
     let none: [u8;4] = [78,111,110,101];
     let mut arm = graph[subject].next_sibling;
@@ -1021,7 +1020,7 @@ fn option_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 }
 
 fn enum_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64, slot: u64) i64 {
     let subject = graph[node].first_child;
     let ty = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut types[0..types.len()], ctx, copy(subject), 0);
@@ -1130,7 +1129,7 @@ fn enum_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
 }
 
 fn vector_operation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, element: i64) -> i64 {
+    ctx: &Lowering, node: u64, element: i64) i64 {
     let receiver = graph[node].first_child;
     let binding = graph[receiver].binding;
     let argument = graph[receiver].next_sibling;
@@ -1189,7 +1188,7 @@ fn vector_operation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
 }
 
 fn vector_index(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, binding: u64, index: u64, element: i64) -> i64 {
+    ctx: &Lowering, node: u64, binding: u64, index: u64, element: i64) i64 {
     let actual = expression(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut types[0..types.len()], ctx, copy(index), 0);
     if actual < 1 || actual > 7 || actual == 3 { return -1; }
@@ -1202,7 +1201,7 @@ fn vector_index(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 }
 
 fn pool_construct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     let spec = graph[node].first_child;
     let member = graph[spec].first_child;
     let count = graph[spec].next_sibling;
@@ -1241,7 +1240,7 @@ fn emit_pool_try_success(node:u64,allocation:u64) {
 }
 
 fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, ty: i64) -> i64 {
+    ctx: &Lowering, node: u64, ty: i64) i64 {
     let receiver = graph[node].first_child;
     let binding = graph[receiver].binding;
     let mut arg = graph[receiver].next_sibling;
@@ -1357,8 +1356,7 @@ fn pool_new(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut 
 }
 
 
-
-pub fn needs_cleanup(ty: i64, storage: bool) -> bool {
+pub fn needs_cleanup(ty: i64, storage: bool) bool {
     handle_type(copy(ty)) || future_type(copy(ty)) || map_type(copy(ty)) || optional(copy(ty)) || array_has_owners(copy(ty)) || tuple_has_owners(copy(ty))
         || (storage && completion(copy(ty)) && result_has_nominal_payload(task_payload(copy(ty))))
         || (storage && (result_has_nominal_payload(copy(ty)) || (ty >= 6000000 && ty < 7000000) || (ty >= 3000000 && ty < 4000000)))
@@ -1398,7 +1396,7 @@ pub fn drop_value(ty: i64, node: u64, binding: bool) {
 }
 
 fn tuple_initializer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let mut member = graph[node].first_child;
     let mut arity: u64 = 0;
     while member != 0 { arity = arity + 1; member = graph[member].next_sibling; }
@@ -1432,7 +1430,7 @@ fn tuple_initializer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], typ
 }
 
 fn tuple_bind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> bool {
+    ctx: &Lowering, node: u64) bool {
     let first = graph[node].first_child;
     let has_type = nodes[first].kind == 4;
     let value = if has_type { graph[first].next_sibling } else { copy(first) };
@@ -1470,7 +1468,7 @@ fn tuple_bind(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
     ordinal == count
 }
 
-fn async_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], name: u64) -> u64 {
+fn async_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], name: u64) u64 {
     if nodes[name].kind != 7 || graph[name].binding != 0 { return 0; }
     let spelling = &source[nodes[name].name_start..nodes[name].name_end];
     let mut function = graph[0].first_child;
@@ -1485,7 +1483,7 @@ fn async_callee(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], name: u6
 // Direct awaits poll their child from the parent task. The resume label
 // follows argument evaluation, which therefore executes once per await.
 fn direct_await(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     // Propagation is transparent to the suspension's enclosing expression.
     let mut boundary = copy(node);
     let mut statement = nodes[boundary].parent;
@@ -1533,7 +1531,7 @@ fn direct_await(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 }
 
 fn async_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, function: u64, first: u64, receiver: u64) -> i64 {
+    ctx: &Lowering, node: u64, function: u64, first: u64, receiver: u64) i64 {
     let mut arg = copy(first);
     let mut param = graph[function].first_child;
     let ty = types[function];
@@ -1573,7 +1571,7 @@ fn async_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
 }
 
 fn completion_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, subject: u64, payload: i64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, node: u64, subject: u64, payload: i64, expected: i64, slot: u64) i64 {
     let mut arm = graph[subject].next_sibling;
     let emit = (*ctx).emit;
     let mut found_ok = false;
@@ -1634,7 +1632,7 @@ fn completion_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], type
 }
 
 pub fn poll_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    function: u64, body: u64, emit: bool, storage: bool) -> bool {
+    function: u64, body: u64, emit: bool, storage: bool) bool {
     let result = types[function];
     if result < 0 { return false; }
     let ctx = Lowering { emit: copy(emit), result: copy(result), function: copy(function),
@@ -1685,9 +1683,8 @@ pub fn poll_function(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], typ
     true
 }
 
-
 fn binary(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let left = graph[node].first_child;
     let right = graph[left].next_sibling;
     let mark = nodes[node].name_start;
@@ -1827,7 +1824,7 @@ fn emit_binary(node: u64, left: u64, right: u64, a: i64, ty: i64,
 }
 
 fn compound_assignment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, statement: u64) -> bool {
+    ctx: &Lowering, statement: u64) bool {
     let place = graph[statement].first_child;
     let right = graph[place].next_sibling;
     let op = source[nodes[statement].name_start];
@@ -1902,7 +1899,7 @@ fn division_overflow(ty: i64, left: u64, right: u64) {
 // A native worker uses the ordinary synchronous block lowering. Its
 // entry bindings are loaded from a frame populated before pthread_create.
 fn native_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, worker: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, worker: u64, expected: i64) i64 {
     if (*ctx).poll_body != 0 { return -1; }
     let mut capture = graph[worker].first_child;
     while nodes[capture].kind == 57 {
@@ -1944,7 +1941,7 @@ fn native_invoke(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: 
 }
 
 pub fn emit_native_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    body: u64, storage: bool) -> bool {
+    body: u64, storage: bool) bool {
     let result = task_payload(types[body]);
     let ctx = Lowering { emit: true, result: copy(result), function: copy(body),
         loop_result: 0, loop_slot: 0, loop_node: 0, storage: copy(storage), poll_body: 0 };
@@ -1993,9 +1990,8 @@ pub fn emit_native_body(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     true
 }
 
-
 fn flow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64, slot: u64) i64 {
     let emit = (*ctx).emit;
     if nodes[node].kind == 39 {
         return enum_match(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -2049,7 +2045,7 @@ fn drop_visible(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], point: u
 }
 
 pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, body: u64, expected: i64, slot: u64) -> i64 {
+    ctx: &Lowering, body: u64, expected: i64, slot: u64) i64 {
     if nodes[body].kind != 2 { return lowering_failure(&nodes[0..nodes.len()],body); }
     let emit = (*ctx).emit;
     let mut statement = graph[body].first_child;
@@ -2282,7 +2278,7 @@ pub fn block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut
     result
 }
 
-pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], function: u64) -> bool {
+pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64], function: u64) bool {
     let result = function_result(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
     let ty = annotation_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], result);
     if ty < 0 || vector_type(copy(ty)) {
@@ -2311,7 +2307,7 @@ pub fn header(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mu
 }
 
 /// Called only when block lowering has failed, never during expression probing.
-fn lowering_failure(nodes:&[AstNode],point:u64)->i64 {
+fn lowering_failure(nodes:&[AstNode],point:u64)i64 {
     drop(diagnostic_limitation(&nodes[0..nodes.len()],point,"C lowering of this statement or its operand form is not implemented"));
     -1
 }

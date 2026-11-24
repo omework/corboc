@@ -5,7 +5,7 @@ use bootstrap::loans::borrow_mutable;
 
 // Only real instance declarations participate. Universal helpers are not methods.
 fn named_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    owner: u64, mode: i64) -> u64 {
+    owner: u64, mode: i64) u64 {
     if owner == 0 { return 0; }
     let shared: [u8; 3] = [114,101,102];
     let mutable: [u8; 7] = [109,117,116,95,114,101,102];
@@ -38,7 +38,7 @@ fn named_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 
 /// Explicit methods take precedence over universal reference shorthand.
 pub fn declared_reference_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], operand: u64, mode: i64) -> u64 {
+    tokens: &[Token], operand: u64, mode: i64) u64 {
     let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));
     let owner = layout(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty.node);
@@ -48,7 +48,7 @@ pub fn declared_reference_method(source: &[u8], nodes: &[AstNode], graph: &[Stat
 /// A<T>'s reference helpers address its payload; explicit &a still addresses a.
 /// This is the allocation primitive, not a special case for a nominal wrapper.
 pub fn allocation_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], operand: u64, depth: u64) -> bool {
+    tokens: &[Token], operand: u64, depth: u64) bool {
     if operand == 0 || depth >= 128 { return false; }
     let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));
@@ -83,7 +83,7 @@ pub fn allocation_reference(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 
 /// True for a mutable place consumer, not merely because its binding is mutable.
 fn mutation_consumer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], node: u64) -> bool {
+    tokens: &[Token], node: u64) bool {
     let mut current = node;
     loop {
         let parent = nodes[current].parent;
@@ -122,7 +122,7 @@ fn mutation_consumer(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 /// Resolve * only for owned nominal operands with explicitly declared methods.
 /// Returns 0 for native references/allocations, -1 for a malformed method pair.
 pub fn dereference_mode(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    tokens: &[Token], node: u64) -> i64 {
+    tokens: &[Token], node: u64) i64 {
     let operand = graph[node].first_child;
     let ty = decoded(type_code(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &tokens[0..tokens.len()], operand, 0));

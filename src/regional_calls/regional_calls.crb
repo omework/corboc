@@ -11,7 +11,7 @@ use bootstrap::loans::{loan_conflict, borrow_mutable};
 use bootstrap::ownership::{check_pool_new, nominal_variant};
 
 pub fn check_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, destination: u64) -> i64 {
+    call: u64, destination: u64) i64 {
     let callee = graph[call].first_child;
     let function = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(call));
     let input = regional_function(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
@@ -82,7 +82,7 @@ pub fn check_region_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     ty
 }
 
-fn enum_result_constructor(nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn enum_result_constructor(nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     let mut item = graph[function].first_child;
     while nodes[item].kind == 3 || nodes[item].kind == 4 { item = graph[item].next_sibling; }
     let mut tail = graph[item].first_child;
@@ -91,7 +91,7 @@ fn enum_result_constructor(nodes: &[AstNode], graph: &[StaticNode], function: u6
     return enum_constructor(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[tail].first_child);
 }
 
-pub fn enum_constructor(nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+pub fn enum_constructor(nodes: &[AstNode], graph: &[StaticNode], expression: u64) u64 {
     let mut allocation = expression;
     if nodes[allocation].kind == 7 { allocation = graph[graph[allocation].binding].initializer; }
     if nodes[allocation].kind != 16 { return 0; }
@@ -101,8 +101,7 @@ pub fn enum_constructor(nodes: &[AstNode], graph: &[StaticNode], expression: u64
     0
 }
 
-
-pub fn region_vector_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn region_vector_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let word: [u8; 6] = [86, 101, 99, 116, 111, 114];
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     let element = graph[annotation].first_child;
@@ -112,14 +111,14 @@ pub fn region_vector_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 // Compatibility codes for the original byte and i64 vector operations.
-pub fn scalar_vector_pool(element: i64) -> i64 {
+pub fn scalar_vector_pool(element: i64) i64 {
     if element == 4 { return 97; }
     if element == 2 { return 98; }
     if element >= 1 && element <= 9 { return 8500 + element; }
     0
 }
 
-pub fn scalar_vector_owner_element(owner: i64) -> i64 {
+pub fn scalar_vector_owner_element(owner: i64) i64 {
     if owner == 298 { return 4; }
     if owner == 299 { return 2; }
     if owner >= 8601 && owner <= 8609 { return owner - 8600; }
@@ -127,7 +126,7 @@ pub fn scalar_vector_owner_element(owner: i64) -> i64 {
 }
 
 pub fn region_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64, parameter: bool) -> i64 {
+    annotation: u64, parameter: bool) i64 {
     let named = if parameter { graph[annotation].first_child } else { copy(annotation) };
     let name = &source[nodes[named].name_start..nodes[named].name_end];
     let pool: [u8; 4] = [80,111,111,108];
@@ -163,8 +162,7 @@ pub fn region_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     pool + (if pool == 97 || pool == 98 { 201 } else { 100 })
 }
 
-
-pub fn conditional_pool_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> i64 {
+pub fn conditional_pool_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) i64 {
     let mut output = graph[function].first_child;
     while nodes[output].kind == 3 { output = graph[output].next_sibling; }
     let result = region_signature(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(output), false);
@@ -212,7 +210,7 @@ pub fn conditional_pool_result(source: &[u8], nodes: &[AstNode], graph: &[Static
 }
 
 fn conditional_pool_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    function: u64, call: u64, destination: u64, ty: i64) -> i64 {
+    function: u64, call: u64, destination: u64, ty: i64) i64 {
     let mut formal = graph[function].first_child;
     let mut argument = graph[graph[call].first_child].next_sibling;
     let mut first: u64 = 0;
@@ -257,7 +255,7 @@ fn conditional_pool_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn pooled_reference_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], function: u64, call: u64, destination: u64, input: u64) -> i64 {
+    values: &mut [CheckedValue], function: u64, call: u64, destination: u64, input: u64) i64 {
     let parameter = graph[function].first_child;
     let formal = graph[parameter].next_sibling;
     let output = graph[formal].next_sibling;
@@ -314,7 +312,7 @@ fn pooled_reference_constructor(source: &[u8], nodes: &[AstNode], graph: &[Stati
     301
 }
 
-pub fn nominal_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn nominal_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     if nodes[function].kind != 1 { return 0; }
     let parameter = graph[function].first_child;
     let output = graph[parameter].next_sibling;
@@ -333,7 +331,7 @@ pub fn nominal_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[Stati
 }
 
 pub fn apply_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    call: u64, destination: u64, nominal: u64) -> i64 {
+    call: u64, destination: u64, nominal: u64) i64 {
     let input = graph[graph[call].first_child].next_sibling;
     let mut value = copy(input);
     if nodes[input].kind == 2 {
@@ -361,7 +359,7 @@ pub fn apply_allocation_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticN
 // Instantiate a single ownership edge from an argument inside a nominal
 // constructor. Store the actual edge on the caller's value, not on the callee.
 fn pooled_owned_constructor(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], function: u64, call: u64, destination: u64, parameter: u64) -> i64 {
+    values: &mut [CheckedValue], function: u64, call: u64, destination: u64, parameter: u64) i64 {
     let formal = graph[parameter].next_sibling;
     let output = graph[formal].next_sibling;
     let body = graph[output].next_sibling;

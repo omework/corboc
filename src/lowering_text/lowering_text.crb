@@ -6,7 +6,7 @@ fn byte(value: u64, emit: bool) {
     if emit { number(value); character(44); }
 }
 
-fn utf8(scalar: u64, emit: bool) -> u64 {
+fn utf8(scalar: u64, emit: bool) u64 {
     if scalar < 128 { byte(scalar, emit); return 1; }
     if scalar < 2048 {
         byte(192 + scalar / 64, copy(emit)); byte(128 + scalar % 64, emit); return 2;
@@ -19,12 +19,12 @@ fn utf8(scalar: u64, emit: bool) -> u64 {
     byte(128 + scalar / 64 % 64, copy(emit)); byte(128 + scalar % 64, emit); 4
 }
 
-fn unit(source: &[u8], start: u64) -> u64 {
+fn unit(source: &[u8], start: u64) u64 {
     (hex_digit(source[start]) as u64) * 4096 + (hex_digit(source[start+1]) as u64) * 256
         + (hex_digit(source[start+2]) as u64) * 16 + (hex_digit(source[start+3]) as u64)
 }
 
-pub fn string_bytes(source: &[u8], start: u64, stop: u64, emit: bool) -> i64 {
+pub fn string_bytes(source: &[u8], start: u64, stop: u64, emit: bool) i64 {
     if stop < start + 2 || source[start] != 34 || source[stop-1] != 34 { return -1; }
     let mut cursor = start + 1;
     let mut length: u64 = 0;

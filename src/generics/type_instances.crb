@@ -6,7 +6,7 @@ use bootstrap::declarations::verification_field;
 use bootstrap::calls::bootstrap_callee;
 
 fn intern_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64,args:&[ConcreteType],
-    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64])->u64 {
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64])u64 {
     let mut index:u64=0;
     while index<count[0] {
         let mut same=instances[copy(index)].template==template && instances[copy(index)].count==args.len() as u64;
@@ -28,7 +28,7 @@ fn intern_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64,ar
 
 // An environment is a concrete instance id plus one; zero denotes ordinary source.
 fn resolved_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],ty:&ConcreteType,environment:u64,
-    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)->u64 {
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)u64 {
     if (*ty).node==0 || depth>=128{return 0;}
     if (*ty).instance!=0{return packed(ty);}
     if environment!=0 {
@@ -60,7 +60,7 @@ fn resolved_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],ty:&ConcreteT
 }
 
 fn unify_instance(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64,pattern:u64,actual:&ConcreteType,
-    types:&mut [ConcreteType],instances:&[Instance],stored:&[ConcreteType],depth:u64)->bool {
+    types:&mut [ConcreteType],instances:&[Instance],stored:&[ConcreteType],depth:u64)bool {
     if depth>=128{return false;}
     if (*actual).instance==0{return unify(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(template),copy(pattern),actual,&mut types[0..types.len()],copy(depth));}
     let expected=concrete(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(pattern));
@@ -82,10 +82,9 @@ fn unify_instance(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],template:u64
     argument==0 && i==instances[copy(index)].count
 }
 
-
 // Concrete fields do not infer template parameters; their types are checked by
 // the ordinary verifier after specialization, including computed initializers.
-fn parameter_pattern(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, pattern: u64, depth: u64) -> bool {
+fn parameter_pattern(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], template: u64, pattern: u64, depth: u64) bool {
     if pattern == 0 || depth >= 128 { return false; }
     let mut index: u64 = 0;
     while index < 32 {
@@ -103,7 +102,7 @@ fn parameter_pattern(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tem
 }
 
 // Locate the concrete variant layout without interpreting any payload value.
-fn variant_layout(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],template:u64,expression:u64)->u64 {
+fn variant_layout(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],template:u64,expression:u64)u64 {
     if nodes[template].kind!=29{return template;}
     let first=token_at(&tokens[0..tokens.len()],nodes[expression].start);
     let mut variant=graph[template].first_child;
@@ -113,7 +112,7 @@ fn variant_layout(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Tok
     }0
 }
 
-fn contextual_nominal(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64,template:u64,depth:u64)->u64 {
+fn contextual_nominal(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotation:u64,template:u64,depth:u64)u64 {
     if annotation==0 || depth>=128{return 0;}
     if nodes[annotation].kind==4 && text_equal(&source[0..source.len()],&nodes[annotation],&nodes[template]){return annotation;}
     let mut child=graph[annotation].first_child;let mut found:u64=0;
@@ -126,7 +125,7 @@ fn contextual_nominal(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotati
 // Infer values before rewriting, so a constructor's concrete identity survives
 // through bindings, nested constructors and projected fields.
 fn resolved_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&[Token],expression:u64,environment:u64,
-    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)->u64 {
+    instances:&mut [Instance],stored:&mut [ConcreteType],count:&mut [u64],depth:u64)u64 {
     if expression==0 || depth>=128{return 0;}
     let kind=nodes[copy(expression)].kind;let child=graph[copy(expression)].first_child;
     if kind==7 {

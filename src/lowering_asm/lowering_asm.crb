@@ -3,32 +3,32 @@ use bootstrap::target_c::{byte_text, character};
 use bootstrap::lowering_types::{number, local};
 
 #(if: target.arch == "aarch64")
-    fn arm_target() -> bool { true }
+    fn arm_target() bool { true }
 #(endif)
 #(if: target.arch == "x86_64")
-    fn arm_target() -> bool { false }
+    fn arm_target() bool { false }
 #(endif)
 #(if: target.os == "macos")
-    fn darwin_target() -> bool { true }
+    fn darwin_target() bool { true }
 #(endif)
 #(if: target.os == "linux" || target.os == "windows")
-    fn darwin_target() -> bool { false }
+    fn darwin_target() bool { false }
 #(endif)
 #(if: target.os == "windows")
-    fn windows_target() -> bool { true }
+    fn windows_target() bool { true }
 #(endif)
 #(if: target.os == "macos" || target.os == "linux")
-    fn windows_target() -> bool { false }
+    fn windows_target() bool { false }
 #(endif)
 
-fn whitespace(value: u8) -> bool { value == 32 || value == 9 || value == 13 }
-fn skip_space(source: &[u8], first: u64, end: u64) -> u64 {
+fn whitespace(value: u8) bool { value == 32 || value == 9 || value == 13 }
+fn skip_space(source: &[u8], first: u64, end: u64) u64 {
     let mut at = first;
     while at < end && whitespace(source[at]) { at = at + 1; }
     at
 }
 
-fn width(ty: i64) -> u64 {
+fn width(ty: i64) u64 {
     if ty == 4 { return 1; }
     if ty == 5 { return 2; }
     if ty == 1 || ty == 6 { return 4; }
@@ -61,7 +61,7 @@ fn end_line() {
 
 // A single slot per binding preserves a write followed by a read inside
 // the same assembly block. The C caller only writes back modified slots.
-fn slot(bindings: &[u64], binding: u64, used: u64) -> u64 {
+fn slot(bindings: &[u64], binding: u64, used: u64) u64 {
     let mut index: u64 = 0;
     while index < used && bindings[index] != binding { index = index + 1; }
     index
@@ -69,7 +69,7 @@ fn slot(bindings: &[u64], binding: u64, used: u64) -> u64 {
 
 // modes: validate, emit the call, emit the target ABI routine.
 pub fn lower_asm(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    types: &[i64], node: u64, mode: i64) -> bool {
+    types: &[i64], node: u64, mode: i64) bool {
     let mut bindings: [u64; 128] = [0; 128];
     let mut written: [bool; 128] = [false; 128];
     let mut count: u64 = 0;

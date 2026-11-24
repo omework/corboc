@@ -7,8 +7,8 @@ use bootstrap::tasks::copy_task_summary;
 use bootstrap::value_dependencies::{owned_fields_survive, reduce_loan_aliases};
 
 fn verify_expression_block(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) -> i64 {
-    let mut tokens=[Token{kind:0,start:0,end:0,nominal:false,annotation:0};524292];
+    values: &mut [CheckedValue], node: u64, expected: i64, mode: i64) i64 {
+    let mut tokens=[Token{kind:0,start:0,end:0,nominal:false,annotation:0};1572867];
     let (error,count)=scan_tokens(&source[0..source.len()],&mut tokens[..],2);
     if error!=0{return 0-(error as i64);}
     let mut edges=[LoopEdge{breaks:0,continues:0};1];

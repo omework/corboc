@@ -10,24 +10,24 @@ use bootstrap::ownership::check_pool_new;
 use bootstrap::loan_contracts::loan_callee;
 use bootstrap::verify::{violation, verify_expr};
 
-pub fn dependent_map(ty: i64) -> bool {
+pub fn dependent_map(ty: i64) bool {
     ty >= 1000 && ty < 1300
 }
 
-pub fn dependent_option(ty: i64) -> bool {
+pub fn dependent_option(ty: i64) bool {
     ty >= 1300 && ty < 1600
 }
 
-pub fn entry_reference(ty: i64) -> bool {
+pub fn entry_reference(ty: i64) bool {
     ty >= 1600 && ty < 1900
 }
 
-pub fn map_item_code(ty: i64) -> i64 {
+pub fn map_item_code(ty: i64) i64 {
     return (ty / 100) % 10;
 }
 
 pub fn dependent_map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    item: u64, key_type: i64) -> i64 {
+    item: u64, key_type: i64) i64 {
     let inner = graph[item].first_child;
     if inner == 0 || graph[inner].first_child != 0 || graph[inner].next_sibling != 0 { return -9; }
     let element = verify_primitive(&source[0..source.len()], nodes[inner].name_start, nodes[inner].name_end);
@@ -41,7 +41,7 @@ pub fn dependent_map_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
     return 1200 + key_type * 10 + element;
 }
 
-fn constant_key(nodes: &[AstNode], graph: &[StaticNode], key: u64, inserts: bool) -> u64 {
+fn constant_key(nodes: &[AstNode], graph: &[StaticNode], key: u64, inserts: bool) u64 {
     let mut expression = key;
     if !inserts { expression = graph[expression].first_child; }
     if nodes[expression].kind == 7 {
@@ -54,7 +54,7 @@ fn constant_key(nodes: &[AstNode], graph: &[StaticNode], key: u64, inserts: bool
 
 pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     values: &mut [CheckedValue], call: u64, destination: u64, binding: u64,
-    inserts: bool, removes: bool, shared: bool) -> i64 {
+    inserts: bool, removes: bool, shared: bool) i64 {
     let receiver = graph[call].first_child;
     let key = graph[receiver].next_sibling;
     let mode = map_item_code(values[binding].ty);
@@ -141,7 +141,7 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     return result;
 }
 
-pub fn entry_targets(values: &[CheckedValue], map: u64, target: u64) -> bool {
+pub fn entry_targets(values: &[CheckedValue], map: u64, target: u64) bool {
     let mut entry = values[map].origin_call;
     while entry != 0 {
         if values[entry].state == 1 {
@@ -178,7 +178,7 @@ pub fn bind_entry_option(values: &mut [CheckedValue], option: u64, binder: u64) 
 // A mutation of the referent preserves the dependency. Replacing the
 // descriptor itself needs a path-sensitive update of the map entry.
 pub fn check_entry_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, place: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, place: u64) i64 {
     let operand = graph[place].first_child;
     if nodes[operand].kind != 14 { return 0; }
     let name = graph[operand].first_child;
@@ -206,7 +206,7 @@ pub fn check_entry_write(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn reborrow_entry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, expression: u64, annotation: u64) i64 {
     let outer = graph[expression].first_child;
     let inner = graph[outer].first_child;
     let name = graph[inner].first_child;
@@ -239,7 +239,7 @@ pub fn reborrow_entry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 // Rebinding a stored descriptor checks the target scope. A direct update
 // of a known entry retains the previous root at the control-flow join.
 pub fn validate_entry_replacement(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], place: u64, rhs: u64) -> i64 {
+    values: &mut [CheckedValue], place: u64, rhs: u64) i64 {
     let name = graph[place].first_child;
     if nodes[name].kind != 7 { return 0; }
     let binder = graph[name].binding;
@@ -270,7 +270,7 @@ pub fn validate_entry_replacement(source: &[u8], nodes: &[AstNode], graph: &[Sta
 }
 
 fn apply_entry_update(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    binder: u64, root: u64, operation: u64, statement: u64) -> i64 {
+    binder: u64, root: u64, operation: u64, statement: u64) i64 {
     let valid = entry_update_context(&nodes[0..nodes.len()], &graph[0..graph.len()],
         &values[0..values.len()], copy(binder), copy(root), copy(operation), copy(statement));
     if valid < 0 { return valid; }
@@ -286,7 +286,7 @@ fn apply_entry_update(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Che
 // Effects can be applied only once the selected arm is proven to belong to
 // an existing entry of this map. The incoming referent must survive the map.
 pub fn entry_update_context(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    binder: u64, root: u64, operation: u64, statement: u64) -> i64 {
+    binder: u64, root: u64, operation: u64, statement: u64) i64 {
     let map = values[binder].loan_parent;
     if !scope_contains(&graph[0..graph.len()], graph[root].scope, graph[map].scope) {
         return 0 - violation_site(4, nodes[operation].start, 210);
@@ -300,7 +300,7 @@ pub fn entry_update_context(nodes: &[AstNode], graph: &[StaticNode], values: &[C
     return 1;
 }
 
-pub fn entry_payload_has_root(values: &[CheckedValue], binder: u64, root: u64) -> bool {
+pub fn entry_payload_has_root(values: &[CheckedValue], binder: u64, root: u64) bool {
     let mut payload = values[values[binder].origin_call].target;
     while payload != 0 {
         if values[payload].target == root { return true; }
@@ -330,11 +330,10 @@ pub fn update_entry(values: &mut [CheckedValue], binder: u64, root: u64, operati
         loan_parent: map, origin_call: storage, writable: true, projection: 0, }; record_checked(&values[0..values.len()],binder);
 }
 
-
 // A single descriptor assignment establishes a caller-visible entry effect.
 // Its formal roots are substituted when the arguments have been checked.
 pub fn direct_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
-    function: u64, argument: u64) -> i64 {
+    function: u64, argument: u64) i64 {
     let scalar = entry_effect_scalar(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(function), 64);
     if scalar == 0 { return 0; }
@@ -370,7 +369,7 @@ pub fn direct_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         &mut values[0..values.len()], binder, root, incoming, point);
 }
 
-pub fn entry_effect_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64, fuel: u64) -> i64 {
+pub fn entry_effect_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64, fuel: u64) i64 {
     if fuel == 0 { return 0; }
     let target_param = graph[function].first_child;
     let source_param = graph[target_param].next_sibling;
@@ -423,11 +422,10 @@ pub fn entry_effect_scalar(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     return contract % 10;
 }
 
-
 // Resolve the base of a recursive effect only when the recursive path
 // forwards the same loans and decreases a positive counter.
 fn recursive_entry_base(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64, statement: u64, target: u64, incoming: u64, count: u64) -> u64 {
+    function: u64, statement: u64, target: u64, incoming: u64, count: u64) u64 {
     let annotation = graph[count].first_child;
     if graph[annotation].first_child != 0 || verify_primitive(&source[0..source.len()],
         nodes[annotation].name_start, nodes[annotation].name_end) != 2 { return 0; }
@@ -473,9 +471,8 @@ fn recursive_entry_base(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     base
 }
 
-
 pub fn entry_counter_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64, argument: u64) -> bool {
+    function: u64, argument: u64) bool {
     let first = graph[function].first_child;
     let second = graph[first].next_sibling;
     let third = graph[second].next_sibling;

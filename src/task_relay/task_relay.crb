@@ -13,7 +13,7 @@ use bootstrap::places::literal_length;
 
 // A relay has one distinguished incoming value. Its other arguments may
 // change, but they cannot copy, drop, or substitute that value.
-pub fn envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     if nodes[function].kind != 1 { return 0; }
     let parameter = graph[function].first_child;
     if nodes[parameter].kind != 3 { return 0; }
@@ -92,12 +92,12 @@ pub fn envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
     return 0;
 }
 
-fn zero(source: &[u8], nodes: &[AstNode], node: u64) -> bool {
+fn zero(source: &[u8], nodes: &[AstNode], node: u64) bool {
     nodes[node].kind == 9 && nodes[node].end - nodes[node].start == 1 && source[nodes[node].start] == 48
 }
 
 pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, nominal: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, nominal: u64) i64 {
     let first = graph[graph[call].first_child].next_sibling;
     let second = graph[first].next_sibling;
     if first == 0 || second == 0 || graph[second].next_sibling != 0 {
@@ -145,7 +145,7 @@ pub fn apply_envelope_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 
 // Recognize a synchronous consumer that either waits in its only variant
 // or recurses with the unchanged envelope and a decreasing counter.
-pub fn envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     if nodes[function].kind != 1 && nodes[function].kind != 35 { return 0; }
     let asynchronous = nodes[function].kind == 35;
     let parameter = graph[function].first_child;
@@ -244,7 +244,7 @@ pub fn envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fun
 }
 
 pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, nominal: u64, asynchronous: bool) -> i64 {
+    values: &mut [CheckedValue], call: u64, nominal: u64, asynchronous: bool) i64 {
     let callee = graph[call].first_child;
     let first = graph[callee].next_sibling;
     let counter = graph[first].next_sibling;
@@ -276,7 +276,7 @@ pub fn capture_envelope_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 
 // In the empty variant the incoming operation has completed. In the
 // populated variant its ownership and completion effect move to the field.
-pub fn conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+pub fn conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     if nodes[function].kind != 1 { return 0; }
     let handle = graph[function].first_child;
     let counter = graph[handle].next_sibling;
@@ -364,13 +364,13 @@ pub fn conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     waiting
 }
 
-fn one_byte_operator(source: &[u8], nodes: &[AstNode], node: u64, operator: u8) -> bool {
+fn one_byte_operator(source: &[u8], nodes: &[AstNode], node: u64, operator: u8) bool {
     nodes[node].kind == 11 && nodes[node].name_end - nodes[node].name_start == 1
         && source[nodes[node].name_start] == operator
 }
 
 pub fn apply_conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, function: u64, constructor: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, function: u64, constructor: u64) i64 {
     let first = graph[graph[call].first_child].next_sibling;
     let second = graph[first].next_sibling;
     let third = graph[second].next_sibling;
@@ -394,7 +394,7 @@ pub fn apply_conditional_wait(source: &[u8], nodes: &[AstNode], graph: &[StaticN
 // A relay preserves the caller's concrete payload and capture records.
 // Validate its declared payload before transferring either record.
 pub fn nominal_handle_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    annotation: u64, asynchronous: bool) -> u64 {
+    annotation: u64, asynchronous: bool) u64 {
     let inner = graph[annotation].first_child;
     if inner == 0 || graph[inner].next_sibling != 0 || graph[inner].first_child != 0 { return 0; }
     let mut end = nodes[inner].start;
@@ -414,7 +414,7 @@ pub fn nominal_handle_payload(source: &[u8], nodes: &[AstNode], graph: &[StaticN
 }
 
 pub fn nominal_handle_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64) -> (u64, bool) {
+    function: u64) (u64, bool) {
     if nodes[function].kind != 1 { return (0, false); }
     let parameter = graph[function].first_child;
     let output = graph[parameter].next_sibling;
@@ -448,7 +448,7 @@ pub fn nominal_handle_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
 }
 
 pub fn nominal_relay_declaration(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    item: u64) -> bool {
+    item: u64) bool {
     let (ty, waits) = nominal_handle_relay(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], item);
     drop(waits);
@@ -456,7 +456,7 @@ pub fn nominal_relay_declaration(source: &[u8], nodes: &[AstNode], graph: &[Stat
 }
 
 pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, nominal: u64, waits: bool, mode: i64) -> i64 {
+    values: &mut [CheckedValue], call: u64, nominal: u64, waits: bool, mode: i64) i64 {
     let argument = graph[graph[call].first_child].next_sibling;
     if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 619); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -487,7 +487,7 @@ pub fn apply_nominal_relay(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 // A direct async consumer extracts a shared scalar field after awaiting
 // and returns a scalar on either Result arm.
 pub fn awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    function: u64) -> (u64, i64) {
+    function: u64) (u64, i64) {
     if nodes[function].kind != 35 { return (0, 0); }
     let parameter = graph[function].first_child;
     let output = graph[parameter].next_sibling;
@@ -550,7 +550,7 @@ pub fn awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
 }
 
 pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, nominal: u64, scalar: i64) -> i64 {
+    values: &mut [CheckedValue], call: u64, nominal: u64, scalar: i64) i64 {
     let argument = graph[graph[call].first_child].next_sibling;
     if argument == 0 || graph[argument].next_sibling != 0 { return 0 - violation_site(8, nodes[call].start, 622); }
     let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
@@ -569,7 +569,7 @@ pub fn capture_awaited_projection(source: &[u8], nodes: &[AstNode], graph: &[Sta
     ty
 }
 
-fn handle_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> (i64, u64) {
+fn handle_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) (i64, u64) {
     if annotation == 0 || source[nodes[annotation].start] != 91 { return (0, 0); }
     let element = graph[annotation].first_child;
     let bound = graph[element].next_sibling;
@@ -580,7 +580,7 @@ fn handle_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotati
     (kind, length)
 }
 
-fn relay_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, nominal: u64) -> bool {
+fn relay_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, nominal: u64) bool {
     if nodes[nominal].kind == 29 {
         return graph[annotation].first_child == 0 && nominal_declaration(&source[0..source.len()],
             &nodes[0..nodes.len()], &graph[0..graph.len()], annotation) == nominal;

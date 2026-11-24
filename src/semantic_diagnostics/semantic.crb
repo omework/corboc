@@ -5,7 +5,7 @@ use bootstrap::model::{AstNode,StaticNode,CheckedValue};
 /// Native formatting/history boundary. Views are read-only and are retained only
 /// while check_tree's wrapper owns their storage; nested frames restore views.
 fn control(op:i64,source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],
-    a:u64,b:i64,c:i64,out:&mut [u8],related:&mut [u64])->usize {
+    a:u64,b:i64,c:i64,out:&mut [u8],related:&mut [u64])usize {
     let mut written:usize=0;
     @unchecked { @c(includes={"stdint.h","stdio.h","string.h","stddef.h"}) {
 typedef struct {int64_t kind;uint64_t parent,start,end,name_start,name_end;bool public;} SDNode;
@@ -1063,7 +1063,9 @@ static const char *const reasons[]={
 "expression block result does not match the expected type",
 "expression block result retains a reference or resource that does not survive the block",
     "slice argument requires an explicit shared borrow",
-    "slice argument requires an explicit mutable borrow"
+    "slice argument requires an explicit mutable borrow",
+    "method is unavailable for this specialization: its typed receiver requires different type arguments",
+    "typed receiver must name the enclosing struct or enum"
 };
 // END FAILURE SITES
 if(op==0){
@@ -1368,7 +1370,7 @@ if(op==0){
     written
 }
 
-fn empty(op:i64,a:u64,b:i64,c:i64)->usize {
+fn empty(op:i64,a:u64,b:i64,c:i64)usize {
     let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];
     let values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,};1];let mut output:[u8;0]=[];let mut related:[u64;0]=[];
     control(op,&bytes[..],&nodes[0..0],&graph[0..0],&values[0..0],a,b,c,&mut output[..],&mut related[..])
@@ -1399,7 +1401,7 @@ pub fn transition(values:&[CheckedValue],id:u64,state:i64,target:u64){
     drop(control(5,&bytes[..],&nodes[0..0],&graph[0..0],values,id,state,if target!=0 {1}else{0},&mut output[..],&mut related[..]));
 }
 /// Format one failure and bounded related locations into caller-owned buffers.
-pub fn describe(offset:u64,rule:i64,out:&mut [u8],related:&mut [u64])->usize {
+pub fn describe(offset:u64,rule:i64,out:&mut [u8],related:&mut [u64])usize {
     let bytes:[u8;0]=[];let nodes:[AstNode;1]=[AstNode {kind:0,parent:0,start:0,end:0,name_start:0,name_end:0,public:false};1];let graph:[StaticNode;1]=[StaticNode {first_child:0,next_sibling:0,scope:0,scope_parent:0,scope_entry:false,declaration:false,mutable:false,type_node:0,initializer:0,fact:0,visible:0,binding:0,destination:0,field_name:0,private_start:0,private_end:0,private_origin:0,access_mode:0,protection:0};1];let values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,};1];
     control(9,&bytes[..],&nodes[0..0],&graph[0..0],&values[0..0],offset,rule,0,out,related)
 }

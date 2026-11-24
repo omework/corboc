@@ -1,0 +1,40 @@
+{
+  "cases": [
+    {
+      "case": "inline_methods",
+      "status": "passed",
+      "output": "22\ntrue\ntrue\nfalse\n14\n22\n"
+    },
+    {
+      "case": "constrained_receivers",
+      "status": "passed",
+      "output": "42\n21\ntrue\n6\n"
+    },
+    {
+      "case": "unavailable_specialization",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/unavailable_specialization.crb:17:59: error[N1]: rule violation: method is unavailable for this specialization: its typed receiver requires different type arguments 'value'\n    17 | fn main() { let value = Container::new(true); print(value.doubled()); }\n       |                                                           ^~~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/unavailable_specialization.crb:17:17: note: value declared here (generated-source anchor)\n    17 | fn main() { let value = Container::new(true); print(value.doubled()); }\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "shared_receiver_mutation",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/shared_receiver_mutation.crb:1:51: error[N5]: rule violation: cannot mutate through a shared reference 'self'\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                                   ^~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/shared_receiver_mutation.crb:1:35: note: borrow created here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/shared_receiver_mutation.crb:1:35: note: borrowed target declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/shared_receiver_mutation.crb:1:35: note: value declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn bad(self: &Point) { self.value = 2; } } fn main() { let p = Point { value: 1 }; p.bad(); }\n       |                                   ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "wrong_receiver_owner",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/wrong_receiver_owner.crb:1:70: error[N1]: rule violation: typed receiver must name the enclosing struct or enum\n     1 | struct Other { value: i64; } struct Point { value: i64; fn bad(self: &Other) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.bad()); }\n       |                                                                      ^~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "consumed_receiver",
+      "status": "rejected",
+      "exit": 8,
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/consumed_receiver.crb:1:137: error[N6]: rule violation: use of a value after its ownership was moved 'p'\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                                                                         ^\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/consumed_receiver.crb:1:118: note: ownership moved here (generated-source anchor)\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                                                      ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-definition-methods-uqnwgmgb/consumed_receiver.crb:1:88: note: value declared here (generated-source anchor)\n     1 | struct Point { value: i64; fn finish(self: Point) i64 { self.value } } fn main() { let p = Point { value: 1 }; print(p.finish()); print(p.value); }\n       |                                                                                        ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "platform": "macOS ARM64",
+  "sanitizer": "UBSan"
+}

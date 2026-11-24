@@ -1,3 +1,10 @@
+## Definition-local method syntax
+
+The current cycle covers inline method ownership, arrow-free result syntax and
+concrete receiver selection. Existing move/borrow rules remain authoritative.
+See [the cycle report](DEFINITION_METHODS_CYCLE.md) for executed observations and
+bootstrap details. The frozen Rust frontend is not migrated.
+
 ## Tuple projections and for patterns
 
 - [x] Distinguish tuple indices from leading-dot floats and accept numeric field suffixes.

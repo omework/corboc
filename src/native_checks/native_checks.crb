@@ -10,7 +10,7 @@ use bootstrap::declarations::{nominal_declaration, verification_field};
 use bootstrap::model::{AstNode, StaticNode, CheckedValue};
 
 // addr is an unqualified primitive call with a single argument.
-pub fn address_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) -> u64 {
+pub fn address_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64) u64 {
     let callee = graph[expression].first_child;
     if nodes[expression].kind != 15 || nodes[callee].kind != 7 || graph[callee].binding != 0 { return 0; }
     let word: [u8; 4] = [97,100,100,114];
@@ -22,7 +22,7 @@ pub fn address_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
 
 // Keep the backing place available until each assembly input is read.
 pub fn bind_asm_address(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], statement: u64, initializer: u64, annotation: u64) -> i64 {
+    values: &mut [CheckedValue], statement: u64, initializer: u64, annotation: u64) i64 {
     let argument = address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(initializer));
     if argument == 0 || bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -81,7 +81,7 @@ pub fn bind_asm_address(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 // The static tree identifies operand bindings but leaves instructions opaque.
-pub fn unsupported_register_class(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) -> bool {
+pub fn unsupported_register_class(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
     let mut operand = graph[node].first_child;
     while operand != 0 {
         let mut start = nodes[operand].start - 2;
@@ -109,7 +109,7 @@ pub fn unsupported_register_class(source: &[u8], nodes: &[AstNode], graph: &[Sta
 }
 
 pub fn check_asm(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], node: u64) -> i64 {
+    values: &[CheckedValue], node: u64) i64 {
     let start = nodes[node].start;
     let mut operand = graph[node].first_child;
     while operand != 0 {
@@ -156,7 +156,7 @@ pub fn check_asm(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 #(if: target.arch == "aarch64")
-fn register_prefix(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> u8 {
+fn register_prefix(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) u8 {
     let mut at = if input { before } else { after };
     let limit = if input { operand_start } else { end };
     if !input {
@@ -171,27 +171,27 @@ fn register_prefix(source: &[u8], before: u64, operand_start: u64, after: u64, e
     prefix
 }
 
-fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) -> bool {
+fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) bool {
     let prefix = register_prefix(&source[0..source.len()], before, operand_start, after, end, input);
     prefix == (if ty == 2 || ty == 7 { 120 } else { 119 })
 }
 
-fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> bool {
+fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) bool {
     let prefix = register_prefix(&source[0..source.len()], before, operand_start, after, end, input);
     prefix == 119 || prefix == 120
 }
 #(endif)
 #(if: target.arch == "x86_64" || target.arch == "x86" || target.arch == "arm" || target.arch == "riscv64")
-fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) -> bool {
+fn valid_register(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, ty: i64, input: bool) bool {
     true
 }
 
-fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) -> bool {
+fn has_register_class(source: &[u8], before: u64, operand_start: u64, after: u64, end: u64, input: bool) bool {
     true
 }
 #(endif)
 
-fn address_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64, depth: u64) -> u64 {
+fn address_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expression: u64, depth: u64) u64 {
     if depth >= 64 || expression == 0 { return 0; }
     let argument = address_argument(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(expression));
@@ -228,7 +228,7 @@ fn address_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], expressi
 }
 
 pub fn tracked_address_conflict(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    call: u64, root: u64) -> bool {
+    call: u64, root: u64) bool {
     if root == 0 || nodes[nodes[call].parent].kind != 8 { return false; }
     let statement = nodes[call].parent;
     let mut binding = graph[call].visible;
@@ -256,7 +256,7 @@ pub fn tracked_address_conflict(source: &[u8], nodes: &[AstNode], graph: &[Stati
 }
 
 pub fn destructor_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], expression: u64) -> u64 {
+    values: &[CheckedValue], expression: u64) u64 {
     let child = graph[expression].first_child;
     if nodes[expression].kind == 19 {
         return destructor_projection(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -284,7 +284,7 @@ pub fn destructor_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 
 // Stop at a callable boundary. A closure declared lexically inside unchecked
 // cannot execute an address operation on behalf of that block after it exits.
-pub fn unchecked_ancestor(nodes: &[AstNode], expression: u64) -> u64 {
+pub fn unchecked_ancestor(nodes: &[AstNode], expression: u64) u64 {
     let mut node = nodes[expression].parent;
     while node != 0 {
         let kind = nodes[node].kind;
@@ -295,7 +295,7 @@ pub fn unchecked_ancestor(nodes: &[AstNode], expression: u64) -> u64 {
     0
 }
 
-fn in_address_block(nodes: &[AstNode], expression: u64, boundary: u64) -> bool {
+fn in_address_block(nodes: &[AstNode], expression: u64, boundary: u64) bool {
     let mut node = nodes[expression].parent;
     while node != 0 {
         if node == boundary { return true; }
@@ -307,7 +307,7 @@ fn in_address_block(nodes: &[AstNode], expression: u64, boundary: u64) -> bool {
 }
 
 fn mark_raw_binding(nodes: &[AstNode], graph: &[StaticNode], marks: &mut [u64],
-    binding: u64, boundary: u64, origin: u64) -> bool {
+    binding: u64, boundary: u64, origin: u64) bool {
     if binding == 0 || !in_address_block(&nodes[0..nodes.len()], copy(binding), copy(boundary)) { return false; }
     // A binding is marked too, so subsequent uses can be visited without
     // rescanning each binding's users as part of a graph traversal.
@@ -323,7 +323,7 @@ fn mark_raw_binding(nodes: &[AstNode], graph: &[StaticNode], marks: &mut [u64],
     true
 }
 
-pub fn check_raw_addresses(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i32 {
+pub fn check_raw_addresses(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) i32 {
     let discard: [u8; 4] = [100,114,111,112]; // drop
     let replicate: [u8; 4] = [99,111,112,121]; // copy
     let complete: [u8; 24] = [114,117,110,116,105,109,101,58,58,99,111,109,112,108,101,116,101,95,115,111,99,107,101,116];

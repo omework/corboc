@@ -3,7 +3,7 @@
 use bootstrap::model::{AstNode, StaticNode, CheckedValue, constructor_arguments, constructor_argument_retained, summary_value, summary_next};
 
 /// First selected field relative to a checked lifetime root, including an alias.
-pub fn place_projection(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], point: u64, root: u64) -> u64 {
+pub fn place_projection(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], point: u64, root: u64) u64 {
     let path=projected_path(&nodes[0..nodes.len()],&graph[0..graph.len()],point,0);
     if path/1048576==root{return path%1048576;}
     let mut base=point;
@@ -16,7 +16,7 @@ pub fn place_projection(nodes: &[AstNode], graph: &[StaticNode], values: &[Check
 }
 
 fn leaf_disjoint(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    owner: u64, root: u64, selector: u64, depth: u64) -> bool {
+    owner: u64, root: u64, selector: u64, depth: u64) bool {
     if owner==0 || depth>=128{return false;}
     let ty=values[owner].ty;
     if !reserves(&values[0..values.len()],&graph[0..graph.len()],owner,root)
@@ -47,7 +47,7 @@ fn leaf_disjoint(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue
 
 /// Lifetime roots remain unchanged; only proven sibling access is disjoint.
 pub fn disjoint_dependencies(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
-    point: u64, reference: u64, root: u64) -> bool {
+    point: u64, reference: u64, root: u64) bool {
     let selector=place_projection(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],point,root);
     if selector==0{return false;}
     leaf_disjoint(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],reference,root,selector,0)

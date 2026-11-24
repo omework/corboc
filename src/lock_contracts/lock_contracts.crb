@@ -8,7 +8,7 @@ use bootstrap::model::{AstNode, StaticNode, CheckedValue, reserve_summary, const
 use bootstrap::verify::violation;
 
 /// Returns the parameter named by a lock contract and its through-result mode.
-pub fn lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> (u64, bool) {
+pub fn lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) (u64, bool) {
     let word: [u8; 4] = [108,111,99,107];
     let mut annotation = function + 1;
     while annotation < nodes.len() as u64 && nodes[annotation].start < nodes[function].end {
@@ -34,7 +34,7 @@ pub fn lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], fu
 
 /// Attach an independent lifetime reservation to a returned aggregate graph.
 pub fn retain_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], function: u64, call: u64) -> i64 {
+    values: &mut [CheckedValue], function: u64, call: u64) i64 {
     let (formal, through) = lock_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(function));
     if !through || formal == 0 { return 0; }
     let mut parameter = graph[function].first_child;
@@ -62,7 +62,7 @@ pub fn retain_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 /// Validate contract names against the actual signature, even before any call.
-pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) -> i64 {
+pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) i64 {
     let lock: [u8; 4] = [108,111,99,107];
     let branch: [u8; 6] = [98,114,97,110,99,104];
     let join: [u8; 4] = [106,111,105,110];
@@ -130,7 +130,7 @@ pub fn validate_effect_annotations(source: &[u8], nodes: &[AstNode], graph: &[St
 }
 
 /// Finds a bare object marker without assigning meaning to the type's name.
-pub fn object_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) -> bool {
+pub fn object_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], declaration: u64) bool {
     if nodes[declaration].kind != 28 { return false; }
     let word: [u8; 4] = [108,111,99,107];
     let mut annotation = declaration + 1;
@@ -144,7 +144,7 @@ pub fn object_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], decla
 }
 
 /// Public instance methods inherit on=self; associated constructors have no receiver.
-fn inherited_lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) -> u64 {
+fn inherited_lock_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], function: u64) u64 {
     if !nodes[function].public || nodes[nodes[function].parent].kind != 49 { return 0; }
     let owner = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nodes[function].parent);
     if !object_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owner) { return 0; }

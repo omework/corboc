@@ -77,7 +77,6 @@ pub fn destroy_fields(nodes: &[AstNode], graph: &[StaticNode], types: &[i64], re
     { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
 }
 
-
 pub fn array_definition(source:&[u8],nodes: &[AstNode], graph: &[StaticNode], types: &[i64], seen: &mut [bool], ty: i64) {
     let mut index: u64 = 1;
     while index < nodes.len() as u64 && types[index] != ty { index = index + 1; }

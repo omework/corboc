@@ -10,7 +10,7 @@ use bootstrap::ownership::{check_pool_new, plain_structure};
 use bootstrap::tasks::{autonomous_enum, dependent_handle, copy_task_summary};
 use bootstrap::scalar::folded_integer;
 
-pub fn vector_owned_string(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> bool {
+pub fn vector_owned_string(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) bool {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let string: [u8; 6] = [83,116,114,105,110,103];
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
@@ -22,7 +22,7 @@ pub fn vector_owned_string(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         && graph[inner].next_sibling == 0 && graph[item].next_sibling == 0 && element.content_eq(&string[..])
 }
 
-pub fn vector_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+pub fn vector_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     let word: [u8; 6] = [86,101,99,116,111,114];
     let name = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     let element = graph[annotation].first_child;
@@ -43,7 +43,7 @@ pub fn vector_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], an
     declaration
 }
 
-pub fn vector_scalar_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+pub fn vector_scalar_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     let declaration = vector_nominal(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], annotation);
     let mut field = graph[declaration].first_child;
@@ -57,13 +57,12 @@ pub fn vector_scalar_struct(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     declaration
 }
 
-pub fn vector_pool_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+pub fn vector_pool_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) u64 {
     let annotation = graph[graph[graph[pool].first_child].first_child].first_child;
     vector_nominal(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation)
 }
 
-
-pub fn vector_scalar_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> i64 {
+pub fn vector_scalar_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) i64 {
     let vector: [u8; 6] = [86,101,99,116,111,114];
     let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
     let element = graph[annotation].first_child;
@@ -81,7 +80,7 @@ pub fn vector_scalar_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     0
 }
 
-fn vector_allocation_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) -> u64 {
+fn vector_allocation_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], pool: u64) u64 {
     let initializer = graph[pool].initializer;
     let vector = graph[graph[initializer].first_child].first_child;
     let named = graph[graph[vector].first_child].first_child;
@@ -90,7 +89,7 @@ fn vector_allocation_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 // These entries are never removed by this checker path. The per-site list
 // is a monotone may-own summary and can retain entries from either branch.
 pub fn record_vector_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, vector: u64) -> i64 {
+    values: &mut [CheckedValue], call: u64, vector: u64) i64 {
     let receiver = graph[call].first_child;
     let argument = graph[receiver].next_sibling;
     let push: [u8; 4] = [112,117,115,104];
@@ -147,7 +146,7 @@ pub fn record_vector_owner(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], call: u64, mode: i64, expected: i64) -> i64 {
+    values: &mut [CheckedValue], call: u64, mode: i64, expected: i64) i64 {
     let receiver = graph[call].first_child;
     let binding = graph[receiver].binding;
     let ty = values[binding].ty;
@@ -244,7 +243,7 @@ pub fn vector_owned_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 }
 
 pub fn remove_nominal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], operation: u64) -> i64 {
+    values: &mut [CheckedValue], operation: u64) i64 {
     let receiver = graph[operation].first_child;
     let vector = graph[receiver].binding;
     if nodes[receiver].kind != 7 || values[vector].ty != 296 { return 0; }

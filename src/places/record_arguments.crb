@@ -18,7 +18,7 @@ use bootstrap::task_vectors::record_with_handle_vector;
 
 // A shared reference field adds a dependency on its target without giving
 // the record exclusive access to that target.
-pub fn record_with_shared_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> bool {
+pub fn record_with_shared_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) bool {
     if nodes[record].kind != 28 { return false; }
     let mut field = graph[record].first_child;
     let mut shared = false;
@@ -36,7 +36,7 @@ pub fn record_with_shared_fields(source: &[u8], nodes: &[AstNode], graph: &[Stat
     shared
 }
 
-pub fn record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, shared_only: bool) -> u64 {
+pub fn record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, shared_only: bool) u64 {
     if annotation == 0 || source[nodes[annotation].start] != 38 { return 0; }
     let name = graph[annotation].first_child;
     if name == 0 || graph[name].first_child != 0
@@ -53,7 +53,7 @@ pub fn record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     name
 }
 
-fn record_with_record_loans(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) -> bool {
+fn record_with_record_loans(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) bool {
     if nodes[record].kind != 28 || depth >= 64 { return false; }
     let mut field = graph[record].first_child;
     let mut loans = false;
@@ -86,12 +86,12 @@ fn record_with_record_loans(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
     loans
 }
 
-pub fn shared_record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) -> u64 {
+pub fn shared_record_parameter(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) u64 {
     record_parameter(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation, true)
 }
 
 pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], input: u64, annotation: u64, exclusive: bool, capture: bool) -> i64 {
+    values: &mut [CheckedValue], input: u64, annotation: u64, exclusive: bool, capture: bool) i64 {
     let expected = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], annotation);
     let mut from: u64 = 0;
     let mut target: u64 = 0;
@@ -146,7 +146,7 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
 }
 
 /// Resolve only nominal identity here; access/permission checks happen on reservation.
-fn receiver_shape(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],place:u64,depth:u64)->u64 {
+fn receiver_shape(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],place:u64,depth:u64)u64 {
     if place==0 || depth>=128{return 0;}
     let kind=nodes[place].kind;let child=graph[place].first_child;
     if kind==7{return values[graph[place].binding].origin_call;}
@@ -163,7 +163,7 @@ fn receiver_shape(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[Che
 }
 
 pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], call: u64) -> u64 {
+    values: &[CheckedValue], call: u64) u64 {
     let receiver = graph[call].first_child;
     let mut shape=receiver_shape(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],receiver,0);
     if shape==0{return 0;}
@@ -176,7 +176,7 @@ pub fn resolve_record_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
 }
 
 pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], receiver: u64, parameter: u64) -> i64 {
+    values: &mut [CheckedValue], receiver: u64, parameter: u64) i64 {
     let projected=nodes[receiver].kind!=7;
     let (ty,binding,shape)=bootstrap::places::scalar_place(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],receiver);
     if ty<0{return ty;}
@@ -203,7 +203,7 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
 }
 
 pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], destination: u64, initializer: u64) -> i64 {
+    values: &mut [CheckedValue], destination: u64, initializer: u64) i64 {
     let mut place = graph[initializer].first_child;
     while nodes[place].kind == 19 { place = graph[place].first_child; }
     let projected = graph[place].first_child;
@@ -269,7 +269,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], destination: u64, initializer: u64, projection: u64) -> i64 {
+    values: &mut [CheckedValue], destination: u64, initializer: u64, projection: u64) i64 {
     let (ty, holder, shape) = scalar_place(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], &mut values[0..values.len()], graph[projection].first_child);
     if ty < 0 { return ty; }
@@ -317,11 +317,11 @@ fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 
 // A record with one mutable pool field has a unique symbolic pool root.
 // Its field node represents that root inside a callable.
-pub fn record_pool_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) -> u64 {
+pub fn record_pool_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64) u64 {
     record_pool_field_at(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()], record, 0)
 }
 
-fn record_pool_field_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) -> u64 {
+fn record_pool_field_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], record: u64, depth: u64) u64 {
     if nodes[record].kind != 28 || depth >= 64 { return 0; }
     let mut field = graph[record].first_child;
     let mut pool: u64 = 0;
@@ -347,12 +347,12 @@ fn record_pool_field_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
 }
 
 pub fn record_pool_root(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], entry: u64, field: u64) -> u64 {
+    values: &[CheckedValue], entry: u64, field: u64) u64 {
     record_pool_root_at(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()], entry, field, 0)
 }
 
 fn record_pool_root_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &[CheckedValue], entry: u64, field: u64, depth: u64) -> u64 {
+    values: &[CheckedValue], entry: u64, field: u64, depth: u64) u64 {
     if entry == 0 || depth >= 64 { return 0; }
     if nodes[entry].kind == 3 {
         let annotation = graph[entry].first_child;
@@ -387,7 +387,7 @@ fn record_pool_root_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    values: &mut [CheckedValue], destination: u64, expression: u64) -> i64 {
+    values: &mut [CheckedValue], destination: u64, expression: u64) i64 {
     if nodes[expression].kind != 13 || !graph[expression].mutable { return 0; }
     let deref = graph[expression].first_child;
     let field = graph[deref].first_child;

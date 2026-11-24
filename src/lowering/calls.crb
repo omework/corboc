@@ -14,7 +14,7 @@ use bootstrap::scalar::pointer_integer_type;
 use bootstrap::results::result_variant;
 
 fn call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64, expected: i64) -> i64 {
+    ctx: &Lowering, node: u64, expected: i64) i64 {
     let name = graph[node].first_child;
     let first = graph[name].next_sibling;
     let emit = (*ctx).emit;
@@ -159,7 +159,7 @@ fn call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64
 }
 
 fn compile_function_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
-    types: &mut [i64], ctx: &Lowering, node: u64, callee: u64, first: u64, receiver: u64) -> i64 {
+    types: &mut [i64], ctx: &Lowering, node: u64, callee: u64, first: u64, receiver: u64) i64 {
     let emit = (*ctx).emit;
     if callee == 0 || nodes[callee].kind != 1 { return -1; }
     let ty = types[callee];
@@ -194,7 +194,7 @@ fn compile_function_call(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
 }
 
 fn lower_record_method(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &mut [i64],
-    ctx: &Lowering, node: u64) -> i64 {
+    ctx: &Lowering, node: u64) i64 {
     let receiver = graph[node].first_child;
     let projected=nodes[receiver].kind!=7;
     let mut binding = graph[receiver].binding;
