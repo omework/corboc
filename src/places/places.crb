@@ -164,7 +164,7 @@ fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(literal), annotation);
         if element < 0 { return element; }
         values[literal] = CheckedValue{ ty: element, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: length, writable: false }; record_checked(&values[0..values.len()],literal);
+            loan_parent: 0, origin_call: length, writable: false, projection: 0, }; record_checked(&values[0..values.len()],literal);
         return 0;
     }
     let mut row_annotation: u64 = 0;
@@ -211,7 +211,7 @@ fn check_array_shape(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     }
     if annotation != 0 && length != expected_length { return 0 - violation_site(1, nodes[literal].start, 332); }
     values[literal] = CheckedValue{ ty: 450, state: 1, mutable: false, target: length,
-        loan_parent: 0, origin_call: first, writable: false }; record_checked(&values[0..values.len()],literal);
+        loan_parent: 0, origin_call: first, writable: false, projection: 0, }; record_checked(&values[0..values.len()],literal);
     0
 }
 
@@ -347,7 +347,7 @@ fn structural_array(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if !valid || count != length { return 0 - violation_site(1, nodes[literal].start, 336); }
     }
     values[literal] = CheckedValue{ ty: 451, state: 1, mutable: false, target: length,
-        loan_parent: 0, origin_call: if named { nominal } else { first }, writable: false }; record_checked(&values[0..values.len()],literal);
+        loan_parent: 0, origin_call: if named { nominal } else { first }, writable: false, projection: 0, }; record_checked(&values[0..values.len()],literal);
     451
 }
 
@@ -602,11 +602,11 @@ pub fn check_projection(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let selector = folded_integer(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], index);
             if selector.known && !selector.negative && selector.magnitude < 18446744073709551615 {
                 values[place] = CheckedValue{ ty: 0, state: 6, mutable: false,
-                    target: copy(binding), loan_parent: 1, origin_call: selector.magnitude + 1, writable: false }; record_checked(&values[0..values.len()],place);
+                    target: copy(binding), loan_parent: 1, origin_call: selector.magnitude + 1, writable: false, projection: 0, }; record_checked(&values[0..values.len()],place);
             }
         } else if nodes[place].kind == 17 && graph[place].field_name != 0 {
             values[place] = CheckedValue{ ty: 0, state: 6, mutable: false,
-                target: copy(binding), loan_parent: 2, origin_call: graph[place].field_name, writable: false }; record_checked(&values[0..values.len()],place);
+                target: copy(binding), loan_parent: 2, origin_call: graph[place].field_name, writable: false, projection: 0, }; record_checked(&values[0..values.len()],place);
         }
     }
     // Building an assignment's place reads the container. The actual
@@ -749,7 +749,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if text==2000138 {
         if annotation!=0 && !shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation){return 0-violation_site(1, nodes[expression].start, 358);}
         let root=values[expression].target;let parent=values[expression].loan_parent;let origin=values[expression].origin_call;
-        values[destination] = CheckedValue{ty:text,state:1,mutable:graph[destination].mutable,target:root,loan_parent:parent,origin_call:origin,writable:false}; record_checked(&values[0..values.len()],destination);return 1;
+        values[destination] = CheckedValue{ty:text,state:1,mutable:graph[destination].mutable,target:root,loan_parent:parent,origin_call:origin,writable:false, projection: 0,}; record_checked(&values[0..values.len()],destination);return 1;
     }
     let place = graph[expression].first_child;
     let base = graph[place].first_child;
@@ -824,7 +824,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         else if ty == 298 { 744 } else if ty == 299 { 742 } else if ty == 451 { 748 }
         else if ty == 450 { 749 } else { ty + 340 },
         state: 1, mutable: graph[destination].mutable, target: root,
-        loan_parent: if reborrow { binding } else { 0 }, origin_call: shape, writable: mutable }; record_checked(&values[0..values.len()],destination);
+        loan_parent: if reborrow { binding } else { 0 }, origin_call: shape, writable: mutable, projection: 0, }; record_checked(&values[0..values.len()],destination);
     1
 }
 
@@ -962,6 +962,6 @@ fn tuple_array(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [Ch
     let shape=if element!=0{copy(element)}else{values[first].origin_call};
     let mut field=graph[shape].first_child;
     while field!=0{let ty=values[field].ty;if ty>9 && ty!=310{return -9;}field=graph[field].next_sibling;}
-    values[literal]=CheckedValue{ty:451,state:1,mutable:false,target:length,loan_parent:0,origin_call:shape,writable:false};record_checked(&values[0..values.len()],literal);
+    values[literal]=CheckedValue{ty:451,state:1,mutable:false,target:length,loan_parent:0,origin_call:shape,writable:false, projection: 0,};record_checked(&values[0..values.len()],literal);
     451
 }

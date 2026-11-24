@@ -39,7 +39,7 @@ fn early_call_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if checked < 0 { return checked; }
         values[node] = CheckedValue{ ty: copy(expected), state: 1, mutable: false,
             target: values[argument].target, loan_parent: values[argument].loan_parent,
-            origin_call: argument, writable: false }; record_checked(&values[0..values.len()],node);
+            origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
         return expected;
     }
     if kind == 15 && nodes[child].kind == 36 {

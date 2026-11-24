@@ -4062,8 +4062,8 @@
     "file": "src/signatures/signatures.crb",
     "function": "check_signature",
     "rule": "5",
-    "condition": "if values[previous].target == root && (exclusive || values[previous].writable)                     && !(graph[previous].access_mode == 1 && graph[input].access_mode == 1)",
-    "message": "operation requires mutation permission on the referenced place"
+    "condition": "an argument overlaps a prior argument and at least one requires mutation permission",
+    "message": "call argument overlaps another active mutable borrow"
   },
   {
     "id": 508,

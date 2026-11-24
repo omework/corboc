@@ -86,9 +86,9 @@ pub fn projected_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if moved > 0 { return output; }
     }
     values[receiver] = CheckedValue{ ty: handle, state: 1, mutable: false,
-        target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],receiver);
+        target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],receiver);
     values[call] = CheckedValue{ ty: copy(output), state: 1, mutable: false,
-        target: receiver, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+        target: receiver, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     output
 }
 
@@ -229,9 +229,9 @@ pub fn apply_handle_pop(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], 
     let handle = values[entry].target;
     let pool = values[member].target;
     values[member] = CheckedValue{ ty: ty, state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: remaining, writable: false }; record_checked(&values[0..values.len()],member);
+        loan_parent: 0, origin_call: remaining, writable: false, projection: 0, }; record_checked(&values[0..values.len()],member);
     values[call] = CheckedValue{ ty: result, state: 1, mutable: false, target: handle,
-        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     1
 }
 
@@ -262,7 +262,7 @@ pub fn allocate_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], t
     }
     let ty = actual - 620 + 2400;
     values[destination] = CheckedValue{ ty: copy(ty), state: 1, mutable: graph[destination].mutable,
-        target: pool, loan_parent: 0, origin_call: summary, writable: false }; record_checked(&values[0..values.len()],destination);
+        target: pool, loan_parent: 0, origin_call: summary, writable: false, projection: 0, }; record_checked(&values[0..values.len()],destination);
     return ty;
 }
 
@@ -329,7 +329,7 @@ pub fn take_pooled_handle(nodes: &[AstNode], graph: &[StaticNode], values: &mut 
     let mutable = values[binding].mutable;
     copy_task_summary(&mut values[0..values.len()], copy(summary), expression, copy(handle), false);
     values[binding] = CheckedValue{ ty: ty, state: 2, mutable: mutable,
-        target: pool, loan_parent: 0, origin_call: summary, writable: false }; record_checked(&values[0..values.len()],binding);
+        target: pool, loan_parent: 0, origin_call: summary, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
     return handle;
 }
 
@@ -374,14 +374,14 @@ pub fn push_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             return -9;
         }
         values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
-            loan_parent: call, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],vector);
+            loan_parent: call, origin_call: previous, writable: false, projection: 0, }; record_checked(&values[0..values.len()],vector);
         return 1;
     }
     if values[vector].loan_parent != 0 { return -9; }
     values[call] = CheckedValue{ ty: 0, state: 1, mutable: false, target: summary,
-        loan_parent: 0, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: 0, origin_call: previous, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: call, writable: false }; record_checked(&values[0..values.len()],vector);
+        loan_parent: 0, origin_call: call, writable: false, projection: 0, }; record_checked(&values[0..values.len()],vector);
     return 1;
 }
 
@@ -438,11 +438,11 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let ty = values[vector].ty;
     if predecessor == 0 {
         values[vector] = CheckedValue{ ty: copy(ty), state: 1, mutable: true, target: pool,
-            loan_parent: 0, origin_call: next, writable: false }; record_checked(&values[0..values.len()],vector);
+            loan_parent: 0, origin_call: next, writable: false, projection: 0, }; record_checked(&values[0..values.len()],vector);
     } else {
         let payload = values[predecessor].target;
         values[predecessor] = CheckedValue{ ty: 0, state: 1, mutable: false, target: payload,
-            loan_parent: 0, origin_call: next, writable: false }; record_checked(&values[0..values.len()],predecessor);
+            loan_parent: 0, origin_call: next, writable: false, projection: 0, }; record_checked(&values[0..values.len()],predecessor);
     }
     if removes {
         let output = ty - 2300 + 620;
@@ -450,7 +450,7 @@ pub fn remove_handle(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         return output;
     }
     values[call] = CheckedValue{ ty: 951, state: 1, mutable: false, target: handle,
-        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return 951;
 }
 
@@ -538,6 +538,6 @@ pub fn drain_handles(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         copy(vector), copy(loop_node), true);
     if access != 0 { return 0; }
     values[vector] = CheckedValue{ ty: ty, state: 1, mutable: true, target: pool,
-        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],vector);
+        loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],vector);
     return 1;
 }

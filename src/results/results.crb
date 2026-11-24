@@ -164,7 +164,7 @@ pub fn construct_result(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if payload>=6000000 && payload<7000000 {
         let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
         copy_task_summary(&mut values[0..values.len()],copy(argument),copy(slot),values[argument].ty,false);
-        values[node] = CheckedValue{ty:copy(expected),state:1,mutable:false,target:values[argument].target,loan_parent:slot,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);
+        values[node] = CheckedValue{ty:copy(expected),state:1,mutable:false,target:values[argument].target,loan_parent:slot,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],node);
     }else{copy_task_summary(&mut values[0..values.len()], argument, node, copy(expected), false);}
     expected
 }

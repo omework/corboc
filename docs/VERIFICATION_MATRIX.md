@@ -414,3 +414,13 @@ unsigned borrow-prefix subtraction. Generic wrapper classification waits for
 specialization. Eighteen focused cases and watch failure-to-success recovery
 pass; the actual unchanged WAL reaches a normal diagnostic without leaving
 watch. [Cause, installation and evidence](DEREFERENCE_CRASH_CYCLE.md).
+
+## Field-specific retained dependencies
+
+CheckedValue retains the lifetime root and a separate first-field projection.
+Disjointness must cover every retained dependency; an unknown projection remains
+conservative. Lifetime cleanup still targets the complete owner. The current
+prototype again rejects overlapping active mutable borrows while permitting
+proven disjoint fields and last-use release. Focused observations, directly
+related regressions and platform scope are recorded in
+[the field-dependency report](FIELD_DEPENDENCIES_CYCLE.md).

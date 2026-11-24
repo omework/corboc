@@ -82,7 +82,7 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                     &mut values[0..values.len()], copy(payload), 0, 3);
                 if moved < 0 { return moved; }
                 values[payload] = CheckedValue{ ty: element + 200, state: 1,
-                    mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],payload);
+                    mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],payload);
             } else { return -9; }
         } else {
             let place = graph[payload].first_child;
@@ -97,7 +97,7 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             if conflict > 0 { return 0 - violation_site(5, nodes[payload].start, 195); }
             if conflict < 0 { return -9; }
             values[payload] = CheckedValue{ ty: element + (if exclusive { 40 } else { 20 }), state: 1,
-                mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: exclusive }; record_checked(&values[0..values.len()],payload);
+                mutable: false, target: copy(root), loan_parent: 0, origin_call: 0, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],payload);
         }
         if !scope_contains(&graph[0..graph.len()], graph[root].scope, graph[binding].scope) {
             return 0 - violation_site(4, nodes[payload].start, 196);
@@ -124,20 +124,20 @@ pub fn dependent_map_access(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         let old_payload = values[entry].target;
         let before = values[entry].origin_call;
         values[entry] = CheckedValue{ ty: 0, state: 2, mutable: false, target: old_payload,
-            loan_parent: old_key, origin_call: before, writable: false }; record_checked(&values[0..values.len()],entry);
+            loan_parent: old_key, origin_call: before, writable: false, projection: 0, }; record_checked(&values[0..values.len()],entry);
     }
     if inserts {
         let ty = values[binding].ty;
         values[receiver] = CheckedValue{ ty: 0, state: 1, mutable: false, target: payload,
-            loan_parent: key_node, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],receiver);
+            loan_parent: key_node, origin_call: previous, writable: false, projection: 0, }; record_checked(&values[0..values.len()],receiver);
         values[binding] = CheckedValue{ ty: ty, state: 1, mutable: true, target: 0,
-            loan_parent: 0, origin_call: receiver, writable: false }; record_checked(&values[0..values.len()],binding);
+            loan_parent: 0, origin_call: receiver, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
     }
     let borrowed = !inserts && !removes;
     let result = 1300 + mode * 100 + element;
     values[destination] = CheckedValue{ ty: copy(result), state: 1, mutable: false,
         target: if borrowed { binding } else { 0 }, loan_parent: if borrowed { entry } else { 0 }, origin_call: extracted,
-        writable: borrowed && !shared }; record_checked(&values[0..values.len()],destination);
+        writable: borrowed && !shared, projection: 0, }; record_checked(&values[0..values.len()],destination);
     return result;
 }
 
@@ -168,10 +168,10 @@ pub fn bind_entry_option(values: &mut [CheckedValue], option: u64, binder: u64) 
         let alternate = values[item].origin_call;
         let union = if alternate != 0 { 80 + inner % 20 } else { copy(inner) };
         values[binder] = CheckedValue{ ty: union, state: 1, mutable: false, target: target,
-            loan_parent: 0, origin_call: if alternate != 0 { item } else { 0 }, writable: inner >= 40 && inner < 60 }; record_checked(&values[0..values.len()],binder);
+            loan_parent: 0, origin_call: if alternate != 0 { item } else { 0 }, writable: inner >= 40 && inner < 60, projection: 0, }; record_checked(&values[0..values.len()],binder);
     } else {
         values[binder] = CheckedValue{ ty: ty + 300, state: 1, mutable: false, target: target,
-            loan_parent: map, origin_call: storage, writable: exclusive }; record_checked(&values[0..values.len()],binder);
+            loan_parent: map, origin_call: storage, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binder);
     }
 }
 
@@ -232,7 +232,7 @@ pub fn reborrow_entry(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let target = values[binding].target;
     values[statement] = CheckedValue{ ty: ty % 10 + (if exclusive { 40 } else { 20 }), state: 1,
         mutable: graph[statement].mutable, target: target, loan_parent: binding, origin_call: 0,
-        writable: exclusive }; record_checked(&values[0..values.len()],statement);
+        writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],statement);
     return 1;
 }
 
@@ -323,11 +323,11 @@ pub fn update_entry(values: &mut [CheckedValue], binder: u64, root: u64, operati
     let key = values[storage].loan_parent;
     let previous = values[storage].origin_call;
     values[operation] = CheckedValue{ ty: 40 + ty % 10, state: 1, mutable: false, target: copy(root),
-        loan_parent: 0, origin_call: alternate, writable: true }; record_checked(&values[0..values.len()],operation);
+        loan_parent: 0, origin_call: alternate, writable: true, projection: 0, }; record_checked(&values[0..values.len()],operation);
     values[storage] = CheckedValue{ ty: 0, state: 1, mutable: false, target: operation,
-        loan_parent: key, origin_call: previous, writable: false }; record_checked(&values[0..values.len()],storage);
+        loan_parent: key, origin_call: previous, writable: false, projection: 0, }; record_checked(&values[0..values.len()],storage);
     values[binder] = CheckedValue{ ty: ty, state: binder_state, mutable: false, target: root,
-        loan_parent: map, origin_call: storage, writable: true }; record_checked(&values[0..values.len()],binder);
+        loan_parent: map, origin_call: storage, writable: true, projection: 0, }; record_checked(&values[0..values.len()],binder);
 }
 
 

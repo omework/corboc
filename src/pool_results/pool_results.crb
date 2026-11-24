@@ -48,5 +48,5 @@ pub fn check_pool_try(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&
     let actual=check_pool_new(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(node));if actual<0{return actual;}
     let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
     copy_task_summary(&mut values[0..values.len()],copy(node),copy(slot),actual,false);
-    values[node] = CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:pool,loan_parent:slot,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);wrapped
+    values[node] = CheckedValue{ty:copy(wrapped),state:1,mutable:false,target:pool,loan_parent:slot,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],node);wrapped
 }

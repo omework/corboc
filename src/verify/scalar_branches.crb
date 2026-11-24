@@ -100,7 +100,7 @@ pub fn scalar_moves(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Check
     if merge {
         let ty = values[binding].ty;
         let mutable = values[binding].mutable;
-        values[binding] = CheckedValue{ ty: ty, state: 4, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binding);
+        values[binding] = CheckedValue{ ty: ty, state: 4, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
         return 0;
     }
     let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],

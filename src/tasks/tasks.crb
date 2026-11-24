@@ -137,7 +137,7 @@ pub fn record_capture(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let parent = if reborrow && !values[binding].writable { copy(owner) }
         else if owner == 0 { copy(binding) } else { copy(owner) };
     values[argument] = CheckedValue{ ty: expected, state: 1, mutable: false, target: root,
-        loan_parent: parent, origin_call: previous, writable: exclusive }; record_checked(&values[0..values.len()],argument);
+        loan_parent: parent, origin_call: previous, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],argument);
     return 1;
 }
 
@@ -156,9 +156,9 @@ fn capture_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             return 0 - violation_site(6, nodes[argument].start, 660);
         }
         values[incoming] = CheckedValue{ ty: 40 + scalar, state: 1, mutable: false, target: graph[other].first_child,
-            loan_parent: 0, origin_call: 0, writable: true }; record_checked(&values[0..values.len()],incoming);
+            loan_parent: 0, origin_call: 0, writable: true, projection: 0, }; record_checked(&values[0..values.len()],incoming);
         values[argument] = CheckedValue{ ty: 5001, state: 1, mutable: false, target: graph[binder].first_child,
-            loan_parent: binder, origin_call: incoming, writable: true }; record_checked(&values[0..values.len()],argument);
+            loan_parent: binder, origin_call: incoming, writable: true, projection: 0, }; record_checked(&values[0..values.len()],argument);
         return 1;
     }
     if !entry_reference(copy(ty)) || map_item_code(copy(ty)) != 7 { return -9; }
@@ -180,7 +180,7 @@ fn capture_entry_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if valid < 0 { return valid; }
     let map = values[binder].loan_parent;
     values[argument] = CheckedValue{ ty: 5000, state: 1, mutable: false, target: map,
-        loan_parent: binder, origin_call: incoming, writable: true }; record_checked(&values[0..values.len()],argument);
+        loan_parent: binder, origin_call: incoming, writable: true, projection: 0, }; record_checked(&values[0..values.len()],argument);
     return 1;
 }
 
@@ -253,8 +253,9 @@ pub fn copy_task_summary(values: &mut [CheckedValue], from: u64, to: u64, ty: i6
     let result_root = values[from].target;
     let result_entries = values[from].loan_parent;
     let exclusive = values[from].writable;
+    let projection=values[from].projection;
     values[to] = CheckedValue{ ty: ty, state: 1, mutable: mutable, target: result_root,
-        loan_parent: result_entries, origin_call: captures, writable: exclusive }; record_checked(&values[0..values.len()],to);
+        loan_parent: result_entries, origin_call: captures, writable: exclusive, projection: projection, }; record_checked(&values[0..values.len()],to);
 }
 
 fn allocation_return_root(nodes: &[AstNode], graph: &[StaticNode], body: u64) -> u64 {
@@ -408,9 +409,9 @@ fn aggregate_identity_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
     let pool = values[argument].target;
     // Keep the capture edge separate from the argument's field records.
     values[name] = CheckedValue{ ty: 5010, state: 1, mutable: false, target: 0,
-        loan_parent: copy(argument), origin_call: 0, writable: false }; record_checked(&values[0..values.len()],name);
+        loan_parent: copy(argument), origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],name);
     values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: pool,
-        loan_parent: argument, origin_call: name, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: argument, origin_call: name, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return 3100;
 }
 
@@ -455,7 +456,7 @@ fn pooled_identity_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         &mut values[0..values.len()], argument, 0, 3);
     if status < 0 { return status; }
     values[call] = CheckedValue{ ty: 3601, state: 1, mutable: false, target: pool,
-        loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: 0, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return 3601;
 }
 
@@ -529,9 +530,9 @@ fn instantiate_multiple_slice_arguments(source: &[u8], nodes: &[AstNode], graph:
     }
     if argument != 0 { return 0 - violation_site(8, nodes[call].start, 670); }
     values[callee] = CheckedValue{ ty: 5011, state: 1, mutable: false, target: parameter,
-        loan_parent: copy(shape), origin_call: first, writable: false }; record_checked(&values[0..values.len()],callee);
+        loan_parent: copy(shape), origin_call: first, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
     values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-        loan_parent: callee, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: callee, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     300
 }
 
@@ -579,13 +580,13 @@ fn instantiate_slice_constructor(source: &[u8], nodes: &[AstNode], graph: &[Stat
     if checked < 0 { return checked; }
     if asynchronous {
         values[callee] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-            loan_parent: copy(argument), origin_call: shape, writable: false }; record_checked(&values[0..values.len()],callee);
+            loan_parent: copy(argument), origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
         values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: 0,
-            loan_parent: callee, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: callee, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return 3100;
     }
     values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-        loan_parent: argument, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: argument, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     300
 }
 
@@ -621,11 +622,11 @@ pub fn instantiate_constructor_result(source: &[u8], nodes: &[AstNode], graph: &
             let arguments = values[callee].origin_call;
             let constructor = values[call].origin_call;
             values[waiting] = CheckedValue{ ty: 5011, state: 1, mutable: false, target: marker_root,
-                loan_parent: copy(constructor), origin_call: copy(arguments), writable: false }; record_checked(&values[0..values.len()],waiting);
+                loan_parent: copy(constructor), origin_call: copy(arguments), writable: false, projection: 0, }; record_checked(&values[0..values.len()],waiting);
             values[callee] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-                loan_parent: waiting, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],callee);
+                loan_parent: waiting, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
             values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: 0,
-                loan_parent: callee, origin_call: arguments, writable: false }; record_checked(&values[0..values.len()],call);
+                loan_parent: callee, origin_call: arguments, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
             return 3100;
         }
     }
@@ -694,13 +695,13 @@ pub fn instantiate_constructor_result(source: &[u8], nodes: &[AstNode], graph: &
         if values[member].ty <= 20 || values[member].ty >= 40 { return -9; }
         if !asynchronous {
             values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-                loan_parent: member, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+                loan_parent: member, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
             return 300;
         }
         values[callee] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-            loan_parent: member, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],callee);
+            loan_parent: member, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
         values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: 0,
-            loan_parent: callee, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: callee, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return 3100;
     }
     if pool_type != 0 {
@@ -716,16 +717,16 @@ pub fn instantiate_constructor_result(source: &[u8], nodes: &[AstNode], graph: &
         if conflict > 0 { return 0 - violation_site(5, nodes[argument].start, 676); }
         if conflict < 0 { return -9; }
         values[argument] = CheckedValue{ ty: 100 + pool_type, state: 1, mutable: false, target: copy(pool),
-            loan_parent: 0, origin_call: 0, writable: true }; record_checked(&values[0..values.len()],argument);
+            loan_parent: 0, origin_call: 0, writable: true, projection: 0, }; record_checked(&values[0..values.len()],argument);
         if !asynchronous {
             values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: pool,
-                loan_parent: argument, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+                loan_parent: argument, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
             return 300;
         }
         values[callee] = CheckedValue{ ty: 300, state: 1, mutable: false, target: copy(pool),
-            loan_parent: copy(argument), origin_call: shape, writable: false }; record_checked(&values[0..values.len()],callee);
+            loan_parent: copy(argument), origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
         values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: pool,
-            loan_parent: callee, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: callee, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return 3100;
     }
     let status = record_capture(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -735,13 +736,13 @@ pub fn instantiate_constructor_result(source: &[u8], nodes: &[AstNode], graph: &
     let target = values[argument].target;
     if !asynchronous {
         values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-            loan_parent: argument, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: argument, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return 300;
     }
     values[callee] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-        loan_parent: copy(argument), origin_call: shape, writable: false }; record_checked(&values[0..values.len()],callee);
+        loan_parent: copy(argument), origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
     values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false, target: target,
-        loan_parent: callee, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: callee, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return 3100;
 }
 
@@ -779,9 +780,9 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), effect);
         if status < 0 { return status; }
         values[callee] = CheckedValue{ ty: 640, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: copy(argument), writable: false }; record_checked(&values[0..values.len()],callee);
+            loan_parent: 0, origin_call: copy(argument), writable: false, projection: 0, }; record_checked(&values[0..values.len()],callee);
         values[expression] = CheckedValue{ ty: 3610, state: 1, mutable: false, target: shape,
-            loan_parent: callee, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],expression);
+            loan_parent: callee, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
         return 3610;
     }
     let waiting = envelope_wait(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -859,7 +860,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 &graph[0..graph.len()], &mut values[0..values.len()], copy(entry), effect);
             if status < 0 { return status; }
             values[expression] = CheckedValue{ ty: 3640, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: entry, writable: false }; record_checked(&values[0..values.len()],expression);
+                loan_parent: 0, origin_call: entry, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
             return 3640;
         }
     }
@@ -873,7 +874,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &graph[0..graph.len()], &mut values[0..values.len()], copy(entry), effect);
         if status < 0 { return status; }
         values[expression] = CheckedValue{ ty: 610, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: entry, writable: false }; record_checked(&values[0..values.len()],expression);
+            loan_parent: 0, origin_call: entry, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
         return 610;
     }
 
@@ -929,7 +930,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if status < 0 { return status; }
             if root != 0 {
                 values[argument] = CheckedValue{ ty: copy(growing), state: 1, mutable: false, target: copy(root),
-                    loan_parent: 0, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],argument);
+                    loan_parent: 0, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],argument);
                 captures = copy(argument);
             }
             if param == origin {
@@ -962,7 +963,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let record = if captures == 0 { copy(callee) } else { 0 };
             if record == 0 { return -9; }
             values[record] = CheckedValue{ ty: 5010, state: 1, mutable: false, target: 0,
-                loan_parent: copy(argument), origin_call: 0, writable: false }; record_checked(&values[0..values.len()],record);
+                loan_parent: copy(argument), origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],record);
             captures = record;
             argument = graph[argument].next_sibling;
             param = graph[param].next_sibling;
@@ -1033,7 +1034,7 @@ fn scalar_future(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         else if result >= 640 && result <= 649 { 3000 + result }
         else { 3100 + encoded_result(result) };
     values[expression] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: result_root,
-        loan_parent: result_entries, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],expression);
+        loan_parent: result_entries, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
     return ty;
 }
 
@@ -1058,7 +1059,7 @@ pub fn verify_task(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let shape = values[from].target;
             let member = values[from].loan_parent;
             values[expression] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-                loan_parent: member, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],expression);
+                loan_parent: member, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
             return 310;
         }
         if nested_async_future(copy(ty)) {
@@ -1081,17 +1082,17 @@ pub fn verify_task(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     let formal = values[field].target;
                     let arguments = values[field].origin_call;
                     values[from] = CheckedValue{ ty: 5011, state: 1, mutable: false, target: formal,
-                        loan_parent: 0, origin_call: arguments, writable: false }; record_checked(&values[0..values.len()],from);
+                        loan_parent: 0, origin_call: arguments, writable: false, projection: 0, }; record_checked(&values[0..values.len()],from);
                     field = from;
                 }
                 values[expression] = CheckedValue{ ty: 300, state: 1, mutable: false, target: pool,
-                    loan_parent: field, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],expression);
+                    loan_parent: field, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
                 return 300;
             }
             let scratch = if nodes[from].kind == 15 { graph[from].first_child } else { from };
             complete_task(&mut values[0..values.len()], captures, scratch);
             values[expression] = CheckedValue{ ty: copy(output), state: 1, mutable: false, target: root,
-                loan_parent: 0, origin_call: entries, writable: false }; record_checked(&values[0..values.len()],expression);
+                loan_parent: 0, origin_call: entries, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
             return output;
         }
         if (ty >= 640 && ty <= 649) || (ty >= 3400 && ty < 3500) || result_task_kind(copy(ty)) == 4 {
@@ -1102,7 +1103,7 @@ pub fn verify_task(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let entries = values[from].loan_parent;
             complete_task(&mut values[0..values.len()], captures, from);
             values[expression] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: root,
-                loan_parent: entries, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],expression);
+                loan_parent: entries, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
             return result;
         }
         return -9;
@@ -1136,7 +1137,7 @@ pub fn verify_task(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         }
         if moved != 3301 { complete_task(&mut values[0..values.len()], captures, child); }
         values[expression] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: root,
-            loan_parent: entries, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],expression);
+            loan_parent: entries, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],expression);
         return result;
     }
     if kind != 15 { return 0; }
@@ -1239,7 +1240,7 @@ fn mark_capture_moved(values: &mut [CheckedValue], binding: u64) {
     let origin = values[binding].origin_call;
     let exclusive = values[binding].writable;
     values[binding] = CheckedValue{ ty: ty, state: 2, mutable: mutable, target: target,
-        loan_parent: parent, origin_call: origin, writable: exclusive }; record_checked(&values[0..values.len()],binding);
+        loan_parent: parent, origin_call: origin, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binding);
 }
 
 fn native_entry_effect(nodes: &[AstNode], graph: &[StaticNode], values: &mut [CheckedValue],
@@ -1271,14 +1272,14 @@ fn native_entry_effect(nodes: &[AstNode], graph: &[StaticNode], values: &mut [Ch
     let map = if formal { graph[binder].first_child } else { values[binder].loan_parent };
     let marker = if formal { 5001 } else { 5000 };
     values[entry] = CheckedValue{ ty: marker, state: 1, mutable: false, target: map,
-        loan_parent: copy(binder), origin_call: copy(incoming), writable: true }; record_checked(&values[0..values.len()],entry);
+        loan_parent: copy(binder), origin_call: copy(incoming), writable: true, projection: 0, }; record_checked(&values[0..values.len()],entry);
     values[incoming] = CheckedValue{ ty: 40 + ty % 10, state: 1, mutable: false,
         target: if formal { graph[next].first_child } else { root },
-        loan_parent: 0, origin_call: 0, writable: true }; record_checked(&values[0..values.len()],incoming);
+        loan_parent: 0, origin_call: 0, writable: true, projection: 0, }; record_checked(&values[0..values.len()],incoming);
     mark_capture_moved(&mut values[0..values.len()], binder);
     mark_capture_moved(&mut values[0..values.len()], next);
     values[block] = CheckedValue{ ty: 620, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: entry, writable: false }; record_checked(&values[0..values.len()],block);
+        loan_parent: 0, origin_call: entry, writable: false, projection: 0, }; record_checked(&values[0..values.len()],block);
     return 620;
 }
 
@@ -1317,11 +1318,11 @@ fn native_factory_output(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         &mut values[0..values.len()], copy(block), copy(entry), incoming);
     if status < 0 { return status; }
     values[name] = CheckedValue{ ty: 620, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: copy(entry), writable: false }; record_checked(&values[0..values.len()],name);
+        loan_parent: 0, origin_call: copy(entry), writable: false, projection: 0, }; record_checked(&values[0..values.len()],name);
     values[call] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: name, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: name, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     values[block] = CheckedValue{ ty: 3301, state: 1, mutable: false, target: 0,
-        loan_parent: call, origin_call: entry, writable: false }; record_checked(&values[0..values.len()],block);
+        loan_parent: call, origin_call: entry, writable: false, projection: 0, }; record_checked(&values[0..values.len()],block);
     return 3301;
 }
 
@@ -1357,7 +1358,7 @@ pub fn check_native_worker(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 if access > 0 { return 0 - violation_site(5, nodes[entry].start, 697); }
                 if access < 0 { return -9; }
                 values[entry] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-                    loan_parent: 0, origin_call: origin, writable: false }; record_checked(&values[0..values.len()],entry);
+                    loan_parent: 0, origin_call: origin, writable: false, projection: 0, }; record_checked(&values[0..values.len()],entry);
                 mark_capture_moved(&mut values[0..values.len()], from);
                 entry = graph[entry].next_sibling;
                 continue;
@@ -1378,7 +1379,7 @@ pub fn check_native_worker(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 field = graph[field].next_sibling;
             }
             values[entry] = CheckedValue{ ty: ty, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: origin, writable: false }; record_checked(&values[0..values.len()],entry);
+                loan_parent: 0, origin_call: origin, writable: false, projection: 0, }; record_checked(&values[0..values.len()],entry);
             mark_capture_moved(&mut values[0..values.len()], from);
             entry = graph[entry].next_sibling;
             continue;
@@ -1415,13 +1416,13 @@ pub fn check_native_worker(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
         if target == from {
             let scalar = ty % 20;
             values[root] = CheckedValue{ ty: scalar, state: 1, mutable: false,
-                target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],root);
+                target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],root);
         }
         let shape = values[from].origin_call;
         values[entry] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
-            target: root, loan_parent: 0, origin_call: copy(shape), writable: copy(exclusive) }; record_checked(&values[0..values.len()],entry);
+            target: root, loan_parent: 0, origin_call: copy(shape), writable: copy(exclusive), projection: 0, }; record_checked(&values[0..values.len()],entry);
         values[from] = CheckedValue{ ty: ty, state: 2, mutable: mutable,
-            target: target, loan_parent: 0, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],from);
+            target: target, loan_parent: 0, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],from);
         entry = graph[entry].next_sibling;
     }
     // The static tree resolves lexical names; an isolated worker may only
@@ -1475,13 +1476,13 @@ pub fn check_native_worker(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
             let resource = if ty == 299 || ty == 301 || (ty >= 201 && ty <= 207) { ty } else { 0 };
             let shape = values[entry].origin_call;
             values[entry] = CheckedValue{ ty: resource, state: 1, mutable: false, target: target,
-                loan_parent: shape, origin_call: captures, writable: exclusive }; record_checked(&values[0..values.len()],entry);
+                loan_parent: shape, origin_call: captures, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],entry);
             captures = copy(entry);
         }
         entry = graph[entry].next_sibling;
     }
     values[block] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: 0,
-        loan_parent: record, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],block);
+        loan_parent: record, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],block);
     return ty;
 }
 
@@ -1741,9 +1742,9 @@ pub fn apply_envelope_contract(source: &[u8], nodes: &[AstNode], graph: &[Static
         &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), nested % 10);
     if status < 0 { return status; }
     values[name] = CheckedValue{ ty: 620, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],name);
+        loan_parent: 0, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],name);
     values[call] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-        loan_parent: name, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: name, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return 310;
 }
 
@@ -1769,7 +1770,7 @@ pub fn apply_native_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
             &graph[0..graph.len()], &mut values[0..values.len()], copy(argument), nested % 10);
         if status < 0 { return status; }
         values[call] = CheckedValue{ ty: 620, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: argument, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: 0, origin_call: argument, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return 620;
     }
     let mut captures: u64 = 0;
@@ -1810,7 +1811,7 @@ pub fn apply_native_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         capture = values[capture].origin_call;
     }
     values[call] = CheckedValue{ ty: copy(tag), state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],call);
+        loan_parent: 0, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     return tag;
 }
 
@@ -1849,13 +1850,13 @@ pub fn merge_borrowing_future(values: &mut [CheckedValue], left: u64, right: u64
     let target = values[first].target;
     // Each arm owns a distinct call-site record.
     values[first] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: copy(target),
-        loan_parent: 0, origin_call: second, writable: false }; record_checked(&values[0..values.len()],first);
+        loan_parent: 0, origin_call: second, writable: false, projection: 0, }; record_checked(&values[0..values.len()],first);
     values[field] = CheckedValue{ ty: ty + 60, state: 1, mutable: false, target: target,
-        loan_parent: 0, origin_call: copy(first), writable: false }; record_checked(&values[0..values.len()],field);
+        loan_parent: 0, origin_call: copy(first), writable: false, projection: 0, }; record_checked(&values[0..values.len()],field);
     values[record] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-        loan_parent: field, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],record);
+        loan_parent: field, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],record);
     values[destination] = CheckedValue{ ty: 3100, state: 1, mutable: mutable, target: 0,
-        loan_parent: record, origin_call: first, writable: false }; record_checked(&values[0..values.len()],destination);
+        loan_parent: record, origin_call: first, writable: false, projection: 0, }; record_checked(&values[0..values.len()],destination);
     true
 }
 
@@ -1952,7 +1953,7 @@ pub fn inline_void_worker(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]
         statement = graph[statement].next_sibling;
     }
     values[launch] = CheckedValue{ ty: 620, state: 1, mutable: false, target: 0,
-        loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],launch);
+        loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],launch);
     return 620;
 }
 

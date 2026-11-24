@@ -145,7 +145,7 @@ pub fn infer_loan_contracts(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                                     &graph[0..graph.len()], copy(function), copy(body), copy(parameter),
                                     &values[0..values.len()])) {
                                 values[annotation] = CheckedValue{ ty: 0, state: 1, mutable: false,
-                                    target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],annotation);
+                                    target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],annotation);
                                 changed = true;
                             }
                             parameter = graph[parameter].next_sibling;

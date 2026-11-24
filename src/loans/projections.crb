@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Disjoint field-access proofs over the existing retained dependency graph.
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, constructor_arguments, constructor_argument_retained, summary_value, summary_next};
+
+/// First selected field relative to a checked lifetime root, including an alias.
+pub fn place_projection(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], point: u64, root: u64) -> u64 {
+    let path=projected_path(&nodes[0..nodes.len()],&graph[0..graph.len()],point,0);
+    if path/1048576==root{return path%1048576;}
+    let mut base=point;
+    while nodes[base].kind==13 || nodes[base].kind==14 || nodes[base].kind==17 || nodes[base].kind==18 || nodes[base].kind==19 {base=graph[base].first_child;}
+    if nodes[base].kind==7 {
+        let binding=graph[base].binding;
+        if values[binding].target==root{return values[binding].projection;}
+    }
+    0
+}
+
+fn leaf_disjoint(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    owner: u64, root: u64, selector: u64, depth: u64) -> bool {
+    if owner==0 || depth>=128{return false;}
+    let ty=values[owner].ty;
+    if !reserves(&values[0..values.len()],&graph[0..graph.len()],owner,root)
+        && !bootstrap_task_reserves(&values[0..values.len()],&graph[0..graph.len()],owner,root,false){return true;}
+    if constructor_arguments(ty) {
+        let mut entry=values[owner].origin_call;
+        while entry!=0 {
+            let member=summary_value(&values[0..values.len()],entry);
+            if constructor_argument_retained(&graph[0..graph.len()],&values[0..values.len()],owner,member)
+                && !leaf_disjoint(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],member,root,selector,depth+1){return false;}
+            entry=summary_next(&graph[0..graph.len()],&values[0..values.len()],entry);
+        }
+        return true;
+    }
+    if (ty==300 || ty==475) && constructor_arguments(values[values[owner].loan_parent].ty) {
+        return leaf_disjoint(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],values[owner].loan_parent,root,selector,depth+1);
+    }
+    if values[owner].target==root {
+        return values[owner].projection!=0 && values[owner].projection!=selector;
+    }
+    // Follow an intermediate reference's owner, retaining every dependency.
+    let target=values[owner].target;
+    if (ty==734 || (ty>20 && ty<60)) && target!=0 && target!=owner {
+        return leaf_disjoint(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],target,root,selector,depth+1);
+    }
+    return false;
+}
+
+/// Lifetime roots remain unchanged; only proven sibling access is disjoint.
+pub fn disjoint_dependencies(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
+    point: u64, reference: u64, root: u64) -> bool {
+    let selector=place_projection(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],point,root);
+    if selector==0{return false;}
+    leaf_disjoint(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],reference,root,selector,0)
+}

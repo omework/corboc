@@ -190,7 +190,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if mode == 1 || mode == 3 {
                 let mutable = values[binding].mutable;
                 values[binding] = CheckedValue{ ty: copy(ty), state: 2, mutable: mutable,
-                    target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binding);
+                    target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
             }
             return ty;
         }
@@ -211,9 +211,9 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let origin = values[binding].origin_call;
                 let result_entries = values[binding].loan_parent;
                 values[node] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
-                    target: copy(target), loan_parent: copy(result_entries), origin_call: copy(origin), writable: copy(exclusive) }; record_checked(&values[0..values.len()],node);
+                    target: copy(target), loan_parent: copy(result_entries), origin_call: copy(origin), writable: copy(exclusive), projection: 0, }; record_checked(&values[0..values.len()],node);
                 values[binding] = CheckedValue{ ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
-                    mutable: false, target: target, loan_parent: result_entries, origin_call: origin, writable: exclusive }; record_checked(&values[0..values.len()],binding);
+                    mutable: false, target: target, loan_parent: result_entries, origin_call: origin, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binding);
             }
             return ty;
         }
@@ -231,7 +231,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict > 0 { return 0 - violation_site(5, start, 785); }
             if conflict < 0 || ty == 94 || ty == 95 { return -9; }
             values[binding] = CheckedValue{ ty: ty, state: 3, mutable: false, target: 0,
-                loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binding);
+                loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
             return 0;
         }
         if ty == 90 || (ty >= 94 && ty < 200) { return -9; }
@@ -245,9 +245,9 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let mutable = values[binding].mutable;
                 let members=values[binding].loan_parent;
                 values[node] = CheckedValue{ ty: 475, state: 1, mutable: false, target: 0,
-                    loan_parent: copy(members), origin_call: copy(shape), writable: false }; record_checked(&values[0..values.len()],node);
+                    loan_parent: copy(members), origin_call: copy(shape), writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
                 values[binding] = CheckedValue{ ty: 475, state: 2, mutable: mutable, target: 0,
-                    loan_parent: members, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],binding);
+                    loan_parent: members, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
                 return 475;
             }
             if mode == 2 && (stored_loan_array(copy(ty)) || map_value(copy(ty))) { return 0 - violation_site(3, start, 787); }
@@ -276,10 +276,10 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 let member = values[binding].loan_parent;
                 let alternatives = values[binding].writable;
                 values[node] = CheckedValue{ ty: copy(ty), state: 1, mutable: false, target: copy(pool),
-                    loan_parent: member, origin_call: copy(constructor), writable: alternatives }; record_checked(&values[0..values.len()],node);
+                    loan_parent: member, origin_call: copy(constructor), writable: alternatives, projection: 0, }; record_checked(&values[0..values.len()],node);
             }
             values[binding] = CheckedValue{ ty: copy(ty), state: if mode == 1 { 2 } else { 3 },
-                mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, writable: false }; record_checked(&values[0..values.len()],binding);
+                mutable: binding_mutable, target: pool, loan_parent: 0, origin_call: constructor, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
             return if array_move { expected } else if mode == 1 { ty } else { 0 };
         }
         if is_primitive_value(copy(ty)) && mode != 3 {
@@ -294,7 +294,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             // Preserve any raw-address origin; copying usize must not erase it.
             values[node] = CheckedValue{ ty: copy(ty), state: 1, mutable: false,
                 target: values[binding].target, loan_parent: values[binding].loan_parent,
-                origin_call: values[binding].origin_call, writable: values[binding].writable }; record_checked(&values[0..values.len()],node);
+                origin_call: values[binding].origin_call, writable: values[binding].writable, projection: 0, }; record_checked(&values[0..values.len()],node);
             return ty;
         }
         if values[binding].target != 0 {
@@ -309,7 +309,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let exclusive = values[binding].writable;
             let loan_parent = values[binding].loan_parent;
             let origin_call = values[binding].origin_call;
-            values[binding] = CheckedValue{ ty: ty, state: 3, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive }; record_checked(&values[0..values.len()],binding);
+            values[binding] = CheckedValue{ ty: ty, state: 3, mutable: mutable, target: target, loan_parent: loan_parent, origin_call: origin_call, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binding);
             return 0;
         }
         let conflict = loan_conflict(&nodes[0..nodes.len()], &values[0..values.len()], &graph[0..graph.len()],
@@ -319,7 +319,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if expected != 0 && ty != expected { return 0 - type_violation(start,expected,ty,798); }
         if mode == 1 || mode == 3 {
             let mutable = values[binding].mutable;
-            values[binding] = CheckedValue{ ty: copy(ty), state: if mode == 1 { 2 } else { 3 }, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],binding);
+            values[binding] = CheckedValue{ ty: copy(ty), state: if mode == 1 { 2 } else { 3 }, mutable: mutable, target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],binding);
         }
         return ty;
     }
@@ -458,7 +458,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             &mut values[0..values.len()], child, 0, 3);
         if checked < 0 { return checked; }
         values[node] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],node);
+            loan_parent: 0, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
         return 310;
     }
     if kind == 14 && child != 0 && nodes[child].kind == 7 {
@@ -483,7 +483,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 if mode == 3 { return 0 - violation_site(3, start, 807); }
                 if expected != 0 && expected != 310 { return 0 - violation_site(1, start, 808); }
                 values[node] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-                    loan_parent: 0, origin_call: values[reference].origin_call, writable: false }; record_checked(&values[0..values.len()],node);
+                    loan_parent: 0, origin_call: values[reference].origin_call, writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
                 return 310;
             }
         }
@@ -507,7 +507,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if nodes[shape].kind==4{let status=symbolic_tuple(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(node),copy(shape));if status<0{return status;}}
             let mut field=graph[shape].first_child;
             while field!=0{if values[field].ty>9 && values[field].ty!=310{return -9;}field=graph[field].next_sibling;}
-            values[node]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:0,origin_call:shape,writable:false};record_checked(&values[0..values.len()],node);
+            values[node]=CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:0,origin_call:shape,writable:false, projection: 0,};record_checked(&values[0..values.len()],node);
             return 475;
         }
 
@@ -519,7 +519,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict > 0 { return 0 - violation_site(5, start, 812); }
             if conflict < 0 { return -9; }
             values[node] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-                loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],node);
+                loan_parent: 0, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
             return 310;
         }
         if kind == 18 && nodes[child].kind == 19 {
@@ -671,7 +671,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let conflict=loan_conflict(&nodes[0..nodes.len()],&values[0..values.len()],&graph[0..graph.len()],copy(vector),copy(node),true);
             if conflict>0{return 0-violation_site(5, start, 832);}if conflict<0{return -9;}
             let ty=910+primitive;if expected!=0 && expected!=ty{return 0-type_violation(start,expected,ty,833);}
-            values[node] = CheckedValue{ty:copy(ty),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);return ty;
+            values[node] = CheckedValue{ty:copy(ty),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],node);return ty;
         }
         if handle_vector(values[vector].ty) {
             if mode != 1 { return -9; }
@@ -935,7 +935,7 @@ fn verify_expr_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 if expected != 0 || mode != 0 || graph[argument].next_sibling != 0 { return -9; }
                 if values[handle].state != 1 { return 0 - violation_site(6, start, 864); }
                 values[handle] = CheckedValue{ ty: 91, state: 2, mutable: false,
-                    target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],handle);
+                    target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],handle);
                 return 0;
             }
         }

@@ -1,0 +1,10 @@
+struct Pair { left: i64, right: i64 }
+fn main() {
+    let mut pair = Pair { left: 0, right: 0 };
+    let mut left = &mut pair.left;
+    let mut right = &mut pair.right;
+    *left = 1;
+    *right = 2;
+    print(pair.left);
+    print(pair.right);
+}

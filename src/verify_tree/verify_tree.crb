@@ -45,7 +45,7 @@ fn unsupported_declaration_reason(nodes:&[AstNode],item:u64,reason:&str)->i32 {
 }
 
 pub fn check_tree(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token], custom_destructors: bool, whole_program: bool, env_call: u64, package: bool, library: bool) -> i32 {
-    let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0, loan_parent: 0, origin_call: 0, writable: false }; 524289];
+    let mut values = [CheckedValue { ty: 0, state: 0, mutable: false, target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; 524289];
     semantic_begin(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&values[..],diagnostic_enabled());
     let result=check_tree_impl(source,nodes,graph,tokens,&mut values[..],custom_destructors,whole_program,env_call,package,library);
     semantic_end();
@@ -139,7 +139,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
         while node < nodes.len() as u64 {
             if nodes[node].kind == 15 && nodes[node].start == env_call {
                 values[node] = CheckedValue{ ty: 2000139, state: 1, mutable: false,
-                    target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],node);
+                    target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],node);
                 break;
             }
             node = node + 1;
@@ -172,7 +172,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             if nodes[body].kind == 4 { body = graph[body].next_sibling; }
             if nominal == 0 || nodes[receiver].kind != 3 || nodes[body].kind != 2 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
             values[receiver] = CheckedValue{ ty: 90, state: 1, mutable: false, target: copy(receiver),
-                loan_parent: 0, origin_call: nominal, writable: true }; record_checked(&values[0..values.len()],receiver);
+                loan_parent: 0, origin_call: nominal, writable: true, projection: 0, }; record_checked(&values[0..values.len()],receiver);
             let (status, stopped) = check_block(&source[0..source.len()], &nodes[0..nodes.len()],
                 &graph[0..graph.len()], &tokens[0..tokens.len()], &mut values[0..values.len()], &mut edges[..],
                 body, 0, true);
@@ -298,7 +298,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
             if nodes[record].kind != 28 && nodes[record].kind != 29 { return unsupported_declaration(&nodes[0..nodes.len()], item); }
             let exclusive = borrow_mutable(&source[nodes[child].start..nodes[child].name_start]);
             values[child] = CheckedValue{ ty: 734, state: 1, mutable: false, target: copy(child),
-                loan_parent: 0, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],child);
+                loan_parent: 0, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],child);
             child = graph[child].next_sibling;
         }
         let mut result: i64 = 0;
@@ -317,7 +317,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     }
                     if value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], owned, 0, true) {
                         values[child] = CheckedValue{ ty: 300, state: 1, mutable: graph[child].mutable,
-                            target: 0, loan_parent: 0, origin_call: annotation, writable: false }; record_checked(&values[0..values.len()],child);
+                            target: 0, loan_parent: 0, origin_call: annotation, writable: false, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -328,7 +328,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     if option != 0 {
                         if option_borrow(copy(option)) != 0 || option_allocation(copy(option)) != 0 || option_handle(copy(option)) != 0 { return unsupported_declaration_reason(&nodes[0..nodes.len()],annotation,"Option parameters carrying references, allocations or handles are not implemented by this signature path"); }
                         values[child] = CheckedValue{ ty: option, state: 1, mutable: graph[child].mutable,
-                            target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],child);
+                            target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -338,7 +338,7 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         &graph[0..graph.len()], copy(annotation));
                     if wrapped != 0 {
                         values[child] = CheckedValue{ ty: wrapped, state: 1, mutable: graph[child].mutable,
-                            target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],child);
+                            target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -348,10 +348,10 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         &graph[0..graph.len()], copy(annotation), false);
                     if record != 0 {
                         let exclusive=borrow_mutable(&source[nodes[annotation].start..nodes[record].start]);
-                        values[annotation] = CheckedValue{ty:734,state:1,mutable:copy(exclusive),target:copy(annotation),loan_parent:0,origin_call:copy(record),writable:copy(exclusive)}; record_checked(&values[0..values.len()],annotation);
+                        values[annotation] = CheckedValue{ty:734,state:1,mutable:copy(exclusive),target:copy(annotation),loan_parent:0,origin_call:copy(record),writable:copy(exclusive), projection: 0,}; record_checked(&values[0..values.len()],annotation);
                         values[child] = CheckedValue{ ty: 734, state: 1, mutable: graph[child].mutable,
                             target: copy(annotation), loan_parent: 0, origin_call: copy(record),
-                            writable: exclusive }; record_checked(&values[0..values.len()],child);
+                            writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -361,9 +361,9 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         &nodes[0..nodes.len()], &graph[0..graph.len()], copy(annotation));
                     if slice != 0 {
                         // The descriptor binding may move; its caller-owned storage does not.
-                        values[annotation] = CheckedValue{ty:copy(slice),state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:copy(element),writable:copy(exclusive)}; record_checked(&values[0..values.len()],annotation);
+                        values[annotation] = CheckedValue{ty:copy(slice),state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:copy(element),writable:copy(exclusive), projection: 0,}; record_checked(&values[0..values.len()],annotation);
                         values[child] = CheckedValue{ ty: slice, state: 1, mutable: graph[child].mutable,
-                            target: annotation, loan_parent: 0, origin_call: element, writable: exclusive }; record_checked(&values[0..values.len()],child);
+                            target: annotation, loan_parent: 0, origin_call: element, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -415,9 +415,9 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                         &graph[0..graph.len()], copy(annotation), false);
                     if allocation >= 201 && allocation <= 207 {
                         values[annotation] = CheckedValue{ ty: copy(allocation) - 100, state: 1, mutable: true,
-                            target: copy(child), loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],annotation);
+                            target: copy(child), loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],annotation);
                         values[child] = CheckedValue{ ty: allocation, state: 1, mutable: graph[child].mutable,
-                            target: annotation, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],child);
+                            target: annotation, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],child);
                         child = graph[child].next_sibling;
                         continue;
                     }
@@ -444,14 +444,14 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 }
                 if ty == 0 { return unsupported_declaration_reason(&nodes[0..nodes.len()],annotation,"the checker cannot represent this parameter type and its dependencies"); }
                 if ty==2000138 {
-                    values[annotation] = CheckedValue{ty:2000138,state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],annotation);
-                    values[child] = CheckedValue{ty:ty,state:1,mutable:false,target:annotation,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],child);
+                    values[annotation] = CheckedValue{ty:2000138,state:1,mutable:false,target:copy(annotation),loan_parent:0,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],annotation);
+                    values[child] = CheckedValue{ty:ty,state:1,mutable:false,target:annotation,loan_parent:0,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],child);
                     child=graph[child].next_sibling;continue;
                 }
                 let target: u64 = if ty >= 20 && ty != 310 && !task_value(copy(ty)) && !is_scalar_array(copy(ty)) && !map_value(copy(ty)) { copy(child) } else { 0 };
                 let exclusive = ty >= 40 && ty!=2000138 && !(ty >= 710 && ty < 720);
                 values[child] = CheckedValue{ ty: copy(ty), state: 1, mutable: graph[child].mutable || (ty >= 96 && ty <= 99) || (ty >= 101 && ty <= 107),
-                    target: target, loan_parent: 0, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],child);
+                    target: target, loan_parent: 0, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],child);
             } else if nodes[child].kind == 4 {
                 if has_void_result(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(child)) {
                     child = graph[child].next_sibling;

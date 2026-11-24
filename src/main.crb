@@ -2199,7 +2199,7 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
             reset = reset + 1;
         }
         build_graph(&current[..length], &syntax[..used], &tokens[..selected], &mut graph[..], true);
-        let empty_values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false};1];
+        let empty_values:[CheckedValue;1]=[CheckedValue {ty:0,state:0,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,};1];
         semantic_begin(&current[..length],&syntax[..used],&graph[..used],&empty_values[0..0],diagnostic_enabled());
         let generic = generic_recipes(&current[..length], &syntax[..used]);
         let factory = iterator_factory(&current[..length], &syntax[..used]);

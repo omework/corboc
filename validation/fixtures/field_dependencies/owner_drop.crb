@@ -1,0 +1,15 @@
+use std::sync::asyn::Mutex;
+struct Tracker { cursor: i64 }
+struct FileLike { value: i64 }
+impl FileLike {
+    fn read(&self) -> i64 { (*self).value }
+    fn increment(&mut self) { (*self).value += 1; }
+}
+struct Holder { tracker: Mutex<Tracker>, file: FileLike }
+async fn work() {
+    let holder = Holder { tracker: Mutex::new(Tracker { cursor: 1 }), file: FileLike { value: 1 } };
+    let guard = holder.tracker.lock().await;
+    drop(holder);
+    print((*guard).cursor);
+}
+fn main() {}

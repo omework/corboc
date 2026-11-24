@@ -500,3 +500,20 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Pass 18 focused cases and watch recovery; install at the existing PATH.
 
 [Cause and execution evidence](DEREFERENCE_CRASH_CYCLE.md).
+
+## Recorded diagnostic work
+
+- [ ] Report missing explicit slice borrows as argument/type diagnostics, with expected/actual forms and a targeted suggestion; no implicit borrowing.
+
+[Recorded behavior and separate sibling-field analysis finding](DIAGNOSTIC_BACKLOG.md).
+
+## Field-specific borrows and current mutable-borrow policy
+
+- [x] Preserve a field projection separately from the retained lifetime root.
+- [x] Carry it through method arguments, returned guards and value summaries.
+- [x] Distinguish sibling access without permitting same-field acquisition or owner destruction.
+- [x] Restore rejection of overlapping mutable references and call arguments; preserve last-use release and disjoint fields.
+- [x] Pass nine focused observations and the 18 dereference / 13 mutex regressions on macOS ARM64.
+- [x] Validate the actual async File call across the task-launch boundary and install the final rebuild at the existing PATH.
+
+[Implementation and validation](FIELD_DEPENDENCIES_CYCLE.md).

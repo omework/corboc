@@ -1,3 +1,4 @@
+use bootstrap::loans::place_projection;
 use bootstrap::checked_state::record as record_checked;
 use bootstrap::verify::{violation_site};
 use bootstrap::scalar::primitive_enum;
@@ -136,10 +137,11 @@ pub fn check_record_argument(source: &[u8], nodes: &[AstNode], graph: &[StaticNo
         parent = values[from].loan_parent;
         let mutable = values[from].mutable;
         values[from] = CheckedValue{ ty: 734, state: 2, mutable: mutable, target: copy(target),
-            loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive) }; record_checked(&values[0..values.len()],from);
+            loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive), projection: 0, }; record_checked(&values[0..values.len()],from);
     }
+    let projection=place_projection(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],input,target);
     values[input] = CheckedValue{ ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],input);
+        loan_parent: parent, origin_call: shape, writable: exclusive, projection: projection, }; record_checked(&values[0..values.len()],input);
     734
 }
 
@@ -194,8 +196,9 @@ pub fn reserve_method_receiver(source: &[u8], nodes: &[AstNode], graph: &[Static
     let target = if by_reference { values[binding].target } else { copy(binding) };
     let parent = if by_reference { copy(binding) } else { 0 };
     let shape = if projected{copy(shape)}else{values[binding].origin_call};
+    let projection=place_projection(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],receiver,target);
     values[receiver] = CheckedValue{ ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],receiver);
+        loan_parent: parent, origin_call: shape, writable: exclusive, projection: projection, }; record_checked(&values[0..values.len()],receiver);
     1
 }
 
@@ -220,7 +223,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if conflict < 0 { return -9; }
             if conflict > 0 { return 0 - violation_site(5, nodes[initializer].start, 388); }
             values[destination] = CheckedValue{ ty: 734, state: 1, mutable: graph[destination].mutable,
-                target: copy(from), loan_parent: 0, origin_call: values[from].origin_call, writable: exclusive }; record_checked(&values[0..values.len()],destination);
+                target: copy(from), loan_parent: 0, origin_call: values[from].origin_call, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],destination);
             return 1;
         }
         if values[from].ty == 734 {
@@ -231,7 +234,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if checked < 0 { return checked; }
             values[destination] = CheckedValue{ ty: 734, state: 1, mutable: graph[destination].mutable,
                 target: values[initializer].target, loan_parent: values[initializer].loan_parent,
-                origin_call: values[initializer].origin_call, writable: values[initializer].writable }; record_checked(&values[0..values.len()],destination);
+                origin_call: values[initializer].origin_call, writable: values[initializer].writable, projection: 0, }; record_checked(&values[0..values.len()],destination);
             return 1;
         }
     }
@@ -261,7 +264,7 @@ pub fn bind_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if conflict > 0 { return 0 - violation_site(5, nodes[place].start, 390); }
     let target = if reference { values[root].target } else { copy(root) };
     values[destination] = CheckedValue{ ty: 734, state: 1, mutable: false, target: target,
-        loan_parent: if reference { root } else { 0 }, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],destination);
+        loan_parent: if reference { root } else { 0 }, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],destination);
     1
 }
 
@@ -308,7 +311,7 @@ fn reborrow_record_field(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         copy(holder), copy(projection), copy(exclusive));
     if conflict != 0 { return if conflict < 0 { -9 } else { 0 - violation_site(5, nodes[projection].start, 394) }; }
     values[destination] = CheckedValue{ ty: 734, state: 1, mutable: false, target: root,
-        loan_parent: holder, origin_call: target, writable: exclusive }; record_checked(&values[0..values.len()],destination);
+        loan_parent: holder, origin_call: target, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],destination);
     1
 }
 
@@ -413,9 +416,9 @@ pub fn bind_record_pool(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let shape = if borrowed == 99 { graph[graph[annotation].first_child].first_child } else { 0 };
     if nodes[original].kind == 3 {
         values[root] = CheckedValue{ ty: copy(borrowed), state: 1, mutable: true, target: original,
-            loan_parent: 0, origin_call: copy(shape), writable: true }; record_checked(&values[0..values.len()],root);
+            loan_parent: 0, origin_call: copy(shape), writable: true, projection: 0, }; record_checked(&values[0..values.len()],root);
     }
     values[destination] = CheckedValue{ ty: borrowed, state: 1, mutable: true, target: root,
-        loan_parent: binding, origin_call: shape, writable: true }; record_checked(&values[0..values.len()],destination);
+        loan_parent: binding, origin_call: shape, writable: true, projection: 0, }; record_checked(&values[0..values.len()],destination);
     return 1;
 }

@@ -89,11 +89,11 @@ pub fn check_propagation(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],value
         let handle=values[child].target;
         copy_task_summary(&mut values[0..values.len()],handle,copy(node),copy(actual),false);
     }else if inline_array(copy(payload)) {
-        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false}; record_checked(&values[0..values.len()],node);
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:unsigned((payload-10000)/100),writable:false, projection: 0,}; record_checked(&values[0..values.len()],node);
     }else if actual==300 || actual==310 {
         let shape=if values[child].origin_call!=0{values[child].origin_call}else{unsigned(payload-3000000)};
-        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:values[child].target,loan_parent:values[child].loan_parent,origin_call:shape,writable:values[child].writable}; record_checked(&values[0..values.len()],node);
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:values[child].target,loan_parent:values[child].loan_parent,origin_call:shape,writable:values[child].writable, projection: 0,}; record_checked(&values[0..values.len()],node);
     }else {
-        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false}; record_checked(&values[0..values.len()],node);
+        values[node] = CheckedValue{ty:copy(actual),state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],node);
     }actual
 }

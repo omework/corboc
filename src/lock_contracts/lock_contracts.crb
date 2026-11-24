@@ -52,12 +52,12 @@ pub fn retain_lock(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if slot == 0 { return -9; }
     let entry = slot + 1;
     values[slot] = CheckedValue{ ty: 5019, state: 1, mutable: false,
-        target: values[actual].target, loan_parent: values[actual].loan_parent, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],slot);
+        target: values[actual].target, loan_parent: values[actual].loan_parent, origin_call: 0, writable: false, projection: values[actual].projection, }; record_checked(&values[0..values.len()],slot);
     let previous = values[marker].origin_call;
     values[entry] = CheckedValue{ ty: 5014, state: 1, mutable: false,
-        target: slot, loan_parent: previous, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],entry);
+        target: slot, loan_parent: previous, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],entry);
     values[marker] = CheckedValue{ ty: 5012, state: 1, mutable: false,
-        target: 0, loan_parent: 0, origin_call: entry, writable: false }; record_checked(&values[0..values.len()],marker);
+        target: 0, loan_parent: 0, origin_call: entry, writable: false, projection: 0, }; record_checked(&values[0..values.len()],marker);
     0
 }
 

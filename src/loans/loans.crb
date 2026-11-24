@@ -559,7 +559,7 @@ fn bootstrap_task_reserves(values: &[CheckedValue], graph: &[StaticNode], node: 
 // The first field selector identifies disjoint storage beneath one binding.
 // Mutable bindings retain their own identity, since an initializer alone
 // cannot describe their later reassignments.
-fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
+pub fn projected_path(nodes: &[AstNode], graph: &[StaticNode], point: u64, depth: u64) -> u64 {
     if point == 0 || depth >= 128 { return 0; }
     let kind = nodes[point].kind;
     if kind == 7 { return projected_path(&nodes[0..nodes.len()], &graph[0..graph.len()], graph[point].binding, depth + 1); }
@@ -605,7 +605,7 @@ pub fn loan_conflict(nodes: &[AstNode], values: &[CheckedValue], graph: &[Static
 pub fn loan_conflict_after(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
     target: u64, point: u64, write: bool, from: u64) -> i64 {
     loan_conflict_from(&nodes[0..nodes.len()], &values[0..values.len()],
-        &graph[0..graph.len()], copy(target), copy(point), copy(write), from, 0, !write || graph[point].access_mode == 1, point)
+        &graph[0..graph.len()], copy(target), copy(point), copy(write), from, 0, !write, point)
 }
 
 pub fn loan_conflict_excluding(nodes: &[AstNode], values: &[CheckedValue], graph: &[StaticNode],
@@ -652,12 +652,14 @@ fn loan_conflict_from(nodes: &[AstNode], values: &[CheckedValue], graph: &[Stati
     let launch = if nodes[point].kind == 57 { nodes[nodes[point].parent].parent } else { copy(point) };
     let mut reference = graph[launch].visible;
     while reference != 0 {
-        if reference != excluded && !(permission_only && future_type(values[reference].ty)) && values[reference].state == 1 && (values[reference].ty == 300
+        if reference != excluded && !disjoint_dependencies(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],proof,reference,target)
+            && !(permission_only && future_type(values[reference].ty)) && values[reference].state == 1 && (values[reference].ty == 300
             || values[reference].ty == 301 || values[reference].ty == 310 || option_handle(values[reference].ty) != 0 || handle_vector(values[reference].ty) || pooled_handle(values[reference].ty))
             && bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()],
                 copy(reference), copy(target), !write)
             && (!permission_only || !protected_overlap(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), copy(proof))) { semantic_conflict(reference); return 1; }
         if reference != excluded && !(permission_only && future_type(values[reference].ty)) && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(point), copy(reference))
+            && !disjoint_dependencies(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],proof,reference,target)
             && (values[reference].state == 1 || values[reference].state == 4)
             && (!permission_only || explicit_lock_dependency(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), 0)
                 || ((task_value(values[reference].ty) || bootstrap_task_reserves(&values[0..values.len()], &graph[0..graph.len()], copy(reference), copy(target), !write))
@@ -901,7 +903,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 let from = graph[if reborrow { graph[place].first_child } else { copy(place) }].binding;
                 values[argument] = CheckedValue{ ty: copy(input), state: 1, mutable: false,
                     target: if reborrow && (values[from].ty<201 || values[from].ty>209) { values[from].target } else { copy(from) },
-                    loan_parent: if reborrow && (values[from].ty<201 || values[from].ty>209) { copy(from) } else { 0 }, origin_call: 0, writable: input >= 40 }; record_checked(&values[0..values.len()],argument);
+                    loan_parent: if reborrow && (values[from].ty<201 || values[from].ty>209) { copy(from) } else { 0 }, origin_call: 0, writable: input >= 40, projection: 0, }; record_checked(&values[0..values.len()],argument);
                 binding = copy(argument);
             } else if nodes[argument].kind != 7 { return -9; }
             if binding == 0 || values[binding].state != 1 || values[binding].ty >= 100
@@ -932,7 +934,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
                 // Argument nodes have no binding state of their own.
                 if nodes[argument].kind == 7 {
                     values[argument] = CheckedValue{ ty: 0, state: 1, mutable: false,
-                        target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],argument);
+                        target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],argument);
                 }
                 if first == 0 { first = binding; }
             }
@@ -968,7 +970,7 @@ pub fn apply_loan_contract(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
     if first == 0 { return -9; }
     let target = values[first].target;
     values[point] = CheckedValue{ ty: copy(output), state: 1, mutable: false,
-        target: target, loan_parent: first, origin_call: call, writable: output >= 40 }; record_checked(&values[0..values.len()],point);
+        target: target, loan_parent: first, origin_call: call, writable: output >= 40, projection: 0, }; record_checked(&values[0..values.len()],point);
     output
 }
 

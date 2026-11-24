@@ -83,6 +83,8 @@ pub struct CheckedValue {
     origin_call: u64,
     /// Write permission only; explicit lock intervals are separate summary markers.
     writable: bool,
+    /// First field selected below target; zero means whole/unknown storage.
+    projection: u64,
 }
 
 // A constructor call links its field template to its own argument range.

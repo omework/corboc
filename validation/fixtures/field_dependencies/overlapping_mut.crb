@@ -1,0 +1,8 @@
+fn main() {
+    let mut value = 1;
+    let mut first = &mut value;
+    let mut second = &mut value;
+    *first = 2;
+    *second = 3;
+    print(value);
+}

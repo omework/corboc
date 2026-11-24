@@ -1,0 +1,21 @@
+use std::sync::Mutex;
+struct Tracker { cursor: i64 }
+struct FileLike { value: i64 }
+impl FileLike {
+    fn read(&self) -> i64 { (*self).value }
+    fn increment(&mut self) { (*self).value += 1; }
+}
+struct Holder { tracker: Mutex<Tracker>, file: FileLike }
+impl Holder {
+    fn work(&mut self) -> i64 {
+        let mut guard = self.tracker.lock();
+        self.file.increment();
+        print(self.file.read());
+        (*guard).cursor += 1;
+        (*guard).cursor
+    }
+}
+fn main() {
+    let mut holder = Holder { tracker: Mutex::new(Tracker { cursor: 41 }), file: FileLike { value: 41 } };
+    print(holder.work());
+}

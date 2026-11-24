@@ -1,0 +1,17 @@
+use std::sync::asyn::Mutex;
+struct Tracker { cursor: i64 }
+struct FileLike { value: i64 }
+impl FileLike {
+    fn read(&self) -> i64 { (*self).value }
+    fn increment(&mut self) { (*self).value += 1; }
+}
+struct Holder { tracker: Mutex<Tracker>, file: FileLike }
+impl Holder {
+    fn inspect(&self) -> i64 { self.file.read() }
+    async fn work(&mut self) {
+        let guard = self.tracker.lock().await;
+        print(self.inspect());
+        print((*guard).cursor);
+    }
+}
+fn main() {}

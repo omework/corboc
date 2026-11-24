@@ -1,3 +1,4 @@
+use bootstrap::loans::{disjoint_dependencies, place_projection};
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
 use bootstrap::verify::{violation_site};
@@ -106,9 +107,9 @@ pub fn move_slice_argument(nodes: &[AstNode], graph: &[StaticNode], values: &mut
     let shape = values[binding].origin_call;
     let mutable = values[binding].mutable;
     values[input] = CheckedValue{ ty: copy(expected), state: 1, mutable: false,
-        target: copy(target), loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive) }; record_checked(&values[0..values.len()],input);
+        target: copy(target), loan_parent: copy(parent), origin_call: copy(shape), writable: copy(exclusive), projection: 0, }; record_checked(&values[0..values.len()],input);
     values[binding] = CheckedValue{ ty: expected, state: 2, mutable: mutable,
-        target: target, loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],binding);
+        target: target, loan_parent: parent, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],binding);
     1
 }
 
@@ -230,13 +231,14 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let mut index: u64 = 0;
         while index < reservations {
             let previous = reserved[index];
-            if graph[previous].access_mode == 1 && graph[input].access_mode == 1
+            if source[nodes[ty_node].start]!=38 && graph[previous].access_mode == 1 && graph[input].access_mode == 1
                 && reference_preparation(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(input), 0) {
                 index += 1;
                 continue;
             }
             // Reuse the same field-disjointness proof as the reservation check below.
-            if disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous), copy(input)) {
+            if disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous), copy(input))
+                || disjoint_dependencies(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],input,previous,values[previous].target) {
                 index += 1;
                 continue;
             }
@@ -255,7 +257,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     let record = loan == 734;
                     if (!record && (loan < 741 || loan > 749)) || values[previous].writable
                         || !readonly_argument_use(&nodes[0..nodes.len()], &graph[0..graph.len()],
-                            copy(point), copy(input), record) { return -9; }
+                            copy(point), copy(input), record) { return 0-violation_site(5,nodes[input].start,488); }
                 }
                 point = point + 1;
             }
@@ -273,15 +275,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             index = 0;
             while index < reservations {
                 let previous = reserved[index];
-            if graph[previous].access_mode == 1 && graph[input].access_mode == 1
-                && reference_preparation(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(input), 0) {
-                index += 1;
-                continue;
-            }
+
                 if values[previous].target == values[input].target
                     && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous), copy(input))
-                    && (exclusive || values[previous].writable)
-                    && !(graph[previous].access_mode == 1 && graph[input].access_mode == 1) { return -9; }
+                    && (exclusive || values[previous].writable) { return -9; }
                 index = index + 1;
             }
             actual = slice;
@@ -311,7 +308,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     &graph[0..graph.len()], copy(pool), copy(input), true);
                 if conflict != 0 { return if conflict > 0 { 0 - violation_site(5, nodes[input].start, 491) } else { -9 }; }
                 values[input] = CheckedValue{ ty: copy(pool_type), state: 1, mutable: false, target: pool,
-                    loan_parent: 0, origin_call: 0, writable: true }; record_checked(&values[0..values.len()],input);
+                    loan_parent: 0, origin_call: 0, writable: true, projection: 0, }; record_checked(&values[0..values.len()],input);
                 reserved[reservations] = copy(input);
                 reservations = reservations + 1;
                 actual = pool_type;
@@ -339,15 +336,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 index = 0;
                 while index < reservations {
                     let previous = reserved[index];
-            if graph[previous].access_mode == 1 && graph[input].access_mode == 1
-                && reference_preparation(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(input), 0) {
-                index += 1;
-                continue;
-            }
+
                     if values[previous].target == values[input].target
                         && !disjoint_fields(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(previous), copy(input))
-                        && (exclusive || values[previous].writable)
-                    && !(graph[previous].access_mode == 1 && graph[input].access_mode == 1) { return -9; }
+                        && (exclusive || values[previous].writable) { return -9; }
                     index = index + 1;
                 }
                 reserved[reservations] = copy(input);
@@ -466,19 +458,14 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 index = 0;
                 while index < reservations {
                     let previous = reserved[index];
-            if graph[previous].access_mode == 1 && graph[input].access_mode == 1
-                && reference_preparation(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(input), 0) {
-                index += 1;
-                continue;
-            }
-                    if values[previous].target == root && (exclusive || values[previous].writable)
-                    && !(graph[previous].access_mode == 1 && graph[input].access_mode == 1) {
+
+                    if values[previous].target == root && (exclusive || values[previous].writable) {
                         return 0 - violation_site(5, nodes[input].start, 504);
                     }
                     index = index + 1;
                 }
                 values[input] = CheckedValue{ ty: copy(array_view), state: 1, mutable: false, target: root,
-                    loan_parent: if referent == 0 { 0 } else { binding }, origin_call: length, writable: exclusive }; record_checked(&values[0..values.len()],input);
+                    loan_parent: if referent == 0 { 0 } else { binding }, origin_call: length, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],input);
                 reserved[reservations] = copy(input);
                 reservations = reservations + 1;
                 array_view
@@ -548,19 +535,14 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     index = 0;
                     while index < reservations {
                         let previous = reserved[index];
-            if graph[previous].access_mode == 1 && graph[input].access_mode == 1
-                && reference_preparation(&nodes[0..nodes.len()], &graph[0..graph.len()], copy(input), 0) {
-                index += 1;
-                continue;
-            }
-                        if values[previous].target == root && (exclusive || values[previous].writable)
-                    && !(graph[previous].access_mode == 1 && graph[input].access_mode == 1) {
+
+                        if values[previous].target == root && (exclusive || values[previous].writable) {
                             return 0 - violation_site(5, nodes[input].start, 507);
                         }
                         index = index + 1;
                     }
                     values[input] = CheckedValue{ ty: reference, state: 1, mutable: false, target: root,
-                        loan_parent: parent, origin_call: 0, writable: exclusive }; record_checked(&values[0..values.len()],input);
+                        loan_parent: parent, origin_call: 0, writable: exclusive, projection: place_projection(&nodes[0..nodes.len()],&graph[0..graph.len()],&values[0..values.len()],input,root), }; record_checked(&values[0..values.len()],input);
                     reserved[reservations] = copy(input);
                     reservations = reservations + 1;
                 }
@@ -617,7 +599,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     if mode != 1 && !(mode == 0 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], nominal)) { return -9; }
                     result = 310;
                     values[call] = CheckedValue{ ty: 310, state: 1, mutable: false, target: 0,
-                        loan_parent: 0, origin_call: copy(parameter), writable: false }; record_checked(&values[0..values.len()],call);
+                        loan_parent: 0, origin_call: copy(parameter), writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
                 } else if borrowed_record_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0)
                     && !value_record(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(nominal), 0, true) {
                     if mode != 1 { return -9; }
@@ -628,7 +610,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                     if mode != 1 { return -9; }
                     result = 300;
                     values[call] = CheckedValue{ ty: 300, state: 1, mutable: false, target: 0,
-                        loan_parent: 0, origin_call: copy(parameter), writable: false }; record_checked(&values[0..values.len()],call);
+                        loan_parent: 0, origin_call: copy(parameter), writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
                 } else {
                     result = map_type(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(parameter));
                     if result < 0 { return result; }
@@ -643,8 +625,8 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let kind=region_signature(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(success),false);
         if root==0 || kind==0 || bootstrap::pool_results::allocation_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(root))!=bootstrap::model::result_payload(copy(result),true){return -9;}
         let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if slot==0{return -9;}
-        values[slot] = CheckedValue{ty:kind,state:1,mutable:false,target:copy(root),loan_parent:0,origin_call:graph[success].first_child,writable:false}; record_checked(&values[0..values.len()],slot);
-        values[call] = CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:slot,origin_call:0,writable:false}; record_checked(&values[0..values.len()],call);
+        values[slot] = CheckedValue{ty:kind,state:1,mutable:false,target:copy(root),loan_parent:0,origin_call:graph[success].first_child,writable:false, projection: 0,}; record_checked(&values[0..values.len()],slot);
+        values[call] = CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:slot,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],call);
     }
     if !deferred && (result_type(copy(result)) || optional(copy(result))) {
         let summary=instantiate_envelope_record(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],copy(function),copy(call),copy(parameter),copy(result));
@@ -665,7 +647,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if returned_record == 0 { return -9; }
             let target = values[call].target; let members = values[call].loan_parent; let shape = values[call].origin_call;
             values[returned_record] = CheckedValue{ ty: 300, state: 1, mutable: false,
-                target: target, loan_parent: members, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],returned_record);
+                target: target, loan_parent: members, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],returned_record);
         }
         if (!result_type(copy(result)) && !scalar_option(result) && result != 300 && (result<0 || result>9)) || waited != 0 || mode == 0 { return -9; }
         let mut captures: u64 = 0;
@@ -675,7 +657,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if values[capture].ty==300 || values[capture].ty==475 {
                 if !external_dependencies(&graph[0..graph.len()],&values[0..values.len()],copy(capture),0){index=index+1;continue;}
                 let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return -9;}
-                values[marker] = CheckedValue{ty:5010,state:1,mutable:false,target:0,loan_parent:capture,origin_call:captures,writable:false}; record_checked(&values[0..values.len()],marker);
+                values[marker] = CheckedValue{ty:5010,state:1,mutable:false,target:0,loan_parent:capture,origin_call:captures,writable:false, projection: 0,}; record_checked(&values[0..values.len()],marker);
                 captures=marker;index=index+1;continue;
             }
             let root = values[capture].target;
@@ -703,20 +685,20 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let parent = values[capture].loan_parent;
             let exclusive = values[capture].writable;
             values[capture] = CheckedValue{ ty: ty, state: 1, mutable: false,
-                target: root, loan_parent: parent, origin_call: captures, writable: exclusive }; record_checked(&values[0..values.len()],capture);
+                target: root, loan_parent: parent, origin_call: captures, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],capture);
             captures = capture;
             index = index + 1;
         }
         if result == 300 {
             if expected != 0 && expected != 3100 { return 0 - violation_site(1, start, 511); }
             values[call] = CheckedValue{ ty: 3100, state: 1, mutable: false,
-                target: 0, loan_parent: returned_record, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],call);
+                target: 0, loan_parent: returned_record, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
             return 3100;
         }
         let future = if result<=9{610+result}else{result_task_code(1, result)};
         if expected != 0 && expected != future { return 0 - violation_site(1, start, 512); }
         values[call] = CheckedValue{ ty: copy(future), state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: captures, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: 0, origin_call: captures, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
         return future;
     }
     if (expected != 0 && result != expected) || (mode != 0 && result == 0)
@@ -726,7 +708,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     if (result >= 620 && result <= 629) || (result >= 640 && result <= 649) {
         if reservations != 0 || waited != 0 { return -9; }
         values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false,
-            target: 0, loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+            target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     let lock = retain_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
         &mut values[0..values.len()], copy(function), copy(call));
@@ -744,13 +726,13 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let receiver=reserved[0];let formal=values[receiver].target;
             if values[receiver].ty==734 && nodes[formal].kind==3 {
                 let slot=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,2);if slot==0{return -9;}
-                values[slot] = CheckedValue{ty:5018,state:1,mutable:false,target:formal,loan_parent:0,origin_call:copy(field),writable:false}; record_checked(&values[0..values.len()],slot);
-                actual=slot+1;values[actual] = CheckedValue{ty:2000138,state:1,mutable:false,target:slot,loan_parent:0,origin_call:copy(field),writable:false}; record_checked(&values[0..values.len()],actual);
+                values[slot] = CheckedValue{ty:5018,state:1,mutable:false,target:formal,loan_parent:0,origin_call:copy(field),writable:false, projection: 0,}; record_checked(&values[0..values.len()],slot);
+                actual=slot+1;values[actual] = CheckedValue{ty:2000138,state:1,mutable:false,target:slot,loan_parent:0,origin_call:copy(field),writable:false, projection: 0,}; record_checked(&values[0..values.len()],actual);
             }
         }
         if actual==0{return -9;}
         let root=values[actual].target;let parent=values[actual].loan_parent;
-        values[call] = CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:parent,origin_call:field,writable:false}; record_checked(&values[0..values.len()],call);
+        values[call] = CheckedValue{ty:copy(result),state:1,mutable:false,target:root,loan_parent:parent,origin_call:field,writable:false, projection: 0,}; record_checked(&values[0..values.len()],call);
     } else if borrowed != 0 || (((result > 20 && result < 60) || record_borrow(copy(result))
         || slice_borrow(copy(result))) && (expected == 0 || expected == result)) {
         if reservations != 1 || nodes[function].kind != 1 { return -9; }
@@ -786,7 +768,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         }
         if target == 0 || (exclusive && !values[actual].writable) { return 0 - violation_site(4, start, 515); }
         values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: target,
-            loan_parent: parent, origin_call: shape, writable: exclusive }; record_checked(&values[0..values.len()],call);
+            loan_parent: parent, origin_call: shape, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     let allocation = option_allocation(copy(result));
     if allocation != 0 {
@@ -820,10 +802,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if pool == 0 { return -9; }
         if values[actual].ty == 734 && nodes[root].kind == 3 {
             values[pool] = CheckedValue{ ty: pool_type, state: 1, mutable: true,
-                target: root, loan_parent: 0, origin_call: copy(shape), writable: true }; record_checked(&values[0..values.len()],pool);
+                target: root, loan_parent: 0, origin_call: copy(shape), writable: true, projection: 0, }; record_checked(&values[0..values.len()],pool);
         }
         values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: pool,
-            loan_parent: 0, origin_call: shape, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: 0, origin_call: shape, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     if result >= 201 && result <= 207 {
         let formal = graph[function].first_child;
@@ -834,7 +816,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         if expected != result { return -9; }
         let root = values[argument].target;
         values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: root,
-            loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     let handle = option_handle(copy(result));
     if handle != 0 && reservations == 1 && values[reserved[0]].ty == 734 {
@@ -860,22 +842,22 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let exclusive = values[capture].writable;
         if target == 0 { return 0 - violation_site(4, start, 516); }
         values[capture] = CheckedValue{ ty: if copy(exclusive) { 42 } else { 22 },
-            state: 1, mutable: false, target: target, loan_parent: parent, origin_call: 0, writable: exclusive }; record_checked(&values[0..values.len()],capture);
+            state: 1, mutable: false, target: target, loan_parent: parent, origin_call: 0, writable: exclusive, projection: 0, }; record_checked(&values[0..values.len()],capture);
         let payload = graph[call].first_child;
         values[payload] = CheckedValue{ ty: handle, state: 1, mutable: false, target: 0,
-            loan_parent: 0, origin_call: capture, writable: false }; record_checked(&values[0..values.len()],payload);
+            loan_parent: 0, origin_call: capture, writable: false, projection: 0, }; record_checked(&values[0..values.len()],payload);
         values[call] = CheckedValue{ ty: copy(result), state: 1, mutable: false, target: payload,
-            loan_parent: 0, origin_call: 0, writable: false }; record_checked(&values[0..values.len()],call);
+            loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     if inline_array(copy(result)) {
         values[call] = CheckedValue{ ty: result % 100 + 400, state: 1, mutable: false,
-            target: 0, loan_parent: 0, origin_call: unsigned((result - 10000) / 100), writable: false }; record_checked(&values[0..values.len()],call);
+            target: 0, loan_parent: 0, origin_call: unsigned((result - 10000) / 100), writable: false, projection: 0, }; record_checked(&values[0..values.len()],call);
     }
     complete_task(&mut values[0..values.len()], waited, completion);
     if mode==1 && expected==0 && (record_borrow(copy(result)) || slice_borrow(copy(result))) {
         let view=if record_borrow(copy(result)){734}else{slice_borrow_type(copy(result))};
         let target=values[call].target;let parent=values[call].loan_parent;let shape=values[call].origin_call;let exclusive=values[call].writable;
-        values[call] = CheckedValue{ty:copy(view),state:1,mutable:false,target:target,loan_parent:parent,origin_call:shape,writable:exclusive}; record_checked(&values[0..values.len()],call);return view;
+        values[call] = CheckedValue{ty:copy(view),state:1,mutable:false,target:target,loan_parent:parent,origin_call:shape,writable:exclusive, projection: 0,}; record_checked(&values[0..values.len()],call);return view;
     }
     return result;
 }

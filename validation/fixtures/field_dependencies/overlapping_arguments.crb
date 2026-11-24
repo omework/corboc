@@ -1,0 +1,2 @@
+fn update(first: &mut i64, second: &mut i64) { *first = 2; *second = 3; }
+fn main() { let mut value = 1; update(&mut value, &mut value); }

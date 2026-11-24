@@ -459,5 +459,5 @@ pub fn reduce_loan_aliases(graph: &[StaticNode], values: &mut [CheckedValue], ow
     }
     let state=values[owner].state;let mutable=values[owner].mutable;
     let shape=values[owner].origin_call;let writable=values[owner].writable;
-    values[owner]=CheckedValue{ty:ty,state:state,mutable:mutable,target:root,loan_parent:parent,origin_call:shape,writable:writable};record_checked(&values[0..values.len()],owner);
+    values[owner]=CheckedValue{ty:ty,state:state,mutable:mutable,target:root,loan_parent:parent,origin_call:shape,writable:writable, projection: 0,};record_checked(&values[0..values.len()],owner);
 }

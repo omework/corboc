@@ -87,7 +87,7 @@ pub fn bind_nested_loan(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         &graph[0..graph.len()], &values[0..values.len()], expression, copy(nested));
     if checked < 0 { return checked; }
     values[statement] = CheckedValue{ ty: nested, state: 1, mutable: graph[statement].mutable,
-        target: reference, loan_parent: 0, origin_call: 0, writable: mutable }; record_checked(&values[0..values.len()],statement);
+        target: reference, loan_parent: 0, origin_call: 0, writable: mutable, projection: 0, }; record_checked(&values[0..values.len()],statement);
     1
 }
 
