@@ -1,0 +1,8 @@
+fn tail(buf: &[u8], start: usize) {
+    let view = &buf[start..];
+    print(view.len());
+}
+fn main() {
+    let data: [u8; 2] = [1, 2];
+    tail(&data[..], 3);
+}

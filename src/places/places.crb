@@ -783,7 +783,7 @@ pub fn bind_slice(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
     let first = graph[range].first_child;
     let has_start = nodes[range].name_start != nodes[range].start;
     let last = if has_start { graph[first].next_sibling } else { copy(first) };
-    if borrowed && (!has_start || last == 0) { return 0 - violation_site(1, nodes[range].start, 361); }
+    // Omitted bounds use zero and the source slice descriptor length.
     let mut length = copy(storage_shape);
     let mut element: u64 = 0;
     if ty == 451 || ty == 450 {

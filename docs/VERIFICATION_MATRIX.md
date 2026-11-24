@@ -433,3 +433,11 @@ The diagnostic points at that argument, preserves the expected signature and
 suggests the explicit shared or mutable borrow. Compound assignments across
 `.await?` retain their existing once-evaluated place and early-return behavior.
 [Focused execution evidence and limitations](COMPOUND_AWAIT_DIAGNOSTICS_CYCLE.md).
+
+## Omitted slice-reborrow bounds
+
+N1/N4/N5 use the same source slice descriptor and retained borrow edges for
+`&slice[..]`, `&mut slice[..]`, `[..end]` and `[start..]` as for explicit bounds.
+The omitted start is zero and the omitted end is the runtime source length.
+The obsolete syntactic refusal at site 361 is retired; runtime bounds and
+permission/overlap checks remain. [Focused evidence](SLICE_REBORROW_CYCLE.md).

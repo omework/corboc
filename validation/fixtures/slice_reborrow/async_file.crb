@@ -1,0 +1,32 @@
+use std::io::asyn::{File, FileError};
+use std::io::{FileMode, FilePerm};
+
+struct Reader { file: File }
+impl Reader {
+    fn get_read_offset(&mut self) -> Option<usize> { Some(0) }
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, FileError> {
+        if let Some(offset) = self.get_read_offset() {
+            return self.file.read_at(&mut buf[..], offset).await;
+        }
+        Ok(0)
+    }
+}
+async fn run() -> Result<usize, FileError> {
+    let file = File::create("/tmp/corboc-slice-reborrow-file", FileMode::READ | FileMode::WRITE | FileMode::TRUNCATE, FilePerm.DefaultMode).await?;
+    let bytes: [u8; 2] = [65, 66];
+    let written = file.write_at(&bytes[..], 0).await?;
+    print(written);
+    let mut reader = Reader { file: file };
+    let mut buffer: [u8; 2] = [0; 2];
+    let count = reader.read(&mut buffer[..]).await?;
+    print(buffer[0]);
+    print(buffer[1]);
+    Ok(count)
+}
+fn main() {
+    let task = runtime::spawn(run());
+    match task.join() {
+        Ok(result) => { match result { Ok(count) => { print(count); }, Err(_) => { print(-1); } } },
+        Err(_) => { print(-2); }
+    }
+}

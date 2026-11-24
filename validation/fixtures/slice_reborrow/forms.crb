@@ -1,0 +1,28 @@
+// Each mutable reborrow ends at its last use before the next starts.
+fn update(buf: &mut [u8]) {
+    let mut all = &mut buf[..];
+    all[0] = 10;
+    let mut suffix = &mut buf[1..];
+    suffix[0] = 20;
+    let mut prefix = &mut buf[..2];
+    prefix[0] += 1;
+    let shared = &buf[..];
+    print(shared.len());
+    print(shared[0]);
+    let tail = &shared[1..];
+    print(tail.len());
+    print(tail[0]);
+    let empty = &shared[2..];
+    print(empty.len());
+}
+fn empty_slice(buf: &mut [u8]) {
+    let view = &mut buf[..];
+    print(view.len());
+}
+fn main() {
+    let mut bytes: [u8; 2] = [0; 2];
+    update(&mut bytes[..]);
+    print(bytes[1]);
+    let mut empty: [u8; 0] = [];
+    empty_slice(&mut empty[..]);
+}

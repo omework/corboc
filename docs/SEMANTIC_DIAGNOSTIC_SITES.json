@@ -2893,7 +2893,9 @@
     "function": "bind_slice",
     "rule": "1",
     "condition": "if borrowed && (!has_start || last == 0)",
-    "message": "expression does not satisfy the required places type or value constraint"
+    "message": "expression does not satisfy the required places type or value constraint",
+    "retired": true,
+    "retirement_reason": "Omitted slice reborrow bounds use zero and the source descriptor length; no language violation."
   },
   {
     "id": 362,

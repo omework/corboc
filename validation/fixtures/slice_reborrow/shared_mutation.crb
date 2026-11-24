@@ -1,0 +1,5 @@
+fn update(buf: &[u8]) {
+    let mut view = &mut buf[..];
+    view[0] = 1;
+}
+fn main() {}

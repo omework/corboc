@@ -526,3 +526,12 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Execute real async File and once-evaluated indexed-target observations, including early error propagation, with fatal UBSan.
 - [x] Add targeted shared/mutable slice argument failures instead of E0009.
 - [x] Validate all four focused observations and semantic-diagnostic regressions; install the rebuilt compiler at the existing PATH.
+
+## Omitted bounds on slice reborrows
+
+- [x] Remove the obsolete requirement for two explicit bounds on an existing slice.
+- [x] Lower omitted start/end to zero/the source descriptor length.
+- [x] Preserve existing bounds, permission and lifetime checks; retire diagnostic site 361.
+- [x] Pass five focused observations plus four directly related regressions; install at the existing PATH.
+
+[Implementation and evidence](SLICE_REBORROW_CYCLE.md).

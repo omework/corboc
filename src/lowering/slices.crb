@@ -26,7 +26,6 @@ fn slice_borrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
     let first = graph[range].first_child;
     let has_start = nodes[range].start != nodes[range].name_start;
     let last = if has_start { graph[first].next_sibling } else { copy(first) };
-    if borrowed && (!has_start || last == 0) { return -1; }
     if regional {
         if first != 0 || has_start { return -1; }
         let element = vector_element(vector);
@@ -59,7 +58,10 @@ fn slice_borrow(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &
         { let code: [u8;11] = [117,105,110,116,54,52,95,116,32,108,111]; byte_text(&code[..]); } number(copy(node)); character(61);
         if has_start { { let code: [u8;10] = [40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(first); } else { character(48); }
         { let code: [u8;13] = [59,10,117,105,110,116,54,52,95,116,32,104,105]; byte_text(&code[..]); } number(copy(node)); character(61);
-        if last == 0 { number(array_length(copy(shape))); }
+        if last == 0 {
+            if borrowed { local(copy(binding)); { let code: [u8;4] = [46,108,101,110]; byte_text(&code[..]); } }
+            else { number(array_length(copy(shape))); }
+        }
         else { { let code: [u8;10] = [40,117,105,110,116,54,52,95,116,41]; byte_text(&code[..]); } temporary(last); }
         { let code: [u8;7] = [59,10,105,102,40,108,111]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;3] = [62,104,105]; byte_text(&code[..]); } number(copy(node)); { let code: [u8;4] = [124,124,104,105]; byte_text(&code[..]); }
         number(copy(node)); character(62);

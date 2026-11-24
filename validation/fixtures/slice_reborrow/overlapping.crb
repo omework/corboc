@@ -1,0 +1,7 @@
+fn update(buf: &mut [u8]) {
+    let mut first = &mut buf[..];
+    let mut second = &mut buf[..];
+    first[0] = 1;
+    second[0] = 2;
+}
+fn main() {}
