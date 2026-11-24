@@ -535,3 +535,14 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Pass five focused observations plus four directly related regressions; install at the existing PATH.
 
 [Implementation and evidence](SLICE_REBORROW_CYCLE.md).
+
+## WAL guard-loop and source alignment
+
+- [x] Defer iteration classification for unknown generic-dependent sources.
+- [x] Normalize borrowed loop headers before materializing overloaded dereferences.
+- [x] Preserve mutable-slice permission/dependency summaries across block outputs.
+- [x] Pass two guard-loop executions under fatal UBSan and ten existing iteration observations.
+- [x] Correct WAL source errors and stale File path calls in required SubDB companions.
+- [x] Rebuild and install at the existing PATH.
+
+[Implementation, scope and exact file-check result](WAL_FILE_CHECK_CYCLE.md).

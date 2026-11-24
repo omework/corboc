@@ -1,0 +1,29 @@
+// A generic guard's tuple-array source must be resolved before loop lowering.
+use std::sync::asyn::Mutex;
+
+enum State { Available, Busy }
+struct Tracker { buffer: [(usize, State); 2] }
+
+async fn next_slot(tracker: &Mutex<Tracker>) -> Option<usize> {
+    let mut guard = tracker.lock().await;
+    for slot in &mut (*guard).buffer {
+        if slot.1 == State.Available {
+            slot.1 = State.Busy;
+            return Some(slot.0);
+        }
+    }
+    None
+}
+
+async fn run() -> usize {
+    let tracker = Mutex::new(Tracker { buffer: [(3, State.Available), (7, State.Available)] });
+    match next_slot(&tracker).await { Some(offset) => { print(offset); }, None => { print(0); } }
+    match next_slot(&tracker).await { Some(offset) => { print(offset); }, None => { print(0); } }
+    match next_slot(&tracker).await { Some(offset) => { print(offset); }, None => { print(0); } }
+    2
+}
+
+fn main() {
+    let task = runtime::spawn(run());
+    match task.join() { Ok(count) => { print(count); }, Err(_) => { print(-1); } }
+}

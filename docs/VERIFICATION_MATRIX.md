@@ -441,3 +441,12 @@ N1/N4/N5 use the same source slice descriptor and retained borrow edges for
 The omitted start is zero and the omitted end is the runtime source length.
 The obsolete syntactic refusal at site 361 is retired; runtime bounds and
 permission/overlap checks remain. [Focused evidence](SLICE_REBORROW_CYCLE.md).
+
+## Generic-dependent guard iteration and block slice results
+
+Loop normalization distinguishes an unknown source type from a known next()-based
+iterator. Generic-dependent source classification waits for specialization. A
+borrowed array header forms its slice view before overloaded dereference is
+materialized. Block-result moves preserve slice permission and retained roots,
+using existing lifetime checks. Two focused guard executions and ten iteration
+regressions pass. [Evidence and source fixes](WAL_FILE_CHECK_CYCLE.md).

@@ -1286,7 +1286,7 @@ fn check_block_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], toke
                 let mutable = values[binding].mutable;
                 reduce_loan_aliases(&graph[0..graph.len()],&mut values[0..values.len()],binding,graph[destination].scope);
                 let member = values[binding].loan_parent;
-                if (ty == 300 && member != 0) || task_value(copy(ty)) || optional(copy(ty)) || result_type(copy(ty)) || ty == 734 || (ty>20 && ty<60) {
+                if (ty == 300 && member != 0) || task_value(copy(ty)) || optional(copy(ty)) || result_type(copy(ty)) || ty == 734 || (ty>20 && ty<60) || slice_view(copy(ty)) || ty==2000138 {
                     let survives = if !task_value(copy(ty)) {
                         owned_fields_survive(&graph[0..graph.len()], &values[0..values.len()], copy(binding), graph[destination].scope)
                     } else {

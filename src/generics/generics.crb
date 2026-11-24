@@ -1640,6 +1640,9 @@ pub fn iteration_mode(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],tokens:&
     let mut root=expression;
     while nodes[root].kind==13 || nodes[root].kind==19 {root=graph[root].first_child;}
     indexed=indexed || nodes[root].kind==44 || nodes[root].kind==45;
+    // Unknown generic-dependent sources must be classified after specialization,
+    // rather than guessed to implement the next() protocol.
+    if !indexed && node==0 {return -1;}
     if !indexed {return 0;}
     let inner=graph[node].first_child;
     let slice=ty.slice || (node!=0 && nodes[node].kind==4 && source[nodes[node].start]==91 && graph[inner].next_sibling==0);

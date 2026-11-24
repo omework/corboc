@@ -124,7 +124,19 @@ pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode]
             if nodes[n].kind==14 {
                 let mode=dereference_mode(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], &tokens[0..tokens.len()], n);
                 if mode<0 {return (report_violation_site(1,nodes[n].start,1015),0);}
-                if mode!=0 {chosen=n;dereference=mode;break;}
+                if mode!=0 {
+                    // Normalize a loop's source borrow to its slice view before
+                    // materializing overloaded dereference in that header.
+                    // Otherwise the temporary is a reference to a whole array.
+                    let envelope=dereference_envelope(&nodes[0..nodes.len()],&graph[0..graph.len()],n);
+                    let parent=nodes[envelope].parent;
+                    if nodes[parent].kind==95 && graph[parent].first_child==envelope {
+                        let mode=iteration_mode(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],envelope);
+                        if mode>=0 {chosen=parent;break;}
+                        n+=1;continue;
+                    }
+                    chosen=n;dereference=mode;break;
+                }
             }
             n+=1;
         }
@@ -132,7 +144,7 @@ pub fn expand_iteration_syntax(source:&[u8],nodes:&[AstNode],graph:&[StaticNode]
     if chosen==0 {
         n=1;
         while n<nodes.len() as u64 {
-            if nodes[n].kind==95 {chosen=n;break;}
+            if nodes[n].kind==95 && iteration_mode(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],graph[n].first_child)>=0 {chosen=n;break;}
             n+=1;
         }
     }
