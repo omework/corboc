@@ -132,6 +132,18 @@ pub fn return_loan(nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
 // sequence. A negative result requires control-flow liveness to decide.
 pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target: u64) bool {
     let ty = values[loan].ty;
+    if constructor_arguments(copy(ty)) {
+        let mut entry = values[loan].origin_call;
+        while entry != 0 {
+            if reserves(&values[..], &graph[..], summary_value(&values[..], entry), target) { return true; }
+            entry = summary_next(&graph[..], &values[..], entry);
+        }
+        return false;
+    }
+    let retained = values[loan].loan_parent;
+    if (ty == 300 || (ty > 20 && ty < 60)) && constructor_arguments(values[retained].ty) {
+        return reserves(&values[..], &graph[..], retained, target);
+    }
     if result_type(copy(ty)) {let member=values[loan].loan_parent;return member!=0 && reserves(&values[0..values.len()],&graph[0..graph.len()],member,target);}
     if ty == 5019 { return values[loan].target == target; }
     if ty >= 81 && ty <= 87 {
@@ -285,6 +297,9 @@ pub fn reserves(values: &[CheckedValue], graph: &[StaticNode], loan: u64, target
 // unprojected use retains all field loans.
 fn uses_reference_field(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
     aggregate: u64, target: u64, use_node: u64, write: bool) i64 {
+    let retained = values[aggregate].loan_parent;
+    if values[retained].ty == 5012 && values[retained].writable
+        && reserves(&values[..], &graph[..], retained, target) { return 2; }
     let mut point = use_node;
     while nodes[nodes[point].parent].kind == 19 { point = nodes[point].parent; }
     let projection = nodes[point].parent;
@@ -324,6 +339,10 @@ pub fn live_roots(values: &[CheckedValue], graph: &[StaticNode], loan: u64) bool
 
 fn live_roots_impl(values: &[CheckedValue], graph: &[StaticNode], loan: u64) bool {
     let reference_type = values[loan].ty;
+    let retained = values[loan].loan_parent;
+    if loan != retained && values[retained].ty == 5012 && values[retained].writable {
+        if !live_roots(&values[..], &graph[..], retained) { return false; }
+    }
     if reference_type == 5019 { return values[values[loan].target].state == 1; }
     if constructor_arguments(copy(reference_type)) {
         let mut summary_entry = values[loan].origin_call;

@@ -1,3 +1,5 @@
+use bootstrap::direct_vectors::{has_direct_vectors, expand_direct_vectors};
+use bootstrap::field_shorthand::{has_field_shorthand, expand_field_shorthand};
 use bootstrap::doc_server::{serve as serve_docs, usage as doc_usage, port as doc_port};
 use bootstrap::definition_syntax::{definition_input, has_typed_receivers, expand_typed_receivers};
 use bootstrap::packages::append;
@@ -97,11 +99,17 @@ fn parse_fields(depth: u64, tokens: &[Token], nodes: &mut [AstNode], open: u64,
     let mut index = open + 1;
     let mut count = free;
     while tokens[index].kind != 5 {
-        if !lexical_name(tokens[index].kind) || tokens[index + 1].kind != 10 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
+        let shorthand = !types && lexical_name(tokens[index].kind)
+            && (tokens[index + 1].kind == 11 || tokens[index + 1].kind == 5);
+        if !lexical_name(tokens[index].kind) || (!shorthand && tokens[index + 1].kind != 10) { diagnostic_parse_point(tokens[index].start); return (0, 0); }
         let field = copy(count);
         let start = tokens[index].start;
         let end_name = tokens[index].end;
-        if types {
+        if shorthand {
+            nodes[count + 1] = syntax_leaf(7, field, &tokens[index]);
+            index += 1;
+            count += 2;
+        } else if types {
             let (next, used) = parse_type(depth + 1, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
                 index + 2, count + 1, copy(field));
             if next == 0 { diagnostic_parse_point(tokens[index].start); return (0, 0); }
@@ -1827,25 +1835,15 @@ fn parse_constant(tokens: &[Token], nodes: &mut [AstNode], first: u64,
     let (equal, used) = parse_type(0, &tokens[0..tokens.len()], &mut nodes[0..nodes.len()],
         first + 3, item + 1, copy(item));
     if equal == 0 || tokens[equal].kind != 13 { diagnostic_parse_point(tokens[first].start); return (0, 0); }
-    let initializer = equal + 1;
-    let negative = tokens[initializer].kind == 20;
-    let literal = if negative { initializer + 1 } else { copy(initializer) };
-    let kind = tokens[literal].kind;
-    if (kind != 8 && kind != 64 && (kind != 18 || negative)) || tokens[literal + 1].kind != 14 {
-        diagnostic_parse_point(tokens[first].start); return (0, 0);
-    }
-    if negative {
-        nodes[used] = AstNode { kind: 12, parent: copy(item), start: tokens[initializer].start,
-            end: tokens[literal].end, name_start: tokens[initializer].start,
-            name_end: tokens[initializer].end, public: false };
-        nodes[used + 1] = syntax_leaf(9, copy(used), &tokens[literal]);
-    } else {
-        nodes[used] = syntax_leaf(9, copy(item), &tokens[literal]);
+    let (next, count, expression) = parse_expression(0, &tokens[0..tokens.len()],
+        &mut nodes[0..nodes.len()], equal + 1, used, copy(item), 0);
+    if next == 0 || expression == 0 || tokens[next].kind != 14 {
+        diagnostic_parse_point(tokens[equal + 1].start); return (0, 0);
     }
     nodes[item] = AstNode { kind: 76, parent: parent, start: item_start,
-        end: tokens[literal + 1].end, name_start: tokens[first + 1].start,
+        end: tokens[next].end, name_start: tokens[first + 1].start,
         name_end: tokens[first + 1].end, public: public };
-    (literal + 2, used + (if negative { 2 } else { 1 }))
+    (next + 1, count)
 }
 
 fn parse_generic_parameters(tokens: &[Token], nodes: &mut [AstNode], first: u64,
@@ -2117,6 +2115,9 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         node = node + 1;
     }
     if check == 4 { return 0; }
+    if check != 0 && has_field_shorthand(&nodes[..node]) {
+        return parse_field_shorthand(&source[..], &nodes[..node], check, env_call, package, &visibility[..]);
+    }
     if check != 0 && has_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()]) {
         return parse_configuration(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()]);
@@ -2124,7 +2125,39 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
     if check != 0 && (has_iteration_syntax(&source[0..source.len()], &nodes[..node]) || has_self_type(&source[0..source.len()],&tokens[0..tokens.len()])) {
         return parse_callables(&source[0..source.len()],check,env_call,package,visibility);
     }
+    if check != 0 {
+        let mut candidate: usize = 0;
+        while candidate < tokens.len() && tokens[candidate].kind != 0 {
+            let spelling = &source[tokens[candidate].start..tokens[candidate].end];
+            let vector_text = "Vector"; let vector_bytes = vector_text.as_bytes();
+            if spelling.content_eq(vector_bytes) && (tokens[candidate+1].kind == 43 || tokens[candidate+1].kind == 23) {
+                return parse_callables(&source[..], check, env_call, package, &visibility[..]);
+            }
+            candidate += 1;
+        }
+    }
     let generic = generic_recipes(&source[0..source.len()], &nodes[..node]);
+    if check != 0 {
+        let mut candidate: usize = 1;
+        while candidate < node {
+            if nodes[candidate].kind == 4 {
+                let word = "Vector"; let bytes = word.as_bytes();
+                let name = &source[nodes[candidate].name_start..nodes[candidate].name_end];
+                if name.content_eq(bytes) {
+                    let mut owner = nodes[candidate].parent;
+                    let mut pooled = false;
+                    while nodes[owner].kind == 4 {
+                        let text = &source[nodes[owner].name_start..nodes[owner].name_end];
+                        let pool = "Pool"; let p = pool.as_bytes(); let allocation = "A"; let a = allocation.as_bytes();
+                        if text.content_eq(p) || text.content_eq(a) { pooled = true; }
+                        owner = nodes[owner].parent;
+                    }
+                    if !pooled { return parse_callables(&source[..], check, env_call, package, &visibility[..]); }
+                }
+            }
+            candidate += 1;
+        }
+    }
     if check != 0 && (generic || has_pipeline(&source[0..source.len()], &tokens[0..tokens.len()])) {
         return parse_pipeline(&source[0..source.len()], &nodes[..node], &tokens[0..tokens.len()],
             check, env_call, package, &visibility[0..visibility.len()], generic);
@@ -2162,6 +2195,35 @@ fn generic_recipes(source: &[u8], nodes: &[AstNode]) bool {
         candidate = candidate + 1;
     }
     generic
+}
+
+// Canonicalize shorthand before qualification/specialization can rename the
+// value independently of the field label. Ordinary verification sees field: value.
+fn parse_field_shorthand(source: &[u8], nodes: &[AstNode], check: i32,
+    env_call: u64, package: bool, visibility: &[LayoutVisibility]) i32 {
+    let mut output: [u8; 4194304] = [0; 4194304];
+    let mut offsets: [u64; 4194304] = [0; 4194304];
+    diagnostic_stage(&source[..]);
+    let (error, written) = expand_field_shorthand(&source[..], &nodes[..], &mut output[..], &mut offsets[..]);
+    if error != 0 { return error; }
+    let mut views = [LayoutVisibility { kind: 0, name: 0, start: 0, end: 0, origin: 0 }; 4096];
+    let mut i: usize = 0;
+    while i < visibility.len() && visibility[i].name != 0 {
+        if i >= views.len() { return 4; }
+        views[i] = LayoutVisibility { kind: visibility[i].kind, name: offsets[visibility[i].name],
+            start: if visibility[i].start == 0 { 0 } else { offsets[visibility[i].start] },
+            end: if visibility[i].end == 0 { 0 } else { offsets[visibility[i].end] }, origin: visibility[i].origin };
+        i += 1;
+    }
+    diagnostic_rewritten(&output[..written], &offsets[..], source.len());
+    let mut tokens = [Token { nominal: false, annotation: 0, kind: 0, start: 0, end: 0 }; 1572867];
+    let (status, count) = scan_tokens(&output[..written], &mut tokens[..], check);
+    if status != 0 { return status; }
+    let selected = select_target(&output[..written], &mut tokens[..count + 3]);
+    if selected == 0 { return 7; }
+    mark_nominal_names(&output[..written], &mut tokens[..selected]);
+    let env: u64 = if env_call == 0 { 0 } else { offsets[env_call] };
+    parse(&output[..written], &tokens[..selected], check, env, package, &views[..i])
 }
 
 // Configuration monomorphization precedes generic/callable specialization.
@@ -2247,6 +2309,12 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
         let mut rewrite_length: u64 = 0;
         let (self_status,self_length)=expand_self_type(&current[..length],&syntax[..used],&graph[..used],&tokens[..selected],&mut expanded[..],&mut offsets[..]);
         if self_status!=0{return self_status;}
+        let mut self_length = self_length;
+        if self_length == 0 && has_direct_vectors(&current[..length], &syntax[..used], &graph[..used]) {
+            let (status, written) = expand_direct_vectors(&current[..length], &syntax[..used], &graph[..used], &mut expanded[..], &mut offsets[..]);
+            if status != 0 { return status; }
+            self_length = written;
+        }
         let no_error:i32=0;
         let (syntax_status, syntax_length) = if self_length!=0{(no_error,self_length)}else{expand_iteration_syntax(&current[..length], &syntax[..used], &graph[..used],
             &tokens[..selected], &mut expanded[..], &mut offsets[..])};
@@ -2952,8 +3020,32 @@ fn compile_input_selection(root: &[u8], stdlib: &[u8], mode: i32, file:bool, foc
     let mut nodes = [AstNode {
         kind: 0, parent: 0, start: 0, end: 0, name_start: 0, name_end: 0, public: false,
     }; 524289];
-    let used = parse_nodes(&tokens[..selected], &mut nodes[..]);
+    let mut used = parse_nodes(&tokens[..selected], &mut nodes[..]);
     if used == 0 { diagnostic_parse_error();return 7; }
+    let mut selected = selected;
+    if has_field_shorthand(&nodes[..used]) {
+        diagnostic_stage(&source[..source_end]);
+        let (error, written) = expand_field_shorthand(&source[..source_end], &nodes[..used], &mut normalized[..], &mut syntax_offsets[..]);
+        if error != 0 { return error; }
+        diagnostic_rewritten(&normalized[..written], &syntax_offsets[..], source_end as usize);
+        file_index = 0;
+        while file_index < files_end {
+            let end = &mut files[file_index].end;
+            *end = syntax_offsets[*end];
+            file_index += 1;
+        }
+        syntax_byte = 0;
+        while syntax_byte < written { source[syntax_byte] = normalized[syntax_byte]; syntax_byte += 1; }
+        source_end = written;
+        let (error, count) = scan_tokens(&source[..source_end], &mut tokens[..], mode);
+        if error != 0 { return error; }
+        selected = select_target(&source[..source_end], &mut tokens[..count + 3]);
+        if selected == 0 { return 7; }
+        prepare_native_exports(&source[..source_end], &names[..package.names_end], &files[..files_end], &mut tokens[..selected]);
+        mark_nominal_names(&source[..source_end], &mut tokens[..selected]);
+        used = parse_nodes(&tokens[..selected], &mut nodes[..]);
+        if used == 0 { diagnostic_parse_error(); return 7; }
+    }
     let mut graph = [StaticNode {
         first_child: 0, next_sibling: 0, scope: 0, scope_parent: 0, scope_entry: false,
         declaration: false, mutable: false, type_node: 0, initializer: 0, fact: 0,

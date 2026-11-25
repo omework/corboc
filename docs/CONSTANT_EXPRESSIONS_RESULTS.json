@@ -1,0 +1,86 @@
+{
+  "compiler": "/Users/jabarkarim/sources/corboc/build/constant-expressions-final/install/bin/corboc",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "results": [
+    {
+      "case": "associated_layout_and_overrides",
+      "status": "passed",
+      "output": "8\n12\n7\n8\n",
+      "ubsan": true
+    },
+    {
+      "case": "primitive_text_and_extrema",
+      "status": "passed",
+      "output": "-9223372036854775808\n18446744073709551615\n0\n9\ntrue\n5\n6\n2.5\n1\n",
+      "ubsan": true
+    },
+    {
+      "case": "module_dependency_and_simultaneous_overrides",
+      "status": "passed",
+      "output": "9\n7\n13\n7\n4\n8\n4\n8\n9\n7\n",
+      "ubsan": true
+    },
+    {
+      "case": "overflow",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/overflow.crb:1:15: error[N1]: rule violation: integer arithmetic overflows the declared constant type\n     1 | const X: u8 = 255 + 1; fn main() {}\n       |               ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "division_zero",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/division_zero.crb:1:16: error[N1]: rule violation: division or remainder by zero in constant expression\n     1 | const X: i64 = 3 / (2 - 2); fn main() {}\n       |                ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "signed_division_overflow",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/signed_division_overflow.crb:1:55: error[N1]: rule violation: integer arithmetic overflows the declared constant type\n     1 | const MIN: i64 = -9223372036854775808; const X: i64 = MIN / -1; fn main() {}\n       |                                                       ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "cycle",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/cycle.crb:1:1: error[N1]: rule violation: cyclic constant dependency\n     1 | const X: i64 = Y; const Y: i64 = X; fn main() {}\n       | ^~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "reference_type",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/reference_type.crb:1:33: error[N1]: rule violation: constant reference type differs from the required constant type; numeric conversions are not implicit\n     1 | const X: u8 = 2; const Y: u64 = X + 1; fn main() {}\n       |                                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "function_call",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/function_call.crb:1:37: error[N1]: rule violation: constant calls are restricted to min(a, b) and max(a, b)\n     1 | fn value() i64 { 2 } const X: i64 = value(); fn main() {}\n       |                                     ^~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "aggregate",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/aggregate.crb:1:22: error[N1]: rule violation: type mismatch for this expression or binding\n     1 | struct P { x: i64; } const X: P = P { x: 1 }; fn main() {}\n       |                      ^~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "min_arity",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/min_arity.crb:1:16: error[N1]: rule violation: constant calls are restricted to min(a, b) and max(a, b)\n     1 | const X: i64 = min(1); fn main() {}\n       |                ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "text_arithmetic",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/text_arithmetic.crb:1:17: error[N1]: rule violation: arithmetic requires numeric constants\n     1 | const X: &str = \"a\" + \"b\"; fn main() {}\n       |                 ^~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "text_type",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/text_type.crb:1:20: error[N1]: rule violation: numeric literal does not match the declared constant type\n     1 | const TEXT: &str = 42; fn main() {}\n       |                    ^~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "unsupported_unary",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/unsupported_unary.crb:1:20: error[N1]: rule violation: constant initializer must use literals, constants, arithmetic, min or max\n     1 | const VALUE: i64 = !2; fn main() {}\n       |                    ^~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    },
+    {
+      "case": "override_overflow",
+      "status": "rejected",
+      "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-constants-z0x__z6m/override_overflow.crb:1:60: error[N1]: rule violation: integer arithmetic overflows the declared constant type\n     1 | #(configurable) const X: u8 = 2; fn main() { #(override: X=255+1) {} }\n       |                                                            ^~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+    }
+  ],
+  "installed_compiler": "/Users/jabarkarim/sources/corboc/build/check-file/install/bin/corboc",
+  "binary_sha256": "fae89ebeb166dd22c5e15376521ef551780146751516be298725d7f87f04aaed"
+}

@@ -1,3 +1,6 @@
+use bootstrap::thread_transfer::owned_type_restricted;
+use bootstrap::results::plain_data_type;
+use bootstrap::diagnostics::diagnostic_limitation;
 use bootstrap::verify::{report_violation_site};
 use bootstrap::process_arguments::split_callee;
 // SPDX-License-Identifier: MIT OR Apache-2.0
@@ -586,6 +589,13 @@ fn render(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Toke
     let mut token = token_at(&tokens[0..tokens.len()], nodes[part].start);
     let mut cursor = nodes[part].start;
     let mut written = start;
+    let vector_name = "__corbo_vector_value"; let vector_bytes = vector_name.as_bytes();
+    let template_name = &source[nodes[(*instance).template].name_start..nodes[(*instance).template].name_end];
+    if part == (*instance).template && template_name.content_eq(vector_bytes)
+        && owned_type_restricted(&source[..], &nodes[..], &graph[..], types[id * 32].node, 0) {
+        let marker = "#(thread: transfer=false)\n"; let bytes = marker.as_bytes();
+        written = put(&mut output[..], written, bytes);
+    }
     // Preserve effect contracts while removing only specialization recipes.
     // Scan AST ownership because the static field/signature view omits lock metadata.
     let mut annotation = part + 1;

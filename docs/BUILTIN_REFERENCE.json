@@ -338,9 +338,14 @@
       "name": "Vector",
       "kind": "type",
       "signature": "Vector<T>",
-      "description": "An owned descriptor for a contiguous sequence whose payload grows inside a bounded region. Construct through a Pool<Vector<T>>. Structural mutation retains all element ownership and reference dependencies.",
+      "description": "A fixed-size owned descriptor with contiguous region-backed element storage. Standalone Vector::new() accepts references and owned elements without a user-facing pool. Element summaries preserve moves, loans and cleanup through push/pop. Pooled vectors remain available for indexed/sliced APIs.",
       "module": "std",
       "methods": [
+        [
+          "new",
+          "fn new() Vector<T>",
+          "Creates a standalone data vector under the current region policy; infer T from a typed binding or receiving field, or specify Vector<T>::new()."
+        ],
         [
           "len",
           "fn len(&self) usize",
@@ -360,6 +365,16 @@
           "pop",
           "fn pop(&mut self) Option<T>",
           "Extracts the final element, or returns None."
+        ],
+        [
+          "is_empty",
+          "fn is_empty(&self) bool",
+          "Reports whether the standalone vector has no elements."
+        ],
+        [
+          "clear",
+          "fn clear(&mut self)",
+          "Destroys remaining standalone elements and retains the region."
         ]
       ],
       "examples": [

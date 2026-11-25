@@ -477,3 +477,50 @@ Existing annotation semantics are retained through definition lowering and speci
 ## Unrestricted member order and scoped Self
 
 Definition partitioning preserves existing owner ASTs without requiring fields or variants first. Qualified associated array bounds use the lexical configuration; Self resolves against its enclosing nominal type. Eight focused observations, 14 annotation checks and six method/receiver observations pass. [Evidence and platform limits](MIXED_MEMBERS_CYCLE.md).
+
+## Duplicate-name resolution diagnostics
+
+E0014 uses pre-mangling identities and related original-source declarations/imports. Namespace acceptance and refusal behavior is unchanged. Eight focused observations pass, including five unchanged raw-protocol comparisons and the successful alias resolution. [Evidence and platform scope](NAME_COLLISIONS_CYCLE.md).
+
+## Literal-based constant expressions and lexical configuration
+
+- Parse and reduce primitive/text literals, constant reuse, numeric arithmetic,
+  parentheses and min/max before verification and lowering.
+- Preserve declared widths, detect cycles, and apply intermediate integer bounds.
+- Recompute derived defaults under effective overrides; freeze explicit override
+  values, including inheritance and simultaneous RHS evaluation.
+- Executed: three focused programs under fatal UBSan, twelve diagnostic refusals;
+  five adjacent member programs under fatal UBSan and three related refusals.
+- Host: macOS ARM64. Other platforms and Windows ARM64 were not executed in this
+  cycle. No broad corpus or independent safety audit was run.
+
+[Report](CONSTANT_EXPRESSIONS_CYCLE.md), [focused results](CONSTANT_EXPRESSIONS_RESULTS.json),
+[member results](CONSTANT_EXPRESSIONS_MEMBER_RESULTS.json).
+
+## Primitive Option struct fields
+
+Implementation connects existing Option expression checking, value-only record
+classification and ordinary field projection checks. C emission orders primitive
+Option layouts before their enclosing records. No grammar or language-rule
+change; arbitrary nonprimitive envelope copying remains excluded.
+Execution evidence and platform scope: [OPTION_FIELDS_CYCLE.md](OPTION_FIELDS_CYCLE.md).
+
+## Shorthand and standalone vectors
+
+Constructor shorthand feeds ordinary N4/N5/N6 mechanisms; vector moves retain
+region ownership, destruction and element transfer restrictions. Five focused
+executables passed fatal UBSan on macOS ARM64; four related refusals passed.
+Linux ARM64 regional transfer also passed fatal UBSan. The installed compiler
+checks the actual SubDB dispatcher. No Windows execution or broad audit.
+See [the cycle report](SHORTHAND_VECTORS_CYCLE.md) for implementation limits.
+
+## Standalone Vector owning/reference elements
+
+N4/N5/N6/N8 integration retains immutable member summaries through descriptor
+moves, field mappings, helper environments and extraction. Generic cleanup drops
+remaining elements before regional reclamation; the unchecked storage transfer
+clears the moved input's Option discriminant. No new Copy exemption or public
+allocation primitive. Ten executables passed fatal UBSan and six related rule
+refusals passed on macOS ARM64. Rebuilt compiler and matching STD installed.
+Other platforms and independent audits are not claimed for this cycle.
+[Report](VECTOR_OWNERSHIP_CYCLE.md), [results](VECTOR_OWNERSHIP_RESULTS.json).

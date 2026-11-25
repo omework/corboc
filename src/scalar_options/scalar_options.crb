@@ -47,6 +47,10 @@ pub fn scalar_option_annotation(source: &[u8], nodes: &[AstNode], graph: &[Stati
 
 pub fn scalar_option(ty: i64) bool { ty > 910 && ty < 920 || optional(ty) }
 
+/// Options whose payload is a primitive have no ownership/dependency edges
+/// and follow the existing implicit-copy eligibility of primitive enums.
+pub fn primitive_option(ty: i64) bool { ty > 910 && ty < 920 }
+
 pub fn nested_checked_option(ty: i64) i64 {
     if optional(copy(ty)) && scalar_option(option_payload(copy(ty))) { return option_payload(ty); }
     0

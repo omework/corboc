@@ -3,7 +3,7 @@ use bootstrap::diagnostics::diagnostic_copy;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lexical package-constant environments, reduced to concrete declarations.
 use bootstrap::model::{AstNode, StaticNode, Token, LayoutVisibility, token_at};
-use bootstrap::constants::{constant_type, resolve_constant};
+use bootstrap::constants::{constant_type, resolve_constant, validate_constant_names};
 use bootstrap::scalar::verify_literal;
 use bootstrap::verify::report_violation;
 
@@ -43,6 +43,25 @@ fn bound_tail(tokens: &[Token], first: u64) u64 {
 
 /// Avoid configuration work for ordinary compilation units and generic array bounds.
 pub fn has_configuration(source: &[u8], nodes: &[AstNode], tokens: &[Token]) bool {
+    let mut node: usize = 1;
+    while node < nodes.len() {
+        if nodes[node].kind == 76 {
+            // Canonical numeric/bool literals need no reduction. Text constants
+            // are inlined as existing static UTF-8 literals.
+            let mut child = node + 1;
+            while child < nodes.len() && nodes[child].parent != node as u64 { child += 1; }
+            if child < nodes.len() && source[nodes[child].start] == 38 { return true; }
+            child += 1;
+            while child < nodes.len() && nodes[child].parent != node as u64 { child += 1; }
+            if child < nodes.len() {
+                let kind = nodes[child].kind;
+                if kind != 9 && kind != 12 { return true; }
+                if kind == 9 && source[nodes[child].start] == 34 { return true; }
+                if kind == 12 && (source[nodes[child].name_start] != 45 || child + 1 >= nodes.len() || nodes[child+1].kind != 9) { return true; }
+            }
+        }
+        node += 1;
+    }
     let mut i: usize = 0;
     while i + 3 < tokens.len() {
         if tokens[i].kind == 71 && (tokens[i + 2].annotation == 31 || tokens[i + 2].annotation == 32) { return true; }
@@ -116,26 +135,14 @@ fn slot(constants: &[u64], declaration: u64) u64 {
     0
 }
 
-fn literal(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
-    environments: &[u64], expression: u64, env: u64, depth: u64) u64 {
-    if depth >= 128 || expression == 0 { return 0; }
-    if nodes[expression].kind == 9 { return expression; }
-    if nodes[expression].kind == 12 && nodes[graph[expression].first_child].kind == 9 { return expression; }
-    let constant = resolve_constant(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
-    if constant == 0 { return 0; }
-    let index = slot(&constants[0..constants.len()], copy(constant));
-    if index != 0 { return environments[env * 256 + index - 1]; }
-    literal(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&constants[0..constants.len()],&environments[0..environments.len()],
-        graph[graph[constant].first_child].next_sibling,copy(env), depth + 1)
-}
-
 // state: environment count, output cursor, error, output visibility count.
 fn environment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
-    environments: &mut [u64], directive: u64, parent: u64, state: &mut [u64]) u64 {
-    let mut values: [u64; 256] = [0; 256];
+    environments: &mut [ConstantValue], directive: u64, parent: u64, state: &mut [u64]) u64 {
+    let empty = ConstantValue { ty: 0, negative: false, magnitude: 0, real: 0.0, origin: 0 };
+    let mut values: [ConstantValue; 256] = [empty; 256];
     let mut assigned: [bool; 256] = [false; 256];
     let mut i: u64 = 0;
-    while i < constants.len() as u64 { values[i] = environments[parent * 256 + i]; i += 1; }
+    while i < constants.len() as u64 { values[i] = constant_snapshot(&environments[..], parent * 256 + i); i += 1; }
     let mut entry = graph[directive].first_child;
     while entry != 0 {
         let target = graph[entry].first_child;
@@ -145,18 +152,11 @@ fn environment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants
         if assigned[index - 1] { drop(report_violation_site(1, nodes[target].start, 62)); state[2] = 8; return 0; }
         assigned[index - 1] = true;
         let expression = graph[target].next_sibling;
-        let value = literal(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&constants[0..constants.len()], &environments[0..environments.len()],copy(expression), copy(parent), 0);
-        if value == 0 { drop(report_violation_site(1, nodes[expression].start, 63)); state[2] = 8; return 0; }
-        let negative = nodes[value].kind == 12;
-        let atom = if negative { graph[value].first_child } else { copy(value) };
-        let ty = constant_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(declaration));
-        let source_constant = resolve_constant(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(expression));
-        if source_constant != 0 && constant_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],source_constant) != ty {
-            drop(report_violation_site(1, nodes[expression].start, 64)); state[2] = 8; return 0;
-        }
-        if verify_literal(&source[0..source.len()], &nodes[atom],copy(ty),copy(negative)) < 0 {
-            drop(report_violation_site(1, nodes[expression].start, 65)); state[2] = 8; return 0;
-        }
+        let ty = constant_type(&source[..], &nodes[..], &graph[..], declaration);
+        let mut active: [u64; 128] = [0; 128];
+        let value = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..],
+            &environments[..], expression, parent, ty, &mut active[..], 0, 0);
+        if value.ty == 0 { state[2] = 8; return 0; }
         values[index - 1] = value;
         entry = graph[entry].next_sibling;
     }
@@ -164,20 +164,21 @@ fn environment(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants
     while env < state[0] {
         let mut same = true;
         i = 0;
-        while i < constants.len() as u64 { if values[i] != environments[env * 256 + i] { same = false; } i += 1; }
+        while i < constants.len() as u64 { let a = constant_snapshot(&values[..], i); let b = constant_snapshot(&environments[..], env * 256 + i);
+            if a.ty != b.ty || a.negative != b.negative || a.magnitude != b.magnitude || a.real != b.real || a.origin != b.origin { same = false; } i += 1; }
         if same { return env; }
         env += 1;
     }
     if env >= 256 { state[2] = 4; return 0; }
     i = 0;
-    while i < constants.len() as u64 { environments[env * 256 + i] = values[i]; i += 1; }
+    while i < constants.len() as u64 { environments[env * 256 + i] = constant_snapshot(&values[..], i); i += 1; }
     state[0] += 1;
     env
 }
 
 fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
-    symbols: &[u64], affected: &[bool], references: &[u64], constants: &[u64],
-    environments: &mut [u64], output: &mut [u8], offsets: &mut [u64], state: &mut [u64],
+    symbols: &[u64], affected: &[bool], references: &[u64], constant_nodes: &[u64], constants: &[u64],
+    environments: &mut [ConstantValue], output: &mut [u8], offsets: &mut [u64], state: &mut [u64],
     start: u64, end: u64, env: u64, depth: u64) {
     if depth >= 128 { state[2] = 4; return; }
     let mut cursor = copy(start);
@@ -187,31 +188,6 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
         if at < cursor { token += 1; continue; }
         copy_span(&source[0..source.len()], copy(cursor), copy(at),&mut output[0..output.len()],&mut offsets[0..offsets.len()],&mut state[0..state.len()]);
         if tokens[token].kind == 71 && tokens[token + 2].annotation == 31 {
-            // An associated configurable constant keeps its member name. Its
-            // enclosing nominal type is the environment-specific identity.
-            let mut associated: u64 = 0;
-            let mut entry: u64 = 0;
-            while entry < constants.len() as u64 {
-                let constant = constants[entry];
-                if nodes[constant].parent != 0 && nodes[constant].start == at { associated = constant; break; }
-                entry += 1;
-            }
-            if associated != 0 && env != 0 {
-                let initializer = graph[graph[associated].first_child].next_sibling;
-                let value = environments[env * 256 + entry];
-                let after_marker = tokens[token + 3].end;
-                skip_span(copy(at), copy(after_marker), &mut offsets[0..offsets.len()], state[1]);
-                copy_span(&source[0..source.len()], after_marker, nodes[initializer].start,
-                    &mut output[0..output.len()], &mut offsets[0..offsets.len()], &mut state[0..state.len()]);
-                let before = state[1];
-                put(&mut output[0..output.len()], &mut state[0..state.len()], &source[nodes[value].start..nodes[value].end]);
-                skip_span(nodes[initializer].start, nodes[initializer].end, &mut offsets[0..offsets.len()], before);
-                copy_span(&source[0..source.len()], nodes[initializer].end, nodes[associated].end,
-                    &mut output[0..output.len()], &mut offsets[0..offsets.len()], &mut state[0..state.len()]);
-                cursor = nodes[associated].end;
-                token = token_at(&tokens[0..tokens.len()], copy(cursor));
-                continue;
-            }
             cursor = tokens[token + 3].end;
             skip_span(copy(at), copy(cursor),&mut offsets[0..offsets.len()], state[1]);
             token += 4;
@@ -226,10 +202,51 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
             let block = nodes[directive].parent;
             let block_end = nodes[block].end;
             skip_span(copy(at), copy(annotation_end),&mut offsets[0..offsets.len()], state[1]);
-            emit_span(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],&symbols[0..symbols.len()],&affected[0..affected.len()],&references[0..references.len()],&constants[0..constants.len()],&mut environments[0..environments.len()],&mut output[0..output.len()],&mut offsets[0..offsets.len()],&mut state[0..state.len()],copy(annotation_end), copy(block_end),copy(child_env), depth + 1);
+            emit_span(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()],&symbols[0..symbols.len()],&affected[0..affected.len()],&references[0..references.len()],&constant_nodes[..],&constants[0..constants.len()],&mut environments[0..environments.len()],&mut output[0..output.len()],&mut offsets[0..offsets.len()],&mut state[0..state.len()],copy(annotation_end), copy(block_end),copy(child_env), depth + 1);
             cursor = block_end;
             token = token_at(&tokens[0..tokens.len()], copy(cursor));
             continue;
+        }
+        let syntax: u64 = constant_nodes[token];
+        let declaration: u64 = if nodes[syntax].kind == 76 { syntax } else { 0 };
+        if declaration != 0 {
+            cursor = at;
+            let value = constant_value(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], declaration, env);
+            if value.ty == 0 { state[2] = 8; return; }
+            let finish = nodes[declaration].end;
+            if value.ty != 11 {
+                let init = graph[graph[declaration].first_child].next_sibling;
+                let mut t = token;
+                while tokens[t].start < nodes[init].start {
+                    copy_span(&source[..], cursor, tokens[t].start, &mut output[..], &mut offsets[..], &mut state[..]);
+                    let symbol = references[t];
+                    if env != 0 && symbol != 0 && affected[symbol-1] {
+                        let before = state[1];
+                        name(&source[..], &nodes[..], symbols[symbol-1], env, &mut output[..], &mut state[..]);
+                        skip_span(tokens[t].start, tokens[t].end, &mut offsets[..], before);
+                    } else { copy_span(&source[..], tokens[t].start, tokens[t].end, &mut output[..], &mut offsets[..], &mut state[..]); }
+                    cursor = tokens[t].end; t += 1;
+                }
+                copy_span(&source[..], cursor, nodes[init].start, &mut output[..], &mut offsets[..], &mut state[..]);
+                let before = state[1];
+                emit_constant(&source[..], &nodes[..], value, &mut output[..], &mut state[..]);
+                skip_span(nodes[init].start, nodes[init].end, &mut offsets[..], before);
+                copy_span(&source[..], nodes[init].end, finish, &mut output[..], &mut offsets[..], &mut state[..]);
+            } else { skip_span(at, finish, &mut offsets[..], state[1]); }
+            cursor = finish; token = token_at(&tokens[..], cursor); continue;
+        }
+        // Text constants lower to the existing static string-literal form;
+        // numeric declarations stay typed so inference retains their width.
+        let use_node: u64 = if nodes[syntax].kind == 7 || nodes[syntax].kind == 36 { syntax } else { 0 };
+        let mut text_constant: u64 = 0;
+        if use_node != 0 { text_constant = resolve_constant(&source[..], &nodes[..], &graph[..], use_node); }
+        if text_constant != 0 {
+            let value = constant_value(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], text_constant, env);
+            let before = state[1];
+            emit_constant(&source[..], &nodes[..], value, &mut output[..], &mut state[..]);
+            cursor = nodes[use_node].end;
+            skip_span(at, cursor, &mut offsets[..], before);
+            token = token_at(&tokens[..], cursor); continue;
         }
         let symbol = references[token];
         let last_bound = bound_tail(&tokens[0..tokens.len()], token);
@@ -248,12 +265,13 @@ fn emit_span(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[T
                 expression += 1;
             }
             if constant == 0 { drop(report_violation_site(1, copy(at), 66)); state[2] = 8; return; }
-            let index = slot(&constants[0..constants.len()], copy(constant));
-            let value = if index == 0 { graph[graph[constant].first_child].next_sibling }
-                else { environments[env * 256 + index - 1] };
-            if nodes[value].kind != 9 { drop(report_violation_site(1, copy(at), 67)); state[2] = 8; return; }
+            let value = constant_value(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], constant, env);
+            if value.ty == 0 { state[2] = 8; return; }
+            if value.negative || value.ty == 3 || value.ty > 7 {
+                drop(report_violation_site(1, at, 67)); state[2] = 8; return;
+            }
             let before = state[1];
-            put(&mut output[0..output.len()], &mut state[0..state.len()], &source[nodes[value].start..nodes[value].end]);
+            number(&mut output[..], &mut state[..], value.magnitude);
             let bound_end = tokens[last_bound].end;
             skip_span(copy(at), bound_end, &mut offsets[0..offsets.len()],copy(before));
             offsets[bound_end] = state[1];
@@ -290,11 +308,14 @@ fn relocate(visibility: &[LayoutVisibility], output: &mut [LayoutVisibility], of
 /// Lower lexical environments into isolated concrete symbols before verification.
 pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
     output: &mut [u8], offsets: &mut [u64], visibility: &[LayoutVisibility], views: &mut [LayoutVisibility]) (i32, u64, usize) {
+    if validate_constant_names(&source[..], &nodes[..], &graph[..]) != 0 { return (8, 0, 0); }
     let mut symbols: [u64; 8192] = [0; 8192];
     let mut affected: [bool; 8192] = [false; 8192];
     let mut references: [u64; 1572867] = [0; 1572867];
+    let mut constant_nodes: [u64; 1572867] = [0; 1572867];
     let mut constants: [u64; 256] = [0; 256];
-    let mut environments: [u64; 65536] = [0; 65536];
+    let empty = ConstantValue { ty: 0, negative: false, magnitude: 0, real: 0.0, origin: 0 };
+    let mut environments: [ConstantValue; 65536] = [empty; 65536];
     let mut state: [u64; 4] = [0; 4]; state[0] = 1;
     let mut symbol_count: u64 = 0;
     let mut constant_count: u64 = 0;
@@ -318,7 +339,6 @@ pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
         if nodes[node].kind == 76 && marked(&tokens[0..tokens.len()], &nodes[node]) {
             if constant_count == 256 { return (4, 0, 0); }
             constants[constant_count] = copy(node);
-            environments[constant_count] = graph[graph[node].first_child].next_sibling;
             constant_count += 1;
             let owner = if nodes[node].parent == 0 { copy(node) } else { nodes[node].parent };
             let mut symbol: u64 = 0;
@@ -341,6 +361,22 @@ pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
                     references[token_at(&tokens[0..tokens.len()], nodes[node].name_start)] = s + 1; break;
                 }
                 s += 1;
+            }
+        }
+        node += 1;
+    }
+    // Index constant declarations and text uses once, instead of rescanning
+    // the full syntax tree for each token in every specialized declaration.
+    node = 1;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 76 {
+            let first = token_at(&tokens[..], nodes[node].start);
+            let actual = if tokens[first].kind == 71 { first + 4 } else { first };
+            constant_nodes[actual] = node;
+        } else if nodes[node].kind == 7 || nodes[node].kind == 36 {
+            let target = resolve_constant(&source[..], &nodes[..], &graph[..], node);
+            if target != 0 && constant_type(&source[..], &nodes[..], &graph[..], target) == 11 {
+                constant_nodes[token_at(&tokens[..], nodes[node].start)] = node;
             }
         }
         node += 1;
@@ -373,7 +409,7 @@ pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             s += 1;
         }
     }
-    emit_span(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()], &symbols[..symbol_count], &affected[..symbol_count], &references[..tokens.len()],
+    emit_span(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()], &symbols[..symbol_count], &affected[..symbol_count], &references[..tokens.len()], &constant_nodes[..tokens.len()],
         &constants[..constant_count], &mut environments[..],&mut output[0..output.len()],&mut offsets[0..offsets.len()], &mut state[..], 0, source.len() as u64, 0, 0);
     relocate(&visibility[0..visibility.len()],&mut views[0..views.len()], &offsets[0..offsets.len()], 0, source.len() as u64, &mut state[..]);
     let mut clone_offsets: [u64; 4194304] = [0; 4194304];
@@ -384,23 +420,10 @@ pub fn expand_configuration(source: &[u8], nodes: &[AstNode], graph: &[StaticNod
             if !affected[s] { s += 1; continue; }
             let declaration = symbols[s];
             let newline: [u8; 1] = [10]; put(&mut output[0..output.len()], &mut state[..], &newline[..]);
-            if nodes[declaration].kind == 76 {
-                let index = slot(&constants[..constant_count], copy(declaration));
-                let before: [u8; 6] = [99,111,110,115,116,32]; put(&mut output[0..output.len()], &mut state[..], &before[..]);
-                name(&source[0..source.len()],&nodes[0..nodes.len()], copy(declaration), copy(env),&mut output[0..output.len()], &mut state[..]);
-                let colon: [u8; 2] = [58,32]; put(&mut output[0..output.len()], &mut state[..], &colon[..]);
-                let ty = graph[declaration].first_child;
-                put(&mut output[0..output.len()], &mut state[..], &source[nodes[ty].start..nodes[ty].end]);
-                let equals: [u8; 3] = [32,61,32]; put(&mut output[0..output.len()], &mut state[..], &equals[..]);
-                let value = environments[env * 256 + index - 1];
-                put(&mut output[0..output.len()], &mut state[..], &source[nodes[value].start..nodes[value].end]);
-                let finish: [u8; 2] = [59,10]; put(&mut output[0..output.len()], &mut state[..], &finish[..]);
-            } else {
-                emit_span(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&tokens[0..tokens.len()], &symbols[..symbol_count], &affected[..symbol_count], &references[..tokens.len()],
-                    &constants[..constant_count], &mut environments[..],&mut output[0..output.len()], &mut clone_offsets[..], &mut state[..],
-                    nodes[declaration].start, nodes[declaration].end, copy(env), 0);
-                relocate(&visibility[0..visibility.len()],&mut views[0..views.len()], &clone_offsets[..], nodes[declaration].start, nodes[declaration].end, &mut state[..]);
-            }
+            emit_span(&source[..], &nodes[..], &graph[..], &tokens[..], &symbols[..symbol_count], &affected[..symbol_count], &references[..tokens.len()], &constant_nodes[..tokens.len()],
+                &constants[..constant_count], &mut environments[..], &mut output[..], &mut clone_offsets[..], &mut state[..],
+                nodes[declaration].start, nodes[declaration].end, env, 0);
+            relocate(&visibility[..], &mut views[..], &clone_offsets[..], nodes[declaration].start, nodes[declaration].end, &mut state[..]);
             s += 1;
         }
         env += 1;

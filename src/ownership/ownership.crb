@@ -1,3 +1,4 @@
+use bootstrap::scalar_options::{scalar_option_annotation, primitive_option};
 use bootstrap::semantic_diagnostics::missing_field as diagnostic_missing_field;
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
@@ -231,6 +232,11 @@ pub fn plain_structure(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], n
             field = graph[field].next_sibling;
             continue;
         }
+        let option = scalar_option_annotation(&source[..], &nodes[..], &graph[..], ty);
+        if primitive_option(option) {
+            field = graph[field].next_sibling;
+            continue;
+        }
         if graph[ty].first_child != 0 { return false; }
         if verify_primitive(&source[0..source.len()], nodes[ty].name_start, nodes[ty].name_end) == 0 {
             let nested = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], ty);
@@ -343,7 +349,17 @@ pub fn check_structure_fields(source: &[u8], nodes: &[AstNode], graph: &[StaticN
         let element = graph[annotation].first_child;
         let handle = scalar_handle_type(&source[0..source.len()], &nodes[0..nodes.len()],
             &graph[0..graph.len()], copy(annotation));
-        if handle != 0 {
+        // The declared field supplies the payload type for None/Some.
+        // Primitive Options carry no ownership or borrowed-target edges, but
+        // still retain the ordinary checked envelope state and type.
+        let option = scalar_option_annotation(&source[..], &nodes[..], &graph[..], annotation);
+        if primitive_option(option) {
+            let ty = verify_expr(&source[..], &nodes[..], &graph[..], &mut values[..],
+                expression, option, 1);
+            if ty < 0 { return ty; }
+            if ty != option { return 0 - type_violation(nodes[given].start, option, ty, 275); }
+            copy_task_summary(&mut values[..], expression, given, ty, false);
+        } else if handle != 0 {
             let ty = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(expression), copy(handle), 1);
             if ty < 0 { return ty; }

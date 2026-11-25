@@ -581,7 +581,12 @@ pub fn check_match(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                     let handle = option_handle(copy(ty));
                     let payload = values[option].target;
                     if graph[binder].declaration {
-                        copy_task_summary(&mut values[0..values.len()], payload, binder, handle, false);
+                        if payload == 0 {
+                            values[binder] = CheckedValue { ty: handle, state: 1, mutable: false,
+                                target: 0, loan_parent: 0, origin_call: 0, writable: false, projection: 0 };
+                        } else {
+                            copy_task_summary(&mut values[..], payload, binder, handle, false);
+                        }
                     } else if dependent_handle(&graph[0..graph.len()], &values[0..values.len()], payload) {
                         return (violation_site(8, nodes[pattern].start, 31), 0);
                     }

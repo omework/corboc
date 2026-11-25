@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Constructor field shorthand is syntax for the same named value expression.
+use bootstrap::model::AstNode;
+
+/// Shorthand fields retain a normal identifier child at the label's source span.
+/// Declaration fields have type children; positional fields have no source name.
+fn shorthand_at(nodes: &[AstNode], field: u64) bool {
+    field + 1 < nodes.len() as u64 && nodes[field].kind == 31
+        && nodes[field].name_end > nodes[field].name_start
+        && nodes[field + 1].parent == field && nodes[field + 1].kind == 7
+        && nodes[field + 1].start == nodes[field].name_start
+}
+
+/// Avoid a rewrite for ordinary explicit initializers.
+pub fn has_field_shorthand(nodes: &[AstNode]) bool {
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if shorthand_at(&nodes[..], node) { return true; }
+        node += 1;
+    }
+    false
+}
+
+/// Expand all shorthand before symbol qualification, retaining old-to-new byte
+/// offsets for source diagnostics, module boundaries and private-layout metadata.
+pub fn expand_field_shorthand(source: &[u8], nodes: &[AstNode], output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
+    if source.len() + 1 > offsets.len() { return (4, 0); }
+    let mut at: u64 = 0;
+    while at <= source.len() as u64 { offsets[at] = 0; at += 1; }
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if shorthand_at(&nodes[..], node) { offsets[nodes[node].name_end] = nodes[node].name_start + 1; }
+        node += 1;
+    }
+    let mut written: u64 = 0;
+    at = 0;
+    while at <= source.len() as u64 {
+        let marker = offsets[at];
+        if marker != 0 {
+            let start = marker - 1;
+            let extra = at - start + 2;
+            if extra > output.len() as u64 - written { return (4, 0); }
+            output[written] = 58; output[written + 1] = 32; written += 2;
+            let mut byte = start;
+            while byte < at { output[written] = source[byte]; byte += 1; written += 1; }
+        }
+        offsets[at] = written;
+        if at == source.len() as u64 { break; }
+        if written == output.len() as u64 { return (4, 0); }
+        output[written] = source[at]; written += 1; at += 1;
+    }
+    (0, written)
+}

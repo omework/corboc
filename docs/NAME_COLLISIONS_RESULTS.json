@@ -1,0 +1,46 @@
+[
+  {
+    "case": "root_type_and_import",
+    "exit": 14,
+    "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/root_type_and_import/src/main.crb:2:19: error[E0014]: resolution error: name 'Group' conflicts with an existing binding\n     2 | use demo::group::{Group, FrameRange};\n       |                   ^~~~~\n       = existing: struct demo::Group\n       = incoming: struct demo::group::Group\n       = help: use 'as' to give this import a different local name\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/root_type_and_import/src/group.crb:2:12: note: existing declaration originates here (generated-source anchor)\n     2 | pub struct Group {}\n       |            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/root_type_and_import/src/group/group.crb:2:12: note: incoming declaration originates here (generated-source anchor)\n     2 | pub struct Group {}\n       |            ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n",
+    "raw_protocol": "unchanged"
+  },
+  {
+    "case": "two_imports",
+    "exit": 14,
+    "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/two_imports/src/main.crb:2:18: error[E0014]: resolution error: name 'Group' conflicts with an existing binding\n     2 | use demo::right::Group;\n       |                  ^~~~~\n       = existing: struct demo::left::Group\n       = incoming: enum demo::right::Group\n       = help: use 'as' to give this import a different local name\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/two_imports/src/left/left.crb:1:12: note: existing declaration originates here (generated-source anchor)\n     1 | pub struct Group {}\n       |            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/two_imports/src/right/right.crb:1:10: note: incoming declaration originates here (generated-source anchor)\n     1 | pub enum Group { End; }\n       |          ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/two_imports/src/main.crb:1:17: note: previous import binds this name here (generated-source anchor)\n     1 | use demo::left::Group;\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n",
+    "raw_protocol": "unchanged"
+  },
+  {
+    "case": "alias_collision",
+    "exit": 14,
+    "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/alias_collision/src/main.crb:2:28: error[E0014]: resolution error: name 'Entry' conflicts with an existing binding\n     2 | use demo::right::Second as Entry;\n       |                            ^~~~~\n       = existing: struct demo::left::First\n       = incoming: struct demo::right::Second\n       = help: use 'as' to give this import a different local name\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/alias_collision/src/left/left.crb:1:12: note: existing declaration originates here (generated-source anchor)\n     1 | pub struct First {}\n       |            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/alias_collision/src/right/right.crb:1:12: note: incoming declaration originates here (generated-source anchor)\n     1 | pub struct Second {}\n       |            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/alias_collision/src/main.crb:1:26: note: previous import binds this name here (generated-source anchor)\n     1 | use demo::left::First as Entry;\n       |                          ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n",
+    "raw_protocol": "unchanged"
+  },
+  {
+    "case": "duplicate_declarations",
+    "exit": 14,
+    "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/duplicate_declarations/src/one.crb:1:12: error[E0014]: resolution error: name 'Item' conflicts with an existing binding\n     1 | pub struct Item {}\n       |            ^~~~\n       = existing: enum demo::Item\n       = incoming: struct demo::Item\n       = help: rename one declaration; files in the same directory share a module\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/duplicate_declarations/src/two.crb:1:10: note: existing declaration originates here (generated-source anchor)\n     1 | pub enum Item { End; }\n       |          ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n",
+    "raw_protocol": "unchanged"
+  },
+  {
+    "case": "module_type_ambiguity",
+    "exit": 14,
+    "stderr": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/module_type_ambiguity/src/main.crb:1:18: error[E0014]: resolution error: name 'Group' conflicts with an existing binding\n     1 | use demo::group::Group;\n       |                  ^~~~~\n       = existing: struct demo::group::Group\n       = incoming: module demo::group::Group\n       = help: rename the declaration or module to disambiguate this path\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/module_type_ambiguity/src/group/group.crb:1:12: note: existing declaration originates here (generated-source anchor)\n     1 | pub struct Group {}\n       |            ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/module_type_ambiguity/src/group/Group/source.crb:1:1: note: incoming declaration originates here (generated-source anchor)\n     1 | pub struct Item {}\n       | ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n",
+    "raw_protocol": "unchanged"
+  },
+  {
+    "case": "alias_resolves_collision",
+    "exit": 0
+  },
+  {
+    "case": "syntax_diagnostic",
+    "exit": 7,
+    "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/syntax_diagnostic.crb:1:17: error[E0100]: syntax error: expected a binding name after let or let mut\n     1 | fn main() { let = 3; }\n       |                 ^\n       = found: `=`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "type_diagnostic",
+    "exit": 8,
+    "stderr": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-name-collisions-km51i2dm/type_diagnostic.crb:1:30: error[N1]: rule violation: type mismatch for this expression or binding\n     1 | fn main() { let value: i64 = true; }\n       |                              ^~~~\n       = expected: i64\n       = actual: bool\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

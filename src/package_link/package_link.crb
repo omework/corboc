@@ -1,5 +1,5 @@
 use bootstrap::verify::{report_violation_site};
-use bootstrap::diagnostics::{diagnostic_link,diagnostic_emit};
+use bootstrap::diagnostics::{diagnostic_link,diagnostic_emit,diagnostic_collision,diagnostic_enabled};
 use bootstrap::constants::constant_name_reserved;
 use bootstrap::model::{AstNode, StaticNode, LayoutVisibility, Token, token_at};
 use bootstrap::packages::PackageFile;
@@ -125,6 +125,62 @@ fn imported(source: &[u8], imports: &[Import], file: u64, start: u64, end: u64) 
     0
 }
 
+/// Append bounded diagnostic text without registering edits to compiler source.
+fn collision_bytes(output: &mut [u8], cursor: usize, bytes: &[u8]) usize {
+    let mut at = cursor;
+    let mut index: usize = 0;
+    while index < bytes.len() && at < output.len() { output[at] = bytes[index]; index += 1; at += 1; }
+    return at;
+}
+
+fn collision_text(output: &mut [u8], cursor: usize, text: &str) usize {
+    let bytes = text.as_bytes();
+    collision_bytes(&mut output[0..output.len()], cursor, bytes)
+}
+
+/// Describe identity before linker name mangling, including the owning module.
+fn collision_candidate(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode],
+    target: u64, module: u64, output: &mut [u8], cursor: usize) usize {
+    let mut at = cursor;
+    let owner = if target == 0 { module - 1 } else { file_at(&files[0..files.len()], nodes[target].start) };
+    if target == 0 { at = collision_text(&mut output[0..output.len()], at, "module "); }
+    else if nodes[target].kind == 28 { at = collision_text(&mut output[0..output.len()], at, "struct "); }
+    else if nodes[target].kind == 29 { at = collision_text(&mut output[0..output.len()], at, "enum "); }
+    else if nodes[target].kind == 76 { at = collision_text(&mut output[0..output.len()], at, "constant "); }
+    else { at = collision_text(&mut output[0..output.len()], at, "function "); }
+    at = collision_bytes(&mut output[0..output.len()], at, &names[files[owner].module_start..files[owner].module_end]);
+    if target != 0 {
+        at = collision_text(&mut output[0..output.len()], at, "::");
+        at = collision_bytes(&mut output[0..output.len()], at, &source[nodes[target].name_start..nodes[target].name_end]);
+    }
+    at
+}
+
+fn collision_origin(files: &[PackageFile], nodes: &[AstNode], target: u64, module: u64) u64 {
+    if target != 0 { return nodes[target].name_start; }
+    if module <= 1 { return 0; }
+    files[module - 2].end + 1
+}
+
+/// Emit one rich E0014 at the binding being introduced, preserving both origins.
+fn name_collision(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstNode],
+    start: u64, end: u64, first: u64, first_module: u64, second: u64,
+    second_module: u64, previous_import: u64, importing: bool) {
+    if !diagnostic_enabled() { return; }
+    let mut text: [u8; 4096] = [0; 4096];
+    let mut at = collision_text(&mut text[..], 0, "name '");
+    at = collision_bytes(&mut text[..], at, &source[start..end]);
+    at = collision_text(&mut text[..], at, "' conflicts with an existing binding\n       = existing: ");
+    at = collision_candidate(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], first, first_module, &mut text[..], at);
+    at = collision_text(&mut text[..], at, "\n       = incoming: ");
+    at = collision_candidate(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], second, second_module, &mut text[..], at);
+    if importing { at = collision_text(&mut text[..], at, "\n       = help: use 'as' to give this import a different local name"); }
+    else if second == 0 && second_module != 0 { at = collision_text(&mut text[..], at, "\n       = help: rename the declaration or module to disambiguate this path"); }
+    else { at = collision_text(&mut text[..], at, "\n       = help: rename one declaration; files in the same directory share a module"); }
+    diagnostic_collision(start, &text[..at], collision_origin(&files[0..files.len()], &nodes[0..nodes.len()], first, first_module),
+        collision_origin(&files[0..files.len()], &nodes[0..nodes.len()], second, second_module), previous_import);
+}
+
 fn enter_import(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[Token],
     nodes: &[AstNode], symbols: &[u64], entries: &mut [Import], used: usize, file: u64, first: u64,
     separator: u64, member: u64, local: u64) i32 {
@@ -154,11 +210,21 @@ fn enter_import(source: &[u8], names: &[u8], files: &[PackageFile], tokens: &[To
         drop(inaccessible_package(&names[0..names.len()], &files[0..files.len()], file, namespace));
         return 13;
     }
-    if target != 0 && module != 0 { return 14; }
     let start = tokens[local].start;
     let end = tokens[local].end;
-    if imported(&source[0..source.len()], &entries[0..used], copy(file), copy(start), copy(end)) != 0
-        || declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()], copy(file), copy(start), copy(end)) != 0 {
+    if target != 0 && module != 0 {
+        name_collision(source, names, files, nodes, start, end, target, 0, 0, module, 18446744073709551615, false);
+        return 14;
+    }
+    let previous = imported(&source[0..source.len()], &entries[0..used], copy(file), copy(start), copy(end));
+    let declaration = declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()], &nodes[0..nodes.len()], &symbols[0..symbols.len()], copy(file), copy(start), copy(end));
+    if previous != 0 {
+        name_collision(source, names, files, nodes, start, end, entries[previous - 1].target,
+            entries[previous - 1].module, target, module, entries[previous - 1].start, true);
+        return 14;
+    }
+    if declaration != 0 {
+        name_collision(source, names, files, nodes, start, end, declaration, 0, target, module, 18446744073709551615, true);
         return 14;
     }
     entries[used] = Import { file: file, start: start, end: end, target: target, module: module };
@@ -250,6 +316,10 @@ fn iter_symbol(source: &[u8], names: &[u8], files: &[PackageFile], nodes: &[AstN
     let module: [u8; 9] = [115,116,100,58,58,105,116,101,114];
     let owner = file_at(&files[0..files.len()], nodes[item].start);
     let path = &names[files[owner].module_start..files[owner].module_end];
+    let vector_module = "std::collections"; let vector_path = vector_module.as_bytes();
+    let vector_name = "VectorValue"; let vector_bytes = vector_name.as_bytes();
+    let declared = &source[nodes[item].name_start..nodes[item].name_end];
+    if files[owner].package == 64 && path.content_eq(vector_path) && nodes[item].kind == 28 && declared.content_eq(vector_bytes) { return 10; }
     let text_module:[u8;9]=[115,116,100,58,58,116,101,120,116];
     let split:[u8;5]=[115,112,108,105,116];let actual=&source[nodes[item].name_start..nodes[item].name_end];
     if files[owner].package==64 && path.content_eq(&text_module[..]) && nodes[item].kind==1 && actual.content_eq(&split[..]){return 9;}
@@ -561,8 +631,12 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 if kind == 76 && constant_name_reserved(&source[start..end], false) {
                     return (report_violation_site(1, start, 298), 0, 0);
                 }
-                if declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
-                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end)) != 0 { drop(diagnostic_emit(5,14,nodes[node].name_start));return (14, 0, 0); }
+                let previous = declared(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
+                    &nodes[0..nodes.len()], &symbols[..symbols_end], copy(file), copy(start), copy(end));
+                if previous != 0 {
+                    name_collision(source, names, files, nodes, start, end, previous, 0, node, 0, 18446744073709551615, false);
+                    return (14, 0, 0);
+                }
                 if kind == 1 && files[file].module_start != 0 {
                     let argument_call = process_arguments(&source[0..source.len()], &names[0..names.len()],
                         &files[0..files.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node), copy(file));
@@ -591,7 +665,10 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
             let (code, written) = install_imports(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
                 &tokens[0..tokens.len()], &nodes[0..nodes.len()], &symbols[..symbols_end],
                 &mut entries[..], copy(count), file, token + 1);
-            if code != 0 { drop(diagnostic_emit(5,code as i64,nodes[node].start));return (code, 0, 0); }
+            if code != 0 {
+                if code != 14 { drop(diagnostic_emit(5,code as i64,nodes[node].start)); }
+                return (code, 0, 0);
+            }
             count = written;
             edits[nodes[node].start] = Edit { end: nodes[node].end, target: 0 };
         }
@@ -768,7 +845,12 @@ pub fn link_package(source: &[u8], names: &[u8], files: &[PackageFile], tokens: 
                 }
                 let iterator = iter_symbol(&source[0..source.len()], &names[0..names.len()], &files[0..files.len()],
                     &nodes[0..nodes.len()], copy(target));
-                if iterator==9 {
+                if iterator==10 {
+                    let vector_text = "__corbo_vector_value"; let vector_bytes = vector_text.as_bytes();
+                    if vector_bytes.len() > output.len()-written { return (4, 0, 0); }
+                    let mut letter: usize = 0;
+                    while letter < vector_bytes.len() { output[written] = vector_bytes[letter]; written += 1; letter += 1; }
+                }else if iterator==9 {
                     let helper:[u8;18]=[95,95,99,111,114,98,111,95,116,101,120,116,95,115,112,108,105,116];
                     if output.len()-written<18{return (4,0,0);}let mut letter:usize=0;while letter<18{output[written]=helper[letter];written=written+1;letter=letter+1;}
                 }else if iterator != 0 {

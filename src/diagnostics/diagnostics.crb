@@ -223,7 +223,7 @@ do {
     else if(code==4)message="frontend source, token or workspace capacity exceeded";
     else if(code==8)message="a language-rule check failed; detailed failure context was not retained";
     const char *semantic_detail=NULL;
-    bool semantic=(kind==1||kind==4)&&state.semantic[0]&&state.semantic_at==point;
+    bool semantic=(kind==1||kind==4||(kind==5&&code==14))&&state.semantic[0]&&state.semantic_at==point;
     if(semantic){message=state.semantic;char *newline=strchr(state.semantic,'\n');if(newline){*newline=0;semantic_detail=newline+1;}}
     const char *category=kind==1?"rule violation":(kind==2||kind==3)?"syntax error":kind==4?"compiler limitation":code==8?"rule violation":(code==3||code==7)?"syntax error":(code==9||code==4)?"compiler limitation":code==12?"configuration error":(code==13||code==14)?"resolution error":"compilation error";
     if(!state.files){fprintf(stderr,"corboc: error[E%04d]: %s: %s\n",code,category,message);break;}
@@ -271,7 +271,7 @@ do {
             size_t ln=1,col=1,begin=state.starts[file];
             for(size_t i=begin;i<at;++i){uint8_t ch=state.original[i];if(ch=='\n'){++ln;col=1;begin=i+1;}else if(ch=='\t')col+=4-((col-1)%4);else if((ch&0xc0)!=0x80)++col;}
             size_t finish=at;while(finish<state.ends[file]&&state.original[finish]!='\n'&&state.original[finish]!='\r')++finish;
-            const char *label=state.related_kind[note]==1?"ownership moved here":state.related_kind[note]==2?"value destroyed here":state.related_kind[note]==3?"borrow created here":state.related_kind[note]==4?"borrowed target declared here":state.related_kind[note]==5?"value declared here":state.related_kind[note]==6?"conflicting dependency originates here":state.related_kind[note]==8?"parameter type required here":state.related_kind[note]==12?"value consumed here":state.related_kind[note]==13?"required field declared here":"another path moves ownership here";
+            const char *label=state.related_kind[note]==1?"ownership moved here":state.related_kind[note]==2?"value destroyed here":state.related_kind[note]==3?"borrow created here":state.related_kind[note]==4?"borrowed target declared here":state.related_kind[note]==5?"value declared here":state.related_kind[note]==6?"conflicting dependency originates here":state.related_kind[note]==8?"parameter type required here":state.related_kind[note]==12?"value consumed here":state.related_kind[note]==13?"required field declared here":state.related_kind[note]==14?"existing declaration originates here":state.related_kind[note]==15?"incoming declaration originates here":state.related_kind[note]==16?"previous import binds this name here":"another path moves ownership here";
             fprintf(stderr,"%s:%zu:%zu: note: %s%s\n",state.paths[file],ln,col,label,(encoded&DIAG_APPROX)?" (generated-source anchor)":"");
             fprintf(stderr," %5zu | ",ln);size_t display=1;
             for(size_t i=begin;i<finish;++i){uint8_t ch=state.original[i];if(ch=='\t'){size_t spaces=4-((display-1)%4);while(spaces--){fputc(' ',stderr);++display;}}else{fputc(ch,stderr);if((ch&0xc0)!=0x80)++display;}}
@@ -343,6 +343,21 @@ pub fn diagnostic_emit(kind:i64,code:i64,offset:u64)bool {
     }
     scalar(7,code_word(kind),code_word(code),offset as usize,0)
 }
+/// Render a resolution collision with both candidate origins. Machine modes
+/// retain their existing numeric exit/protocol behavior and emit no prose.
+pub fn diagnostic_collision(offset: u64, message: &[u8], previous: u64,
+    incoming: u64, previous_import: u64) {
+    if !diagnostic_enabled() { return; }
+    let mut notes: [u64; 6] = [18446744073709551615; 6];
+    notes[0] = previous; notes[1] = 14;
+    let mut used: usize = 2;
+    if incoming != previous { notes[used] = incoming; notes[used + 1] = 15; used += 2; }
+    if previous_import != 18446744073709551615 { notes[used] = previous_import; notes[used + 1] = 16; used += 2; }
+    let empty: [u8; 0] = [];
+    drop(control(30, offset as usize, 0, 0, 0, message, &empty[..], &notes[..used]));
+    drop(diagnostic_emit(5, 14, offset));
+}
+
 /// Retain parser progress, without reporting speculative parses.
 pub fn diagnostic_parse_point(offset:u64) {drop(scalar(8,offset as usize,0,0,0));}
 /// Reset parser progress after source rewriting.
@@ -420,4 +435,15 @@ pub fn runtime_location(offset:u64,output:&mut [u8])usize {
     let mut length:usize=0;
     while length<output.len() && output[length]!=0{length+=1;}
     length
+}
+
+/// Report a precise constant-reduction failure without replacing it with a
+/// generic rule-site description. Raw compiler protocols remain unchanged.
+pub fn diagnostic_constant(offset: u64, message: &str) {
+    if !diagnostic_enabled() { return; }
+    let bytes = message.as_bytes();
+    let empty: [u8; 0] = [];
+    let notes: [u64; 0] = [];
+    drop(control(30, offset as usize, 0, 0, 0, bytes, &empty[..], &notes[..]));
+    drop(scalar(7, 1, 1, offset as usize, 0));
 }

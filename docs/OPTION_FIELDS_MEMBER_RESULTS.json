@@ -1,0 +1,42 @@
+[
+  {
+    "case": "tracker_layout",
+    "status": "executed, fatal UBSan",
+    "output": "5\n7\n5\n"
+  },
+  {
+    "case": "interleaved_enum",
+    "status": "executed, fatal UBSan",
+    "output": "9\n3\n6\n"
+  },
+  {
+    "case": "unmarked_qualified_bound",
+    "status": "executed, fatal UBSan",
+    "output": "3\n2\n"
+  },
+  {
+    "case": "definition_self_alias",
+    "status": "executed, fatal UBSan",
+    "output": "7\n9\n"
+  },
+  {
+    "case": "imported_members",
+    "status": "executed, fatal UBSan",
+    "output": "9\n42\n4\n"
+  },
+  {
+    "case": "outside_self",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-j9ws5mi_/outside_self.crb:1:10: error[E0111]: syntax error: Self requires an enclosing struct or enum type\n     1 | fn bad() Self { 0 } fn main() {}\n       |          ^~~~\n       = found: `Self`\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "unknown_bound",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-j9ws5mi_/unknown_bound.crb:1:23: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | struct X { data: [u8; Self::MISSING]; } fn main() {}\n       |                       ^~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "runtime_bound",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-member-annotations-j9ws5mi_/runtime_bound.crb:1:41: error[N1]: rule violation: expression does not satisfy the required configuration type or value constraint\n     1 | fn main() { let size=3; let values:[u8; size]=[0;3]; }\n       |                                         ^~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

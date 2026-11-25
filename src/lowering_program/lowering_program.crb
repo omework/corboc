@@ -41,6 +41,19 @@ fn emit_inline_array(ty: i64, declared: &mut [bool]) {
     c_type(ty); { let code: [u8;2] = [59,10]; byte_text(&code[..]); }
 }
 
+/// Materialize inline-array dependencies before Option/Result wrappers name
+/// them, including arrays nested beneath multiple envelopes.
+fn emit_envelope_arrays(ty: i64, declared: &mut [bool], depth: u64) bool {
+    if depth >= 128 { return false; }
+    if inline_array(ty) { emit_inline_array(ty, &mut declared[..]); return true; }
+    if optional(ty) { return emit_envelope_arrays(option_payload(ty), &mut declared[..], depth + 1); }
+    if result_type(ty) {
+        if !emit_envelope_arrays(result_payload(ty, true), &mut declared[..], depth + 1) { return false; }
+        return emit_envelope_arrays(result_payload(ty, false), &mut declared[..], depth + 1);
+    }
+    true
+}
+
 fn emit_option(kind: i64) {
     let payload = option_payload(copy(kind));
     { let code: [u8;25] = [116,121,112,101,100,101,102,32,115,116,114,117,99,116,123,98,111,111,108,32,115,111,109,101,59]; byte_text(&code[..]); } c_type(copy(payload)); { let code: [u8;9] = [32,118,97,108,117,101,59,125,32]; byte_text(&code[..]); }
@@ -49,6 +62,14 @@ fn emit_option(kind: i64) {
     number(unsigned(copy(payload))); character(40); c_type(copy(kind)); { let code: [u8;24] = [42,118,41,123,105,102,40,33,118,45,62,115,111,109,101,41,114,101,116,117,114,110,59,10]; byte_text(&code[..]); }
     declaration(copy(payload), 0); { let code: [u8;25] = [61,118,45,62,118,97,108,117,101,59,118,45,62,115,111,109,101,61,102,97,108,115,101,59,10]; byte_text(&code[..]); }
     drop_value(payload, 0, false); { let code: [u8;2] = [125,10]; byte_text(&code[..]); }
+}
+
+/// Primitive Option layouts can be needed by enclosing record definitions.
+/// Do not define them twice when later expression/result walks encounter them.
+fn emit_deferred_option(kind: i64, early: &[bool]) {
+    let payload = option_payload(kind);
+    if payload >= 1 && payload <= 9 && early[payload] { return; }
+    emit_option(kind);
 }
 
 pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emit: bool, process_args: bool, freestanding: bool) bool {
@@ -234,6 +255,21 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
             }
             function = graph[function].next_sibling;
         }
+        // Record fields are by value: their primitive Option layouts must
+        // precede the record, rather than wait for expression emission below.
+        let mut early_options: [bool; 10] = [false; 10];
+        point = 1;
+        while point < nodes.len() as u64 {
+            let kind = types[point];
+            if optional(kind) {
+                let payload = option_payload(kind);
+                if payload >= 1 && payload <= 9 && !early_options[payload] {
+                    emit_option(kind);
+                    early_options[payload] = true;
+                }
+            }
+            point += 1;
+        }
         let mut seen=[false;524289];
         let mut inline_layouts: [bool; 410100] = [false; 410100];
         point = 1;
@@ -244,6 +280,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                 continue;
             }
             let stored = types[point];
+            if !emit_envelope_arrays(stored, &mut inline_layouts[..], 0) { return false; }
             let tuple=if is_tuple(copy(stored)){copy(stored)}else if wide_array(copy(stored)){array_item(copy(stored))}else if scalar_referent(copy(stored))>0{scalar_referent(copy(stored))}else{slice_element(copy(stored))};
             if is_tuple(copy(tuple)){tuple_definition(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&types[..],&mut seen[..],tuple);}
             let ty = array_shape(copy(stored));
@@ -407,7 +444,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                         prior += 1;
                     }
                     if side == 1 && result_payload(copy(kind), true) == arm { duplicate = true; }
-                    if !duplicate { emit_option(copy(arm)); }
+                    if !duplicate { emit_deferred_option(copy(arm), &early_options[..]); }
                 }
                 side += 1;
             }
@@ -448,7 +485,7 @@ pub fn lower_program(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], emi
                     }
                     let mut envelope = option_code(leaf);
                     while envelope <= greatest {
-                        emit_option(copy(envelope));
+                        emit_deferred_option(copy(envelope), &early_options[..]);
                         if envelope == greatest { break; }
                         envelope = option_code(envelope);
                     }

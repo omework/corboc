@@ -507,3 +507,28 @@ pub fn validate_thread_transfer(source: &[u8], nodes: &[AstNode], graph: &[Stati
     }
     0
 }
+
+/// Expose owned element restrictions to STD collection specialization. Storage
+/// representation does not erase a contained type's thread-transfer property.
+pub fn owned_type_restricted(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64, depth: u64) bool {
+    if depth >= 128 { return true; }
+    let nominal = nominal_declaration(&source[..], &nodes[..], &graph[..], annotation);
+    if nominal == 0 { return false; }
+    let mut item: u64 = 1;
+    while item < nodes.len() as u64 {
+        if nodes[item].parent == nominal && thread_annotation(&source[..], &nodes[..], item) { return true; }
+        item += 1;
+    }
+    let mut member = graph[nominal].first_child;
+    while member != 0 {
+        if nodes[nominal].kind == 29 {
+            let mut field = graph[member].first_child;
+            while field != 0 {
+                if owned_type_restricted(&source[..], &nodes[..], &graph[..], graph[field].first_child, depth + 1) { return true; }
+                field = graph[field].next_sibling;
+            }
+        } else if owned_type_restricted(&source[..], &nodes[..], &graph[..], graph[member].first_child, depth + 1) { return true; }
+        member = graph[member].next_sibling;
+    }
+    false
+}

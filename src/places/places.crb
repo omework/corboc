@@ -1,3 +1,4 @@
+use bootstrap::scalar_options::{scalar_option_annotation, primitive_option};
 use bootstrap::tuples::{tuple_annotation,tuple_value,symbolic_tuple};
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
@@ -286,6 +287,11 @@ pub fn value_record(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             field = graph[field].next_sibling;
             continue;
         }
+        let option = scalar_option_annotation(&source[..], &nodes[..], &graph[..], annotation);
+        if primitive_option(option) {
+            field = graph[field].next_sibling;
+            continue;
+        }
         if graph[annotation].first_child != 0 { return false; }
         let spelling = &source[nodes[annotation].name_start..nodes[annotation].name_end];
         // usize is an ordinary fixed primitive. Raw-address provenance is
@@ -568,6 +574,8 @@ pub fn scalar_place(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         }
         if shared_text_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return (2000138,binding,field);}
         if tuple_annotation(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation)){return (300,binding,annotation);}
+        let option = scalar_option_annotation(&source[..], &nodes[..], &graph[..], annotation);
+        if primitive_option(option) { return (option, binding, field); }
         if graph[annotation].first_child != 0 { return (0, 0, 0); }
         let ty = verify_primitive(&source[0..source.len()], nodes[annotation].name_start, nodes[annotation].name_end);
         if ty != 0 { return (ty, binding, 0); }
@@ -626,7 +634,8 @@ pub fn check_scalar_projection(source: &[u8], nodes: &[AstNode], graph: &[Static
         &graph[0..graph.len()], &mut values[0..values.len()], copy(place));
     drop(binding);
     if ty <= 0 { return (ty, 0); }
-    if ty > 9 && !(ty == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()],
+    if primitive_option(ty) && borrowing { return (-9, 0); }
+    if ty > 9 && !primitive_option(ty) && !(ty == 310 && primitive_enum(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
         &graph[0..graph.len()], copy(shape)))) { return (-9, 0); }
     check_projection(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],

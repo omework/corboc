@@ -1,0 +1,271 @@
+use bootstrap::diagnostics::diagnostic_limitation;
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Retained value graphs for the STD's standalone regional descriptor.
+//! Element payloads keep ordinary ownership/loan summaries, independently of C storage.
+use bootstrap::model::{AstNode, StaticNode, CheckedValue, reserve_summary, constructor_arguments, constructor_field_value};
+use bootstrap::scalar_options::{scalar_option_annotation, option_handle};
+use bootstrap::declarations::nominal_declaration;
+use bootstrap::calls::lookup_record_method;
+use bootstrap::value_summaries::{actual_parameter, instantiate_value, instantiate_environment, summary_callee};
+use bootstrap::value_dependencies::owned_fields_survive;
+use bootstrap::verify::violation_site;
+
+/// Match only the compiler-selected STD specialization, never arbitrary Vector names.
+pub fn vector_method(source: &[u8], nodes: &[AstNode], function: u64) bool {
+    let owner = nodes[function].parent;
+    if nodes[owner].kind != 49 { return false; }
+    let prefix = "__corbo_specialized___corbo_vector_value_";
+    let bytes = prefix.as_bytes();
+    let name = &source[nodes[owner].name_start..nodes[owner].name_end];
+    if name.len() <= bytes.len() { return false; }
+    let candidate = &source[nodes[owner].name_start..nodes[owner].name_start + bytes.len()];
+    candidate.content_eq(bytes)
+}
+
+/// Follow field mappings to the checked descriptor rather than its containing record.
+fn collection_place(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue], place: u64, depth: u64) u64 {
+    if place == 0 || depth >= 64 { return 0; }
+    if nodes[place].kind == 19 || nodes[place].kind == 13 || nodes[place].kind == 14 { return collection_place(&nodes[..], &graph[..], &values[..], graph[place].first_child, depth + 1); }
+    if nodes[place].kind == 7 {
+        let binding = graph[place].binding;
+        return if values[binding].ty == 734 { values[binding].target } else { binding };
+    }
+    if nodes[place].kind != 17 { return 0; }
+    let base = collection_place(&nodes[..], &graph[..], &values[..], graph[place].first_child, depth + 1);
+    if base == 0 { return 0; }
+    let origin = values[base].origin_call;
+    if origin >= nodes.len() as u64 || nodes[origin].kind != 37 { return 0; }
+    let parent = values[base].loan_parent;
+    let mut field = graph[origin].first_child;
+    while field != 0 {
+        if graph[field].field_name == graph[place].field_name {
+            return if constructor_arguments(values[parent].ty) {
+                constructor_field_value(&graph[..], &values[..], parent, field)
+            } else if parent != 0 { parent } else { field };
+        }
+        field = graph[field].next_sibling;
+    }
+    0
+}
+
+/// A loop insertion may represent several live runtime elements at one source site.
+fn repeated_insertion(nodes: &[AstNode], point: u64) bool {
+    let mut point = point;
+    while point != 0 {
+        if nodes[point].kind == 22 || nodes[point].kind == 27 { return true; }
+        if nodes[point].kind == 1 || nodes[point].kind == 35 { return false; }
+        point = nodes[point].parent;
+    }
+    false
+}
+
+/// Add one immutable element to an owned descriptor's dependency graph.
+fn retain_element(values: &mut [CheckedValue], source_count: u64, owner: u64, from: u64, repeated: bool) i64 {
+    let base = reserve_summary(&mut values[..], source_count, 3);
+    if base == 0 { return -9; }
+    let element_ty = values[from].ty; let element_target = values[from].target;
+    let element_parent = values[from].loan_parent; let element_origin = values[from].origin_call;
+    let element_writable = values[from].writable; let element_projection = values[from].projection;
+    values[base] = CheckedValue { ty: element_ty, state: 1, mutable: false,
+        target: element_target, loan_parent: element_parent, origin_call: element_origin,
+        writable: element_writable, projection: element_projection };
+    let entry = base + 1;
+    let marker = base + 2;
+    let previous = values[owner].loan_parent;
+    let tail = if values[previous].ty == 5012 { values[previous].origin_call } else { 0 };
+    values[entry] = CheckedValue { ty: 5014, state: 1, mutable: false,
+        target: base, loan_parent: tail, origin_call: 0, writable: repeated, projection: 0 };
+    values[marker] = CheckedValue { ty: 5012, state: 1, mutable: false,
+        target: 0, loan_parent: 0, origin_call: entry, writable: true, projection: 0 };
+    let ty=values[owner].ty; let state=values[owner].state; let mutable=values[owner].mutable;
+    let target=values[owner].target; let origin=values[owner].origin_call; let writable=values[owner].writable; let projection=values[owner].projection;
+    values[owner] = CheckedValue { ty, state, mutable, target, loan_parent: marker, origin_call: origin, writable, projection };
+    0
+}
+
+/// Retain immutable per-insertion summaries. Mutating a source binding afterwards
+/// cannot change the dependencies already transferred into the collection.
+pub fn vector_effect(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], function: u64, call: u64, output: u64) i64 {
+    let receiver = graph[call].first_child;
+    let reference = values[receiver].target;
+    let projected = collection_place(&nodes[..], &graph[..], &values[..], receiver, 0);
+    let owner = if projected != 0 { projected } else if values[reference].ty == 734 { values[reference].target } else { reference };
+    let destination_scope = graph[reference].scope;
+    let name = &source[nodes[function].name_start..nodes[function].name_end];
+    let push_text = "push"; let push = push_text.as_bytes();
+    let pop_text = "pop"; let pop = pop_text.as_bytes();
+    let clear_text = "clear"; let clear = clear_text.as_bytes();
+    if name.content_eq(&push[..]) {
+        let argument = graph[receiver].next_sibling;
+        let from = if values[argument].ty != 0 { argument } else { graph[argument].binding };
+        if owner == 0 || from == 0 { return -9; }
+        if !owned_fields_survive(&graph[..], &values[..], from, destination_scope) {
+            return 0 - violation_site(4, nodes[argument].start, 734);
+        }
+        return retain_element(&mut values[..], nodes.len() as u64, owner, from, repeated_insertion(&nodes[..], call));
+    }
+    if name.content_eq(&pop[..]) {
+        let ty = scalar_option_annotation(&source[..], &nodes[..], &graph[..], output);
+        if ty == 0 { return -9; }
+        let marker = values[owner].loan_parent;
+        let entry = if values[marker].ty == 5012 { values[marker].origin_call } else { 0 };
+        let value = values[entry].target;
+        let target: u64 = if option_handle(ty) != 0 { value } else if value == 0 { 0 } else { values[value].target };
+        let origin: u64 = if value == 0 { 0 } else { values[value].origin_call };
+        let mut parent: u64 = if value == 0 { 0 } else { values[value].loan_parent };
+        if value != 0 && values[value].ty == 300 && nodes[origin].kind == 37 {
+            let root = reserve_summary(&mut values[..], nodes.len() as u64, 2);
+            if root == 0 { return -9; }
+            let retained = root + 1;
+            values[retained] = CheckedValue { ty: 5014, state: 1, mutable: false, target: marker,
+                loan_parent: 0, origin_call: 0, writable: false, projection: 0 };
+            let mut entries = retained;
+            let mut field = graph[origin].first_child;
+            while field != 0 {
+                let actual = if constructor_arguments(values[parent].ty) {
+                    constructor_field_value(&graph[..], &values[..], parent, field)
+                } else if parent != 0 { parent } else { field };
+                let entry = reserve_summary(&mut values[..], nodes.len() as u64, 1);
+                if entry == 0 { return -9; }
+                values[entry] = CheckedValue { ty: 5014, state: 1, mutable: false, target: actual,
+                    loan_parent: entries, origin_call: field, writable: false, projection: 0 };
+                entries = entry;
+                field = graph[field].next_sibling;
+            }
+            values[root] = CheckedValue { ty: 5012, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: entries, writable: true, projection: 0 };
+            parent = root;
+        }
+        let writable = value != 0 && values[value].writable;
+        // Remove exactly the known final insertion only on an unconditional path.
+        let mut ancestor = call;
+        let mut conditional = false;
+        while nodes[ancestor].parent != 0 {
+            let outer = nodes[ancestor].parent;
+            let kind = nodes[outer].kind;
+            if (kind == 26 || kind == 40) && graph[outer].first_child != ancestor { conditional = true; }
+            if kind == 22 || kind == 27 { conditional = true; }
+            ancestor = outer;
+        }
+        if entry != 0 && !conditional && !values[entry].writable {
+            let remainder = reserve_summary(&mut values[..], nodes.len() as u64, 1);
+            if remainder == 0 { return -9; }
+            values[remainder] = CheckedValue { ty: 5012, state: 1, mutable: false, target: 0,
+                loan_parent: 0, origin_call: values[entry].loan_parent, writable: true, projection: 0 };
+            let owner_ty=values[owner].ty; let owner_state=values[owner].state; let owner_mutable=values[owner].mutable;
+            let owner_target=values[owner].target; let owner_origin=values[owner].origin_call; let owner_writable=values[owner].writable; let owner_projection=values[owner].projection;
+            values[owner] = CheckedValue { ty: owner_ty, state: owner_state, mutable: owner_mutable,
+                target: owner_target, loan_parent: remainder, origin_call: owner_origin, writable: owner_writable, projection: owner_projection };
+        }
+        values[call] = CheckedValue { ty, state: 1, mutable: false,
+            target, loan_parent: if parent != 0 { parent } else { marker }, origin_call: origin, writable, projection: if value == 0 { 0 } else { values[value].projection } };
+        return ty;
+    }
+    if name.content_eq(&clear[..]) { return 0; }
+    -10
+}
+
+/// Recognize the concrete standalone descriptor in a callable's signature.
+fn vector_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], annotation: u64) bool {
+    let mut annotation = annotation;
+    if annotation == 0 { return false; }
+    if source[nodes[annotation].start] == 38 { annotation = graph[annotation].first_child; }
+    let nominal = nominal_declaration(&source[..], &nodes[..], &graph[..], annotation);
+    if nominal == 0 { return false; }
+    let prefix_text = "__corbo_specialized___corbo_vector_value_"; let prefix = prefix_text.as_bytes();
+    let name = &source[nodes[nominal].name_start..nodes[nominal].name_end];
+    if name.len() <= prefix.len() { return false; }
+    let beginning = &source[nodes[nominal].name_start..nodes[nominal].name_start + prefix.len()];
+    beginning.content_eq(&prefix[..])
+}
+
+/// Instantiate vector insertions from an ordinary callable's body in its caller.
+/// This retains dependencies through helper functions and returned descriptors.
+pub fn callable_vectors(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], function: u64, call: u64, output: u64) i64 {
+    callable_vectors_at(&source[..], &nodes[..], &graph[..], &mut values[..], function, call, output, call, graph[call].scope, call, repeated_insertion(&nodes[..], call), 0)
+}
+
+fn callable_vectors_at(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    values: &mut [CheckedValue], function: u64, environment: u64, output: u64,
+    destination: u64, scope: u64, anchor: u64, repeated: bool, depth: u64) i64 {
+    if depth >= 64 { return -9; }
+    if vector_method(&source[..], &nodes[..], function) { return 0; }
+    let mut eligible = vector_annotation(&source[..], &nodes[..], &graph[..], output);
+    let mut formal = graph[function].first_child;
+    while nodes[formal].kind == 3 {
+        if vector_annotation(&source[..], &nodes[..], &graph[..], graph[formal].first_child) { eligible = true; }
+        formal = graph[formal].next_sibling;
+    }
+    if !eligible { return 0; }
+    let mut tail = graph[graph[output].next_sibling].first_child;
+    if nodes[output].kind != 4 {
+        let mut body = graph[function].first_child;
+        while nodes[body].kind == 3 || nodes[body].kind == 4 { body = graph[body].next_sibling; }
+        tail = graph[body].first_child;
+    }
+    while graph[tail].next_sibling != 0 { tail = graph[tail].next_sibling; }
+    let returned = if nodes[tail].kind == 10 || nodes[tail].kind == 6 { graph[tail].first_child } else { 0 };
+    let returned_binding = if nodes[returned].kind == 7 { graph[returned].binding } else { 0 };
+    let mut operation = function + 1;
+    let push_text = "push"; let push = push_text.as_bytes();
+    let prefix_text = "__corbo_specialized___corbo_vector_value_"; let prefix = prefix_text.as_bytes();
+    while operation < nodes.len() as u64 && nodes[operation].start < nodes[function].end {
+        let member = &source[nodes[operation].name_start..nodes[operation].name_end];
+        if nodes[operation].kind == 16 && member.content_eq(&push[..]) {
+            let receiver = graph[operation].first_child;
+            let binding = graph[receiver].binding;
+            let parameter = nodes[binding].kind == 3 && nodes[binding].parent == function;
+            let result = binding != 0 && binding == returned_binding && values[destination].ty == 300;
+            if (parameter || result) && nodes[receiver].kind == 7 {
+                let mut annotation = if parameter { graph[binding].first_child } else { output };
+                if annotation != 0 && source[nodes[annotation].start] == 38 { annotation = graph[annotation].first_child; }
+                let nominal = nominal_declaration(&source[..], &nodes[..], &graph[..], annotation);
+                let name = &source[nodes[nominal].name_start..nodes[nominal].name_end];
+                let mut vector = false;
+                if name.len() > prefix.len() {
+                    let beginning = &source[nodes[nominal].name_start..nodes[nominal].name_start + prefix.len()];
+                    vector = beginning.content_eq(&prefix[..]);
+                }
+                if vector {
+                    let actual = if parameter { actual_parameter(&nodes[..], &graph[..], &values[..], function, environment, binding) } else { 0 };
+                    let place = if actual < nodes.len() as u64 && nodes[actual].kind == 13 { graph[actual].first_child } else { actual };
+                    let owner = if result { destination }
+                        else if actual >= nodes.len() as u64 { if values[actual].ty == 734 { values[actual].target } else { actual } }
+                        else { collection_place(&nodes[..], &graph[..], &values[..], place, 0) };
+                    if owner == 0 { drop(diagnostic_limitation(&nodes[..], anchor, "cannot resolve the receiving vector identity through this callable")); return -9; }
+                    let method = lookup_record_method(&source[..], &nodes[..], &graph[..], &name[..], &push[..], true);
+                    let element = graph[graph[graph[method].first_child].next_sibling].first_child;
+                    let argument = graph[receiver].next_sibling;
+                    let value = instantiate_value(&source[..], &nodes[..], &graph[..], &mut values[..], function, environment, argument, element, 0);
+                    if value == 0 { drop(diagnostic_limitation(&nodes[..], anchor, "cannot instantiate the inserted vector element dependency in the caller")); return -9; }
+                    let scope = if !result && owner < nodes.len() as u64 && nodes[owner].kind == 5 { graph[owner].scope } else { scope };
+                    if !owned_fields_survive(&graph[..], &values[..], value, scope) { return 0 - violation_site(4, nodes[anchor].start, 734); }
+                    let retained = retain_element(&mut values[..], nodes.len() as u64, owner, value, repeated || repeated_insertion(&nodes[..], operation));
+                    if retained < 0 { return retained; }
+                }
+            }
+        }
+        if nodes[operation].kind == 15 || nodes[operation].kind == 16 {
+            let callee = summary_callee(&source[..], &nodes[..], &graph[..], &values[..], operation);
+            if callee != 0 && !vector_method(&source[..], &nodes[..], callee) {
+                let mut formal = graph[callee].first_child;
+                let mut relevant = false;
+                while nodes[formal].kind == 3 {
+                    if vector_annotation(&source[..], &nodes[..], &graph[..], graph[formal].first_child) { relevant = true; }
+                    formal = graph[formal].next_sibling;
+                }
+                if operation == returned && vector_annotation(&source[..], &nodes[..], &graph[..], formal) { relevant = true; }
+                if relevant {
+                    let nested = instantiate_environment(&source[..], &nodes[..], &graph[..], &mut values[..], function, environment, operation, callee, depth + 1);
+                    if nested == 0 { drop(diagnostic_limitation(&nodes[..], anchor, "cannot instantiate a nested vector helper environment")); return -9; }
+                    let effect = callable_vectors_at(&source[..], &nodes[..], &graph[..], &mut values[..], callee, nested, formal, destination, scope, anchor, repeated || repeated_insertion(&nodes[..], operation), depth + 1);
+                    if effect < 0 { return effect; }
+                }
+            }
+        }
+        operation += 1;
+    }
+    0
+}

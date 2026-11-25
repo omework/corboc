@@ -411,3 +411,43 @@ fn main() {
 Annotation target restrictions still apply: `configurable` describes constants,
 not fields or methods. Object contracts stay on the type declaration; block
 annotations stay on blocks inside method bodies.
+
+### Duplicate-name diagnostics
+
+When an import collides with an existing name, `check` identifies both qualified
+components and shows their declaration locations. For example:
+
+```text
+error[E0014]: resolution error: name 'Group' conflicts with an existing binding
+       = existing: struct subdb::Group
+       = incoming: struct subdb::group::Group
+       = help: use 'as' to give this import a different local name
+```
+
+The source excerpts identify the conflicting import and both declarations.
+Collisions between two imports also point at the earlier import, including its
+alias. Duplicate declarations and ambiguous module/type paths receive a rename
+hint appropriate to their cause.
+
+### Constant expressions
+
+Primitive and text constants can reuse other constants. Numeric expressions
+support checked arithmetic, parentheses, `min` and `max`:
+
+```rust
+struct RawTable {
+    #(configurable)
+    pub const FRAME_SIZE: usize = 1024;
+
+    #(configurable)
+    pub const GROUP_SIZE: usize = max(4096 * Self::FRAME_SIZE, 8192);
+}
+
+const LABEL: &str = "table";
+const DISPLAY_LABEL: &str = LABEL;
+```
+
+Derived defaults follow lexical overrides of their dependencies. A direct
+override of a derived constant takes precedence and retains its value in nested
+scopes. This is bounded constant reduction, not execution of arbitrary functions
+at compile time.

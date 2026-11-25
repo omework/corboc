@@ -1,3 +1,4 @@
+use bootstrap::vector_values::{vector_method, vector_effect, callable_vectors};
 use bootstrap::semantic_diagnostics::slice_argument as semantic_slice_argument;
 use bootstrap::loans::{disjoint_dependencies, place_projection};
 use bootstrap::verify::type_violation;
@@ -381,6 +382,18 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             if checked < 0 { return checked; }
             actual = copy(array);
         }
+        if actual == 0 && allocation == 301 {
+            let checked = if nodes[input].kind == 16 {
+                bootstrap::ownership::check_pool_new(&source[..], &nodes[..], &graph[..], &mut values[..], input, input)
+            } else {
+                verify_expr(&source[..], &nodes[..], &graph[..], &mut values[..], input, 301, 1)
+            };
+            if checked < 0 { return checked; }
+            let expected_shape = nominal_declaration(&source[..], &nodes[..], &graph[..], graph[ty_node].first_child);
+            let actual_shape = nominal_declaration(&source[..], &nodes[..], &graph[..], values[input].origin_call);
+            if checked != 301 || actual_shape != expected_shape { return 0 - violation_site(1, nodes[input].start, 497); }
+            actual = checked;
+        }
         if actual == 0 && graph[ty_node].first_child != 0
             && nodes[ty_node].name_end == nodes[ty_node].name_start + 1 && source[nodes[ty_node].name_start] == 65 {
             let vector = vector_scalar_owner(&source[0..source.len()], &nodes[0..nodes.len()],
@@ -439,7 +452,7 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
                 if status < 0 { return status; }
                 let record = nominal_declaration(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], values[input].origin_call);
-                if status != 300 || record != nominal || values[input].target != 0 {
+                if status != 300 || record != nominal {
                     return 0 - violation_site(1, nodes[input].start, 500);
                 }
                 if reservations==64{return -9;}reserved[reservations]=copy(input);reservations=reservations+1;
@@ -491,12 +504,13 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             } else if handle != 0 {
                 if deferred { return -9; }
                 if nodes[input].kind == 7 && values[graph[input].binding].origin_call != 0
+                    && !vector_method(&source[..], &nodes[..], function)
                     && !waits_on_entry(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(function), copy(parameter)) { return -9; }
                 let status = verify_expr(&source[0..source.len()], &nodes[0..nodes.len()],
                     &graph[0..graph.len()], &mut values[0..values.len()], copy(input), copy(handle), 1);
                 if status >= 0 && status != handle { return 0 - violation_site(1, nodes[input].start, 505); }
-                if status >= 0 && values[input].origin_call != 0 {
+                if status >= 0 && values[input].origin_call != 0 && !vector_method(&source[..], &nodes[..], function) {
                     if waited != 0 || nodes[input].kind != 7 || input != argument
                         || graph[input].next_sibling != 0 { return -9; }
                     waited = values[input].origin_call;
@@ -568,6 +582,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         input = graph[input].next_sibling;
     }
     if input != 0 { return 0 - violation_site(8, start, 508); }
+    if nodes[call].kind == 16 && vector_method(&source[..], &nodes[..], function) {
+        let effect = vector_effect(&source[..], &nodes[..], &graph[..], &mut values[..], function, call, parameter);
+        if effect != -10 { return effect; }
+    }
     let mut result: i64 = 0;
     if parameter != 0 && nodes[parameter].kind == 4 {
         result = verify_primitive(&source[0..source.len()], nodes[parameter].name_start, nodes[parameter].name_end);
@@ -657,6 +675,8 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
             let retained = retain_lock(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()],
                 &mut values[0..values.len()], copy(function), copy(call));
             if retained < 0 { return retained; }
+            let vector_effects = callable_vectors(&source[..], &nodes[..], &graph[..], &mut values[..], function, call, parameter);
+            if vector_effects < 0 { return vector_effects; }
             returned_record = reserve_summary(&mut values[0..values.len()], nodes.len() as u64, 1);
             if returned_record == 0 { return -9; }
             let target = values[call].target; let members = values[call].loan_parent; let shape = values[call].origin_call;
@@ -872,6 +892,10 @@ pub fn check_signature(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
         let view=if record_borrow(copy(result)){734}else{slice_borrow_type(copy(result))};
         let target=values[call].target;let parent=values[call].loan_parent;let shape=values[call].origin_call;let exclusive=values[call].writable;
         values[call] = CheckedValue{ty:copy(view),state:1,mutable:false,target:target,loan_parent:parent,origin_call:shape,writable:exclusive, projection: 0,}; record_checked(&values[0..values.len()],call);return view;
+    }
+    if !deferred {
+        let retained = callable_vectors(&source[..], &nodes[..], &graph[..], &mut values[..], function, call, parameter);
+        if retained < 0 { return retained; }
     }
     return result;
 }

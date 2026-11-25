@@ -1,0 +1,22 @@
+[
+  {
+    "case": "dispatcher",
+    "status": "passed under fatal UBSan",
+    "output": "16\n0\n3\n"
+  },
+  {
+    "case": "some_reuse_and_mutation",
+    "status": "passed under fatal UBSan",
+    "output": "42\n1\ntrue\n"
+  },
+  {
+    "case": "wrong_payload",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-option-fields-lfqyckz9/wrong_payload.crb:1:74: error[N1]: rule violation: type mismatch for this expression or binding\n     1 | struct Record { limit: Option<usize>; fn new() Self { Self { limit: Some(false) } } } fn main() {}\n       |                                                                          ^~~~~\n       = expected: u64\n       = actual: bool\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "wrong_array_length",
+    "status": "rejected",
+    "diagnostic": "corboc: checking file (with module context)\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-option-fields-lfqyckz9/wrong_array_length.crb:1:104: error[N1]: rule violation: element or argument count does not match the required shape\n     1 | struct Record { limit: Option<usize>; buffer: [usize; 16]; fn new() Self { Self { limit: None, buffer: [0, 16] } } } fn main() {}\n       |                                                                                                        ^~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Select the ordinary STD vector value for standalone descriptors. Pool/A
+//! payload syntax retains its existing native representation and ownership.
+use bootstrap::model::{AstNode, StaticNode};
+use bootstrap::declarations::{nominal_declaration, verification_field};
+use bootstrap::diagnostics::diagnostic_limitation;
+
+fn named(source: &[u8], node: &AstNode, name: &str) bool {
+    let expected = name.as_bytes();
+    let actual = &source[(*node).name_start..(*node).name_end];
+    actual.content_eq(expected)
+}
+
+fn standalone(source: &[u8], nodes: &[AstNode], node: u64) bool {
+    let mut parent = nodes[node].parent;
+    while nodes[parent].kind == 4 {
+        if named(&source[..], &nodes[parent], "Pool") || named(&source[..], &nodes[parent], "A") { return false; }
+        parent = nodes[parent].parent;
+    }
+    true
+}
+
+fn vector_annotation(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
+    nodes[node].kind == 4 && named(&source[..], &nodes[node], "Vector")
+        && graph[node].first_child != 0 && graph[graph[node].first_child].next_sibling == 0
+        && standalone(&source[..], &nodes[..], node)
+}
+
+fn new_vector(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], node: u64) bool {
+    let callee = graph[node].first_child;
+    if nodes[node].kind != 15 || nodes[callee].kind != 36 || !named(&source[..], &nodes[callee], "Vector") { return false; }
+    let end = nodes[callee].end;
+    end >= 5 && source[end-5] == 58 && source[end-4] == 58 && source[end-3] == 110
+        && source[end-2] == 101 && source[end-1] == 119
+}
+
+/// Trigger before generic specialization, while native Vector type arguments
+/// and the fields that constrain an unannotated constructor are still visible.
+pub fn has_direct_vectors(source: &[u8], nodes: &[AstNode], graph: &[StaticNode]) bool {
+    let mut node: u64 = 1;
+    while node < nodes.len() as u64 {
+        if vector_annotation(&source[..], &nodes[..], &graph[..], node)
+            || new_vector(&source[..], &nodes[..], &graph[..], node) { return true; }
+        node += 1;
+    }
+    false
+}
+
+fn destination_type(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], field: u64) u64 {
+    let owner = nodes[field].parent;
+    if nodes[owner].kind != 37 { return 0; }
+    let nominal = nominal_declaration(&source[..], &nodes[..], &graph[..], owner);
+    let declaration = verification_field(&source[..], &nodes[..], &graph[..], nominal, field);
+    if declaration == 0 { return 0; }
+    let annotation = graph[declaration].first_child;
+    if vector_annotation(&source[..], &nodes[..], &graph[..], annotation) { return annotation; }
+    0
+}
+
+/// Expected field/annotation constraints give Vector::new() its element type.
+/// A conflicting pair is not silently resolved by choosing the first use.
+fn inferred_element(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], call: u64) u64 {
+    let callee = graph[call].first_child;
+    if graph[callee].first_child != 0 { return graph[callee].first_child; }
+    let parent = nodes[call].parent;
+    if nodes[parent].kind == 31 {
+        return graph[destination_type(&source[..], &nodes[..], &graph[..], parent)].first_child;
+    }
+    if nodes[parent].kind != 5 { return 0; }
+    let annotation = graph[parent].type_node;
+    if vector_annotation(&source[..], &nodes[..], &graph[..], annotation) { return graph[annotation].first_child; }
+    let mut inferred: u64 = 0;
+    let mut use_node: u64 = 1;
+    while use_node < nodes.len() as u64 {
+        if nodes[use_node].kind == 7 && graph[use_node].binding == parent && nodes[nodes[use_node].parent].kind == 31 {
+            let target = destination_type(&source[..], &nodes[..], &graph[..], nodes[use_node].parent);
+            let element = graph[target].first_child;
+            if element != 0 {
+                if inferred != 0 {
+                    let expected = &source[nodes[inferred].start..nodes[inferred].end];
+                    if !expected.content_eq(&source[nodes[element].start..nodes[element].end]) { return 0; }
+                }
+                inferred = element;
+            }
+        }
+        use_node += 1;
+    }
+    inferred
+}
+
+/// Rewrite bare vector annotations and constructors into the STD's owned object.
+/// The normal generic, move, Result, async and destructor paths handle that object.
+pub fn expand_direct_vectors(source: &[u8], nodes: &[AstNode], graph: &[StaticNode],
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
+    if source.len()+1 > offsets.len() { return (4, 0); }
+    let mut elements: [u64; 524289] = [0; 524289];
+    let mut node: u64 = 1;
+    let mut implementation = false;
+    while node < nodes.len() as u64 {
+        if nodes[node].kind == 28 && named(&source[..], &nodes[node], "__corbo_vector_value") { implementation = true; }
+        node += 1;
+    }
+    let mut at: u64 = 0;
+    while at <= source.len() as u64 { offsets[at] = 0; at += 1; }
+    let mut changes: u64 = 0;
+    node = 1;
+    while node < nodes.len() as u64 {
+        if vector_annotation(&source[..], &nodes[..], &graph[..], node) {
+            offsets[nodes[node].start] = node;
+            elements[node] = graph[node].first_child;
+            changes += 1;
+        } else if new_vector(&source[..], &nodes[..], &graph[..], node) {
+            let element = inferred_element(&source[..], &nodes[..], &graph[..], node);
+            if element == 0 {
+                drop(diagnostic_limitation(&nodes[..], node, "cannot infer Vector::new() element type; provide a Vector<T> binding or destination field"));
+                return (9, 0);
+            }
+            offsets[nodes[node].start] = node;
+            elements[node] = element;
+            changes += 1;
+        }
+        node += 1;
+    }
+    if changes == 0 { return (0, 0); }
+    if !implementation {
+        drop(diagnostic_limitation(&nodes[..], 0, "standalone Vector<T> requires importing std::Vector and its matching STD implementation"));
+        return (9, 0);
+    }
+    let prefix_text = "__corbo_vector_value<";
+    let prefix = prefix_text.as_bytes();
+    let tail_text = ">"; let tail = tail_text.as_bytes();
+    let call_text = ">::new"; let call_tail = call_text.as_bytes();
+    let mut written: u64 = 0;
+    at = 0;
+    while at < source.len() as u64 {
+        let edit = offsets[at];
+        if edit != 0 {
+            let call = nodes[edit].kind == 15;
+            let end = if call { nodes[graph[edit].first_child].end } else { nodes[edit].end };
+            let element = elements[edit];
+            let start = nodes[element].start;
+            let length = nodes[element].end - start;
+            let extra = prefix.len() as u64 + length + (if call { 6 } else { 1 });
+            if extra > output.len() as u64 - written { return (4, 0); }
+            let before = written;
+            let mut i: usize = 0;
+            while i < prefix.len() { output[written] = prefix[i]; written += 1; i += 1; }
+            let mut byte: u64 = 0;
+            while byte < length { output[written] = source[start + byte]; written += 1; byte += 1; }
+            i = 0;
+            if call { while i < call_tail.len() { output[written] = call_tail[i]; written += 1; i += 1; } }
+            else { while i < tail.len() { output[written] = tail[i]; written += 1; i += 1; } }
+            while at < end { offsets[at] = before; at += 1; }
+        } else {
+            offsets[at] = written;
+            if written == output.len() as u64 { return (4, 0); }
+            output[written] = source[at]; written += 1; at += 1;
+        }
+    }
+    offsets[at] = written;
+    (0, written)
+}

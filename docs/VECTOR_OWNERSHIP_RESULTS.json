@@ -1,0 +1,82 @@
+[
+  {
+    "case": "resource_cleanup",
+    "status": "passed under fatal UBSan",
+    "output": "24\n24\n12\n36\n"
+  },
+  {
+    "case": "references",
+    "status": "passed under fatal UBSan",
+    "output": "24\n12\n"
+  },
+  {
+    "case": "mutable_reference",
+    "status": "passed under fatal UBSan",
+    "output": "24\n"
+  },
+  {
+    "case": "borrowed_record",
+    "status": "passed under fatal UBSan",
+    "output": "42\n"
+  },
+  {
+    "case": "pool_allocation",
+    "status": "passed under fatal UBSan",
+    "output": "24\n24\n12\n"
+  },
+  {
+    "case": "nested_vector",
+    "status": "passed under fatal UBSan",
+    "output": "12\n"
+  },
+  {
+    "case": "helper_dependencies",
+    "status": "passed under fatal UBSan",
+    "output": "42\n42\n"
+  },
+  {
+    "case": "handle",
+    "status": "passed under fatal UBSan",
+    "output": "42\n"
+  },
+  {
+    "case": "owned_field",
+    "status": "passed under fatal UBSan",
+    "output": "42\n7\n"
+  },
+  {
+    "case": "text_and_slice",
+    "status": "passed under fatal UBSan",
+    "output": "9\n2\n"
+  },
+  {
+    "case": "use_after_move",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/use_after_move/src/main.crb:7:124: error[N6]: rule violation: use of a value after its ownership was moved 'value'\n     7 | fn main() { let value = Resource { value: 1 }; let mut values: Vector<Resource> = Vector::new(); values.push(value); print(value.value); }\n       |                                                                                                                            ^~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/use_after_move/src/main.crb:7:110: note: ownership moved here (generated-source anchor)\n     7 | fn main() { let value = Resource { value: 1 }; let mut values: Vector<Resource> = Vector::new(); values.push(value); print(value.value); }\n       |                                                                                                              ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/use_after_move/src/main.crb:7:17: note: value declared here (generated-source anchor)\n     7 | fn main() { let value = Resource { value: 1 }; let mut values: Vector<Resource> = Vector::new(); values.push(value); print(value.value); }\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "borrow_mutation",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/borrow_mutation/src/main.crb:2:106: error[N5]: rule violation: access conflicts with a live borrow or outstanding synchronized branch 'number'\n     2 | fn main() { let mut number: i64 = 1; let mut values: Vector<&i64> = Vector::new(); values.push(&number); number = 2; match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                                                                                                          ^~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/borrow_mutation/src/main.crb:2:21: note: value declared here (generated-source anchor)\n     2 | fn main() { let mut number: i64 = 1; let mut values: Vector<&i64> = Vector::new(); values.push(&number); number = 2; match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                     ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/borrow_mutation/src/main.crb:2:38: note: conflicting dependency originates here (generated-source anchor)\n     2 | fn main() { let mut number: i64 = 1; let mut values: Vector<&i64> = Vector::new(); values.push(&number); number = 2; match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                                      ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "dangling_insert",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/dangling_insert/src/main.crb:2:94: error[N4]: rule violation: value would outlive a borrowed target or its allocation source 'values'\n     2 | fn main() { let mut values: Vector<&i64> = Vector::new(); { let number: i64 = 1; values.push(&number); } match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                                                                                              ^~~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/dangling_insert/src/main.crb:2:21: note: value declared here (generated-source anchor)\n     2 | fn main() { let mut values: Vector<&i64> = Vector::new(); { let number: i64 = 1; values.push(&number); } match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                     ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "pool_lifetime",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/pool_lifetime/src/main.crb:2:95: error[E0009]: compiler limitation: cannot compile this expression statement: the checker does not implement this operand or dependency form\n     2 | fn main() { let mut pool = Pool<i64>::new(1); let mut values: Vector<A<i64>> = Vector::new(); values.push(pool.new(1)); drop(pool); match values.pop() { Some(value) => { print(*value); }, None => {}, } }\n       |                                                                                               ^~~~~~\n       = note: this is a compiler implementation limit, not a demonstrated language-rule violation\n       = context: function 'main'\n       = note: an inferred type name uses a generated-source anchor\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "helper_borrow_mutation",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/helper_borrow_mutation/src/main.crb:8:5: error[N5]: rule violation: access conflicts with a live borrow or outstanding synchronized branch 'number'\n     8 |     number = 2;\n       |     ^~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/helper_borrow_mutation/src/main.crb:5:13: note: value declared here (generated-source anchor)\n     5 |     let mut number: i64 = 1;\n       |             ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/helper_borrow_mutation/src/main.crb:6:5: note: conflicting dependency originates here (generated-source anchor)\n     6 |     let mut values: Vector<&i64> = Vector::new();\n       |     ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "repeated_insertion",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/repeated_insertion/src/main.crb:8:5: error[N5]: rule violation: access conflicts with a live borrow or outstanding synchronized branch 'number'\n     8 |     number = 2;\n       |     ^~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/repeated_insertion/src/main.crb:3:13: note: value declared here (generated-source anchor)\n     3 |     let mut number: i64 = 1;\n       |             ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-vector-ownership-0ly6ryy1/repeated_insertion/src/main.crb:4:5: note: conflicting dependency originates here (generated-source anchor)\n     4 |     let mut values: Vector<&i64> = Vector::new();\n       |     ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

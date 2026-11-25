@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Bounded reduction of literal/constant expressions in a lexical environment.
+use bootstrap::model::{AstNode, StaticNode, hex_digit};
+use bootstrap::constants::{constant_type, resolve_constant};
+use bootstrap::diagnostics::diagnostic_constant;
+
+/// Materialized overrides are values; an empty slot retains a live default
+/// expression, which is evaluated again in each lexical environment.
+struct ConstantValue {
+    ty: i64;
+    negative: bool;
+    magnitude: u64;
+    real: f64;
+    origin: u64;
+}
+
+/// Copy only scalar evaluator metadata out of the borrowed workspace.
+fn constant_snapshot(values: &[ConstantValue], at: u64) ConstantValue {
+    ConstantValue { ty: values[at].ty, negative: values[at].negative,
+        magnitude: values[at].magnitude, real: values[at].real, origin: values[at].origin }
+}
+
+/// Failure is represented explicitly and never executed as runtime arithmetic.
+fn constant_failure(at: u64, message: &str) ConstantValue {
+    diagnostic_constant(at, message);
+    ConstantValue { ty: 0, negative: false, magnitude: 0, real: 0.0, origin: 0 }
+}
+
+/// Inclusive magnitude bound after applying the sign.
+fn constant_limit(ty: i64, negative: bool) u64 {
+    if ty == 1 { return if negative { 2147483648 } else { 2147483647 }; }
+    if ty == 2 { return if negative { 9223372036854775808 } else { 9223372036854775807 }; }
+    if negative { return 0; }
+    if ty == 4 { return 255; }
+    if ty == 5 { return 65535; }
+    if ty == 6 { return 4294967295; }
+    18446744073709551615
+}
+
+/// Parse floating literals at the compiler/native numeric boundary. Evaluation
+/// and environment/dependency handling remain in Corbo; f32 rounds as f32.
+fn constant_float(bytes: &[u8], ty: i64, negative: bool, at: u64) ConstantValue {
+    let mut real: f64 = 0.0;
+    let mut valid = false;
+    @unchecked { @c(includes={"stdlib.h","string.h","math.h"}) {
+        size_t n=(${bytes}).len;
+        if(n<4096){
+            char text[4096];memcpy(text,(${bytes}).data,n);text[n]=0;
+            char *end=0;double v=${ty}==8?(double)strtof(text,&end):strtod(text,&end);
+            int nonzero=0;for(size_t i=0;i<n;i++)if(text[i]>='1'&&text[i]<='9')nonzero=1;
+            ${valid}=end==text+n&&isfinite(v)&&(!nonzero||v!=0.0);
+            ${real}=${negative}?-v:v;
+        }
+    } }
+    if !valid { return constant_failure(at, "floating constant is out of range or a nonzero literal rounds to zero"); }
+    ConstantValue { ty: ty, negative: negative, magnitude: 0, real: real, origin: 0 }
+}
+
+/// Perform one floating operation without exposing host infinities to output.
+fn constant_float_operation(left: ConstantValue, right: ConstantValue, op: u8, at: u64) ConstantValue {
+    let a = left.real;
+    let b = right.real;
+    if (op == 47 || op == 37) && b == 0.0 {
+        return constant_failure(at, "division or remainder by zero in constant expression");
+    }
+    let mut real: f64 = 0.0;
+    let mut valid = false;
+    let mut negative = false;
+    let ty = left.ty;
+    @unchecked { @c(includes={"math.h"}) {
+        if(${ty}==8){
+            float a=(float)${a},b=(float)${b},v=0;
+            switch(${op}){case '+':v=a+b;break;case '-':v=a-b;break;case '*':v=a*b;break;case '/':v=a/b;break;case '%':v=fmodf(a,b);break;}
+            ${real}=(double)v;
+        }else{
+            double a=${a},b=${b},v=0;
+            switch(${op}){case '+':v=a+b;break;case '-':v=a-b;break;case '*':v=a*b;break;case '/':v=a/b;break;case '%':v=fmod(a,b);break;}
+            ${real}=v;
+        }
+        ${valid}=isfinite(${real}); ${negative}=signbit(${real})!=0;
+    } }
+    if !valid { return constant_failure(at, "floating arithmetic overflows the declared constant type"); }
+    ConstantValue { ty: ty, negative: negative, magnitude: 0, real: real, origin: 0 }
+}
+
+/// Sign/magnitude arithmetic covers u64::MAX and i64::MIN without overflow in
+/// the compiler itself. Every intermediate result must fit the declared type.
+fn constant_operation(left: ConstantValue, right: ConstantValue, op: u8, at: u64) ConstantValue {
+    if left.ty == 0 { return left; }
+    if right.ty == 0 { return right; }
+    if left.ty == 3 || left.ty == 11 { return constant_failure(at, "arithmetic requires numeric constants"); }
+    if left.ty == 8 || left.ty == 9 { return constant_float_operation(left, right, op, at); }
+    let mut a = left;
+    let b = right;
+    let mut magnitude: u64 = 0;
+    let mut negative = a.negative;
+    let mut other_negative = b.negative;
+    if op == 45 { other_negative = !other_negative; }
+    if op == 43 || op == 45 {
+        if a.negative == other_negative {
+            let limit = constant_limit(a.ty, a.negative);
+            if b.magnitude > limit || a.magnitude > limit - b.magnitude {
+                return constant_failure(at, "integer arithmetic overflows the declared constant type");
+            }
+            magnitude = a.magnitude + b.magnitude;
+        } else if a.magnitude >= b.magnitude { magnitude = a.magnitude - b.magnitude; }
+        else { magnitude = b.magnitude - a.magnitude; negative = other_negative; }
+    } else if op == 42 {
+        negative = a.negative != b.negative;
+        let limit = constant_limit(a.ty, negative);
+        if b.magnitude != 0 && a.magnitude > limit / b.magnitude {
+            return constant_failure(at, "integer arithmetic overflows the declared constant type");
+        }
+        magnitude = a.magnitude * b.magnitude;
+    } else {
+        if b.magnitude == 0 { return constant_failure(at, "division or remainder by zero in constant expression"); }
+        if op == 47 { magnitude = a.magnitude / b.magnitude; negative = a.negative != b.negative; }
+        else { magnitude = a.magnitude % b.magnitude; }
+    }
+    if magnitude == 0 { negative = false; }
+    if (negative && a.ty >= 4) || magnitude > constant_limit(a.ty, negative) {
+        return constant_failure(at, "integer arithmetic overflows the declared constant type");
+    }
+    a.negative = negative; a.magnitude = magnitude;
+    a
+}
+
+/// Evaluate a constant reference using overrides as frozen values, otherwise
+/// evaluate its default under the current environment. The stack detects cycles.
+fn evaluate_declaration(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
+    environments: &[ConstantValue], declaration: u64, env: u64, active: &mut [u64], depth: u64) ConstantValue {
+    if depth >= active.len() as u64 { return constant_failure(nodes[declaration].start, "constant expression exceeds the compiler's nesting limit"); }
+    let mut i: u64 = 0;
+    while i < depth {
+        if active[i] == declaration { return constant_failure(nodes[declaration].start, "cyclic constant dependency"); }
+        i += 1;
+    }
+    let index = slot(&constants[..], declaration);
+    if index != 0 && environments[env * 256 + index - 1].ty != 0 { return constant_snapshot(&environments[..], env * 256 + index - 1); }
+    active[depth] = declaration;
+    let ty = constant_type(&source[..], &nodes[..], &graph[..], declaration);
+    if ty == 0 { return constant_failure(nodes[declaration].start, "constant type must be a primitive or &str"); }
+    evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..],
+        graph[graph[declaration].first_child].next_sibling, env, ty, &mut active[..], depth + 1, 0)
+}
+
+/// Interpret only the agreed constant grammar; ordinary function calls and
+/// aggregates are not a compile-time execution facility.
+fn evaluate_expression(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
+    environments: &[ConstantValue], expression: u64, env: u64, ty: i64, active: &mut [u64], depth: u64, nesting: u64) ConstantValue {
+    if nesting >= 128 { return constant_failure(nodes[expression].start, "constant expression exceeds the compiler's nesting limit"); }
+    let node = expression;
+    let kind = nodes[node].kind;
+    let at = nodes[node].start;
+    let child = graph[node].first_child;
+    if kind == 19 { return evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], child, env, ty, &mut active[..], depth, nesting + 1); }
+    let declaration = resolve_constant(&source[..], &nodes[..], &graph[..], node);
+    if declaration != 0 {
+        if constant_type(&source[..], &nodes[..], &graph[..], declaration) != ty {
+            return constant_failure(at, "constant reference type differs from the required constant type; numeric conversions are not implicit");
+        }
+        return evaluate_declaration(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], declaration, env, &mut active[..], depth);
+    }
+    if kind == 11 {
+        let op = source[nodes[node].name_start];
+        if op != 43 && op != 45 && op != 42 && op != 47 && op != 37 {
+            return constant_failure(at, "unsupported constant operator; expected +, -, *, / or %");
+        }
+        let a = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], child, env, ty, &mut active[..], depth, nesting + 1);
+        if a.ty == 0 { return a; }
+        let b = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], graph[child].next_sibling, env, ty, &mut active[..], depth, nesting + 1);
+        return constant_operation(a, b, op, at);
+    }
+    if kind == 15 {
+        let name = &source[nodes[child].name_start..nodes[child].name_end];
+        let minimum_text = "min"; let maximum_text = "max";
+        let minimum = minimum_text.as_bytes(); let maximum = maximum_text.as_bytes();
+        let is_min = name.content_eq(minimum);
+        let is_max = name.content_eq(maximum);
+        let first = graph[child].next_sibling; let second = graph[first].next_sibling;
+        if nodes[child].kind != 7 || graph[child].binding != 0 || (!is_min && !is_max)
+            || first == 0 || second == 0 || graph[second].next_sibling != 0 {
+            return constant_failure(at, "constant calls are restricted to min(a, b) and max(a, b)");
+        }
+        if ty == 3 || ty == 11 { return constant_failure(at, "min and max require numeric constants"); }
+        let a = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], first, env, ty, &mut active[..], depth, nesting + 1);
+        if a.ty == 0 { return a; }
+        let b = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], second, env, ty, &mut active[..], depth, nesting + 1);
+        if b.ty == 0 { return b; }
+        let mut less = if a.negative != b.negative { a.negative }
+            else if a.negative { a.magnitude > b.magnitude } else { a.magnitude < b.magnitude };
+        if ty == 8 || ty == 9 { less = a.real < b.real; }
+        if less == is_min { return a; }
+        return b;
+    }
+    // Apply a minus to the literal before range checking, including -(literal).
+    let mut atom = node;
+    let mut negative = false;
+    if kind == 12 && source[nodes[node].name_start] == 45 {
+        atom = child;
+        while nodes[atom].kind == 19 { atom = graph[atom].first_child; }
+        if nodes[atom].kind == 9 { negative = true; }
+        else {
+            let mut value = evaluate_expression(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], child, env, ty, &mut active[..], depth, nesting + 1);
+            if value.ty == 0 { return value; }
+            if ty == 8 || ty == 9 { value.real = -value.real; value.negative = !value.negative; return value; }
+            if ty == 3 || ty == 11 || ty >= 4 { return constant_failure(at, "unary minus requires a signed numeric constant"); }
+            if value.magnitude != 0 { value.negative = !value.negative; }
+            if value.magnitude > constant_limit(ty, value.negative) { return constant_failure(at, "negation overflows the declared constant type"); }
+            return value;
+        }
+    }
+    if nodes[atom].kind != 9 { return constant_failure(at, "constant initializer must use literals, constants, arithmetic, min or max"); }
+    let first = source[nodes[atom].start];
+    if first == 34 {
+        if ty != 11 || negative { return constant_failure(at, "text literal requires constant type &str"); }
+        return ConstantValue { ty: ty, negative: false, magnitude: 0, real: 0.0, origin: atom };
+    }
+    if first == 116 || first == 102 {
+        if ty != 3 || negative { return constant_failure(at, "boolean literal requires constant type bool"); }
+        return ConstantValue { ty: ty, negative: false, magnitude: if first == 116 { 1 } else { 0 }, real: 0.0, origin: 0 };
+    }
+    if ty == 3 || ty == 11 { return constant_failure(at, "numeric literal does not match the declared constant type"); }
+    let mut cursor = nodes[atom].start;
+    let end = nodes[atom].end;
+    let mut decimal = false;
+    while cursor < end { if source[cursor] == 46 { decimal = true; } cursor += 1; }
+    if decimal {
+        if ty != 8 && ty != 9 { return constant_failure(at, "floating literal requires f32 or f64 constant type"); }
+        return constant_float(&source[nodes[atom].start..end], ty, negative, at);
+    }
+    if ty == 8 || ty == 9 || (negative && ty >= 4) { return constant_failure(at, "integer literal does not match the declared constant type"); }
+    cursor = nodes[atom].start;
+    let mut base: u64 = 10;
+    if end - cursor >= 2 && source[cursor] == 48 && (source[cursor + 1] == 120 || source[cursor + 1] == 88) { base = 16; cursor += 2; }
+    let mut value: u64 = 0; let limit = constant_limit(ty, negative);
+    while cursor < end {
+        let digit = hex_digit(source[cursor]) as u64;
+        if digit >= base || digit > limit || value > (limit - digit) / base { return constant_failure(at, "integer literal is out of range for the declared constant type"); }
+        value = value * base + digit; cursor += 1;
+    }
+    ConstantValue { ty: ty, negative: negative && value != 0, magnitude: value, real: 0.0, origin: 0 }
+}
+
+/// Entry point with a fresh dependency-cycle stack.
+fn constant_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], constants: &[u64],
+    environments: &[ConstantValue], declaration: u64, env: u64) ConstantValue {
+    let mut active: [u64; 128] = [0; 128];
+    evaluate_declaration(&source[..], &nodes[..], &graph[..], &constants[..], &environments[..], declaration, env, &mut active[..], 0)
+}
+
+/// Emit a canonical literal. Fixed decimal output avoids introducing exponent
+/// syntax, which is deliberately absent from the language grammar.
+fn emit_constant(source: &[u8], nodes: &[AstNode], value: ConstantValue, output: &mut [u8], state: &mut [u64]) {
+    if value.ty == 0 { state[2] = 8; return; }
+    if value.ty == 11 {
+        put(&mut output[..], &mut state[..], &source[nodes[value.origin].start..nodes[value.origin].end]); return;
+    }
+    if value.ty == 3 {
+        let yes_text = "true"; let no_text = "false";
+        let yes = yes_text.as_bytes(); let no = no_text.as_bytes();
+        if value.magnitude == 0 { put(&mut output[..], &mut state[..], no); }
+        else { put(&mut output[..], &mut state[..], yes); }
+        return;
+    }
+    if value.ty == 8 || value.ty == 9 {
+        let mut buffer: [u8; 1500] = [0; 1500];
+        let bytes = &mut buffer[..]; let mut length: usize = 0; let real = value.real;
+        @unchecked { @c(includes={"stdio.h","string.h"}) {
+            int n=snprintf((char*)(${bytes}).data,(${bytes}).len,"%.1074f",${real});
+            if(n>0&&(size_t)n<(${bytes}).len){
+                size_t end=(size_t)n;while(end>1&&(${bytes}).data[end-1]=='0')end--;
+                if((${bytes}).data[end-1]=='.')end++;
+                ${length}=end;
+            }
+        } }
+        if length == 0 { state[2] = 4; return; }
+        put(&mut output[..], &mut state[..], &buffer[..length]); return;
+    }
+    if value.negative { let minus: [u8; 1] = [45]; put(&mut output[..], &mut state[..], &minus[..]); }
+    number(&mut output[..], &mut state[..], value.magnitude);
+}

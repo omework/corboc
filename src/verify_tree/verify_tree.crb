@@ -413,6 +413,15 @@ fn check_tree_impl(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], token
                 if ty == 0 && whole_program {
                     let allocation = region_signature(&source[0..source.len()], &nodes[0..nodes.len()],
                         &graph[0..graph.len()], copy(annotation), false);
+                    if allocation == 301 {
+                        let shape = graph[annotation].first_child;
+                        values[annotation] = CheckedValue { ty: 99, state: 1, mutable: true, target: child,
+                            loan_parent: 0, origin_call: shape, writable: false, projection: 0 };
+                        values[child] = CheckedValue { ty: 301, state: 1, mutable: graph[child].mutable, target: annotation,
+                            loan_parent: 0, origin_call: shape, writable: false, projection: 0 };
+                        child = graph[child].next_sibling;
+                        continue;
+                    }
                     if allocation >= 201 && allocation <= 207 {
                         values[annotation] = CheckedValue{ ty: copy(allocation) - 100, state: 1, mutable: true,
                             target: copy(child), loan_parent: 0, origin_call: 0, writable: false, projection: 0, }; record_checked(&values[0..values.len()],annotation);

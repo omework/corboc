@@ -15,6 +15,10 @@ use bootstrap::task_vectors::handle_vector;
 
 pub fn live_owned_fields(graph: &[StaticNode], values: &[CheckedValue], owner: u64) bool {
     let ty = values[owner].ty;
+    let retained = values[owner].loan_parent;
+    if !constructor_arguments(copy(ty)) && retained != owner && values[retained].ty == 5012 && values[retained].writable {
+        if !live_owned_fields(&graph[..], &values[..], retained) { return false; }
+    }
     if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
@@ -199,6 +203,10 @@ pub fn scope_contains(graph: &[StaticNode], parent: u64, scope: u64) bool {
 
 pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner: u64, scope: u64) bool {
     let ty = values[owner].ty;
+    let retained = values[owner].loan_parent;
+    if !constructor_arguments(copy(ty)) && retained != owner && values[retained].ty == 5012 && values[retained].writable {
+        if !owned_fields_survive(&graph[..], &values[..], retained, scope) { return false; }
+    }
     if ty > 910 && ty < 920 { return true; }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
@@ -212,6 +220,7 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
         }
         return true;
     }
+    if ty == 2000138 && values[owner].target == 0 { return true; }
     if slice_view(copy(ty)) || ty==2000138 || ty == 734 || (ty>20 && ty<60) {
         if values[values[owner].target].ty==5018{return true;}
         let parent = values[owner].loan_parent;
@@ -273,6 +282,7 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
     }
     if ty < 200 || is_scalar_array(copy(ty)) || task_value(copy(ty)) || map_value(copy(ty)) { return true; }
     let pool = values[owner].target;
+    if values[pool].ty == 5018 { return true; }
     if ty != 300 && ty != 310 && !optional(copy(ty)) && !result_type(copy(ty)) && !scope_contains(&graph[0..graph.len()], graph[pool].scope, copy(scope)) { return false; }
     if ty == 296 {
         let mut entry = values[owner].origin_call;
@@ -311,6 +321,10 @@ pub fn owned_fields_survive(graph: &[StaticNode], values: &[CheckedValue], owner
 pub fn result_fields_external(nodes: &[AstNode], graph: &[StaticNode], values: &[CheckedValue],
     owner: u64, function: u64) bool {
     let ty = values[owner].ty;
+    let retained = values[owner].loan_parent;
+    if !constructor_arguments(copy(ty)) && retained != owner && values[retained].ty == 5012 && values[retained].writable {
+        if !result_fields_external(&nodes[..], &graph[..], &values[..], retained, function) { return false; }
+    }
     if constructor_arguments(copy(ty)) {
         let mut summary_entry = values[owner].origin_call;
         while summary_entry != 0 {

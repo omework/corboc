@@ -1,0 +1,47 @@
+[
+  {
+    "case": "shorthand_moves_and_globals",
+    "status": "passed under fatal UBSan",
+    "output": "7\n9\n42\n"
+  },
+  {
+    "case": "standalone_struct_vector",
+    "status": "passed under fatal UBSan",
+    "output": "0\n1\n42\ntrue\n"
+  },
+  {
+    "case": "standalone_scope_transfer",
+    "status": "passed under fatal UBSan",
+    "output": "12\n"
+  },
+  {
+    "case": "pooled_compatibility",
+    "status": "passed under fatal UBSan",
+    "output": "1\n7\n"
+  },
+  {
+    "case": "async_rawtable",
+    "status": "passed under fatal UBSan",
+    "output": "1\n1\n"
+  },
+  {
+    "case": "moved_shorthand_value",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/moved_shorthand_value/src/main.crb:3:92: error[N6]: rule violation: use of a value after its ownership was moved 'resource'\n     3 | fn main() { let resource = Resource { number: 1 }; let holder = Holder { resource }; print(resource.number); }\n       |                                                                                            ^~~~~~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/moved_shorthand_value/src/main.crb:3:52: note: ownership moved here (generated-source anchor)\n     3 | fn main() { let resource = Resource { number: 1 }; let holder = Holder { resource }; print(resource.number); }\n       |                                                    ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/moved_shorthand_value/src/main.crb:3:17: note: value declared here (generated-source anchor)\n     3 | fn main() { let resource = Resource { number: 1 }; let holder = Holder { resource }; print(resource.number); }\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "undefined_shorthand_value",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/undefined_shorthand_value/src/main.crb:1:71: error[N1]: rule violation: cannot find this value in the current scope 'r'\n     1 | struct Holder { number: i64; } fn main() { let holder = Holder { number }; }\n       |                                                                       ^\n       = note: an inferred type name uses a generated-source anchor\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "resource_element",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/resource_element/src/main.crb:3:25: error[E0009]: compiler limitation: cannot compile this type annotation: standalone Vector<T> currently supports primitive and plain fixed-data elements; borrowed or resource-owning elements require the existing tracked pooled vector path\n     3 | fn main() { let values: Vector<Resource> = Vector::new(); }\n       |                         ^~~~~~\n       = note: this is a compiler implementation limit, not a demonstrated language-rule violation\n       = context: function 'main'\n       = note: an inferred type name uses a generated-source anchor\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/resource_element/src/main.crb:3:25: error[N1]: rule violation: expression does not satisfy the required generics type or value constraint\n     3 | fn main() { let values: Vector<Resource> = Vector::new(); }\n       |                         ^~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "thread_restriction",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-shorthand-vector-wmown3_e/thread_restriction/src/main.crb:6:21: error[N8]: rule violation: call does not satisfy the required declarations contract\n     6 |     let execution = runtime::thread(move { print(values.len()); });\n       |                     ^~~~~~~\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  }
+]

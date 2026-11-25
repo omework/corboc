@@ -599,3 +599,62 @@ See [the focused report](SELF_FILE_CYCLE.md).
 - [x] Install at the existing PATH.
 
 [Evidence and scope](MIXED_MEMBERS_CYCLE.md).
+
+## Rich duplicate-name diagnostics
+
+- [x] Report both qualified component identities and original declaration locations.
+- [x] Identify the import/alias binding and retain the earlier import where applicable.
+- [x] Provide cause-specific alias/rename hints and emit one E0014.
+- [x] Pass eight focused observations and five raw-protocol comparisons.
+- [x] Rebuild and install at the existing PATH.
+
+[Evidence and limits](NAME_COLLISIONS_CYCLE.md).
+
+## Literal-based constant expressions
+
+- [x] Parse primitive/text constant expressions and qualified constant reuse.
+- [x] Implement checked arithmetic, parentheses, min/max and cycle diagnostics.
+- [x] Re-evaluate derived defaults under lexical overrides; preserve explicit overrides.
+- [x] Reduce named array bounds and retain declared primitive widths.
+- [x] Update the grammar and EN/FR normative constant documentation.
+- [x] Execute 15 focused constants/override checks and eight adjacent member regressions.
+- [x] Self-rebuild and update the existing PATH installation.
+
+[Evidence](CONSTANT_EXPRESSIONS_CYCLE.md).
+
+## Primitive Option fields in struct constructors
+
+- [x] Use declared field types for None/Some with primitive payloads.
+- [x] Include these fields in value-only aggregate return classification.
+- [x] Resolve field projections and writes through the ordinary place checks.
+- [x] Execute the Dispatcher reproduction, payload/read/write checks and eight adjacent regressions.
+- [x] Rebuild and update the installed PATH compiler.
+
+[Evidence](OPTION_FIELDS_CYCLE.md).
+
+## Field shorthand and standalone regional vectors
+
+- [x] Normalize constructor shorthand before qualification; preserve moves.
+- [x] Construct standalone plain-data vectors with datastack descriptors and regional payloads.
+- [x] Infer receiving-field element types and retain pooled compatibility.
+- [x] Emit nested array layouts before Option/Result wrappers.
+- [x] Execute five programs under fatal UBSan and four related refusals.
+- [x] Execute Linux ARM64 region-transfer probe under fatal UBSan.
+- [x] Install matching compiler/STD at existing PATH; actual dispatcher check passes.
+- [x] Regenerate installed API docs and validate the README budget package.
+
+Remaining: standalone dependency-bearing elements/full native API parity; Windows
+execution not performed. [Evidence and scope](SHORTHAND_VECTORS_CYCLE.md).
+
+## Standalone Vector reference and owning elements
+
+- [x] Remove the plain-data-only specialization gate.
+- [x] Transfer elements into runtime storage without dropping the moved input.
+- [x] Destroy remaining elements before regional reclamation.
+- [x] Retain immutable element summaries through moves, projections and extraction.
+- [x] Instantiate insertion dependencies through callable environments.
+- [x] Support nominal allocation arguments and owned allocation fields.
+- [x] Pass ten executable cases under fatal UBSan and six related refusals on the final generation.
+- [x] Rebuild and install matching compiler/STD at the existing PATH.
+
+[Standalone vector ownership evidence and limits](VECTOR_OWNERSHIP_CYCLE.md).

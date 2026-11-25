@@ -13,7 +13,7 @@ use bootstrap::places::{slice_parameter,record_parameter};
 use bootstrap::scalar::verify_primitive;
 use bootstrap::declarations::{nominal_declaration,verification_field};
 
-fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,formal:u64)u64 {
+pub fn actual_parameter(nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],function:u64,call:u64,formal:u64)u64 {
     if values[call].ty==5015 {
         let mut entry=values[call].origin_call;
         while entry!=0{if values[entry].origin_call==formal{return values[entry].target;}entry=values[entry].loan_parent;}
@@ -72,6 +72,8 @@ pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotat
     let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(shape);drop(exclusive);
     if slice!=0{return slice;}
     if record_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),false)!=0{return 734;}
+    let allocation = bootstrap::regional_calls::region_signature(&source[..], &nodes[..], &graph[..], annotation, false);
+    if (allocation >= 201 && allocation <= 207) || allocation == 301 { return allocation; }
     let scalar=verify_primitive(&source[0..source.len()],nodes[annotation].name_start,nodes[annotation].name_end);
     if scalar!=0{return scalar;}
     let array=inline_array_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));if array!=0{return array;}
@@ -79,7 +81,7 @@ pub fn annotation_kind(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],annotat
     if nodes[nominal].kind==28{return 300;}if nodes[nominal].kind==29{return 310;}0
 }
 
-fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
+pub fn instantiate_value(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],
     function:u64,call:u64,expression:u64,annotation:u64,depth:u64)u64 {
     if expression==0 || depth>=128{return 0;}
     let kind=nodes[expression].kind;
@@ -177,7 +179,7 @@ fn instantiate_tuple_inner(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],val
     values[call] = CheckedValue{ty:475,state:1,mutable:false,target:0,loan_parent:copy(marker),origin_call:copy(annotation),writable:false, projection: 0,}; record_checked(&values[0..values.len()],call);475
 }
 
-fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)u64 {
+pub fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[CheckedValue],call:u64)u64 {
     let direct=bootstrap_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if direct!=0{return direct;}
     let associated=associated_callee(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(call));if associated!=0{return associated;}
     if nodes[call].kind!=16{return 0;}
@@ -189,7 +191,7 @@ fn summary_callee(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&[Che
     lookup_record_method(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&source[nodes[owner].name_start..nodes[owner].name_end],&source[nodes[call].name_start..nodes[call].name_end],true)
 }
 
-fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,outer:u64,call:u64,callee:u64,depth:u64)u64 {
+pub fn instantiate_environment(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],function:u64,outer:u64,call:u64,callee:u64,depth:u64)u64 {
     let marker=reserve_summary(&mut values[0..values.len()],nodes.len() as u64,1);if marker==0{return 0;}
     let mut formal=graph[callee].first_child;let name=graph[call].first_child;
     let mut argument=if nodes[call].kind==16{copy(name)}else{graph[name].next_sibling};
@@ -226,7 +228,7 @@ pub fn borrowed_record_type(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],no
         if ty==300 {
             let nested=nominal_declaration(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],annotation);
             if !borrowed_record_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],nested,depth+1){return false;}
-        }else if !(inline_array(copy(ty)) || (ty==310 && plain_data_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),0)) || (ty>=1 && ty<=9)||(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)||ty==2000138){return false;}
+        }else if !(inline_array(copy(ty)) || (ty==310 && plain_data_type(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation),0)) || (ty>=1 && ty<=9)||(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)||ty==2000138||(ty>=201 && ty<=207)||ty==301){return false;}
         field=graph[field].next_sibling;
     }true
 }
@@ -247,10 +249,10 @@ pub fn symbolic_record(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:
         }else {
             let borrowed=(ty>20 && ty<60)||ty==734||(ty>=741 && ty<=749)||ty==2000138;
             let (slice,shape,exclusive)=slice_parameter(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],copy(annotation));drop(slice);
-            let origin=if ty==734{graph[annotation].first_child}else{shape};
+            let origin=if ty==734 || ty==301{graph[annotation].first_child}else{shape};
             let exclusive=exclusive || (ty>40 && ty<60) || (ty==734 && source[nodes[annotation].start+1]==109);
             values[root] = CheckedValue{ty:5018,state:1,mutable:copy(exclusive),target:copy(formal),loan_parent:0,origin_call:annotation,writable:false, projection: 0,}; record_checked(&values[0..values.len()],root);
-            values[value] = CheckedValue{ty:ty,state:1,mutable:false,target:if borrowed{root}else{0},loan_parent:0,origin_call:origin,writable:exclusive, projection: 0,}; record_checked(&values[0..values.len()],value);
+            values[value] = CheckedValue{ty:ty,state:1,mutable:false,target:if borrowed || (ty>=201 && ty<=207) || ty==301{root}else{0},loan_parent:0,origin_call:origin,writable:exclusive, projection: 0,}; record_checked(&values[0..values.len()],value);
         }
         values[entry] = CheckedValue{ty:5014,state:1,mutable:false,target:copy(value),loan_parent:0,origin_call:copy(field),writable:false, projection: 0,}; record_checked(&values[0..values.len()],entry);
         if first==0{first=copy(entry);}else{let previous=values[last].target;let template=values[last].origin_call;values[last] = CheckedValue{ty:5014,state:1,mutable:false,target:previous,loan_parent:copy(entry),origin_call:template,writable:false, projection: 0,}; record_checked(&values[0..values.len()],last);}
