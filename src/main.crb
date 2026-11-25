@@ -1,3 +1,4 @@
+use bootstrap::direct_strings::expand_direct_strings;
 use bootstrap::direct_vectors::{has_direct_vectors, expand_direct_vectors};
 use bootstrap::field_shorthand::{has_field_shorthand, expand_field_shorthand};
 use bootstrap::doc_server::{serve as serve_docs, usage as doc_usage, port as doc_port};
@@ -2130,7 +2131,8 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
         while candidate < tokens.len() && tokens[candidate].kind != 0 {
             let spelling = &source[tokens[candidate].start..tokens[candidate].end];
             let vector_text = "Vector"; let vector_bytes = vector_text.as_bytes();
-            if spelling.content_eq(vector_bytes) && (tokens[candidate+1].kind == 43 || tokens[candidate+1].kind == 23) {
+            let string_text = "String"; let string_bytes = string_text.as_bytes();
+            if (spelling.content_eq(vector_bytes) || spelling.content_eq(string_bytes)) && (tokens[candidate+1].kind == 43 || tokens[candidate+1].kind == 23) {
                 return parse_callables(&source[..], check, env_call, package, &visibility[..]);
             }
             candidate += 1;
@@ -2143,7 +2145,8 @@ fn parse(source: &[u8], tokens: &[Token], check: i32, env_call: u64, package: bo
             if nodes[candidate].kind == 4 {
                 let word = "Vector"; let bytes = word.as_bytes();
                 let name = &source[nodes[candidate].name_start..nodes[candidate].name_end];
-                if name.content_eq(bytes) {
+                let string_text = "String"; let string_bytes = string_text.as_bytes();
+                if name.content_eq(bytes) || name.content_eq(string_bytes) {
                     let mut owner = nodes[candidate].parent;
                     let mut pooled = false;
                     while nodes[owner].kind == 4 {
@@ -2310,6 +2313,11 @@ fn parse_callables(source: &[u8], check: i32, env_call: u64, package: bool,
         let (self_status,self_length)=expand_self_type(&current[..length],&syntax[..used],&graph[..used],&tokens[..selected],&mut expanded[..],&mut offsets[..]);
         if self_status!=0{return self_status;}
         let mut self_length = self_length;
+        if self_length == 0 {
+            let (status, written) = expand_direct_strings(&current[..length], &syntax[..used], &graph[..used], &tokens[..selected], &mut expanded[..], &mut offsets[..]);
+            if status != 0 { return status; }
+            self_length = written;
+        }
         if self_length == 0 && has_direct_vectors(&current[..length], &syntax[..used], &graph[..used]) {
             let (status, written) = expand_direct_vectors(&current[..length], &syntax[..used], &graph[..used], &mut expanded[..], &mut offsets[..]);
             if status != 0 { return status; }

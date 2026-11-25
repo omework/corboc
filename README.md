@@ -451,3 +451,11 @@ Derived defaults follow lexical overrides of their dependencies. A direct
 override of a derived constant takes precedence and retains its value in nested
 scopes. This is bounded constant reduction, not execution of arbitrary functions
 at compile time.
+
+### Standalone regional strings
+
+`use std::String;` enables `String::new()` without a pool. The fixed descriptor
+uses the datastack and owns region-backed UTF-8 bytes. `push_str`, `byte_len`,
+`as_bytes`, `as_str`, borrowed ranges and `split` preserve ownership and loans.
+`Pool<String>` and inline `String<N>` retain their existing construction forms.
+See [the focused implementation report](docs/STANDALONE_STRING_CYCLE.md).

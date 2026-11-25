@@ -1,0 +1,57 @@
+[
+  {
+    "case": "utf8_and_views",
+    "status": "passed under fatal UBSan",
+    "output": "true\n8\n8\n195\n2\n3\n9\n"
+  },
+  {
+    "case": "moves_and_cleanup",
+    "status": "passed under fatal UBSan",
+    "output": "5\ntrue\n"
+  },
+  {
+    "case": "borrowed_split",
+    "status": "passed under fatal UBSan",
+    "output": "5\n2\n0\n"
+  },
+  {
+    "case": "pooled_and_inline_compatibility",
+    "status": "passed under fatal UBSan",
+    "output": "3\n6\n3\n"
+  },
+  {
+    "case": "string_in_vector",
+    "status": "passed under fatal UBSan",
+    "output": "5\n"
+  },
+  {
+    "case": "live_text_borrow",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_text_borrow/src/main.crb:2:91: error[N5]: rule violation: access conflicts with a live borrow or outstanding synchronized branch 'text'\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = &text[..]; drop(text); print(view.byte_len()); }\n       |                                                                                           ^~~~\n       = note: an inferred type name uses a generated-source anchor\n/Users/jabarkarim/sources/corboc/build/standalone-string-checked/install/bin/../share/corbo/stdlib/src/collections/string_value.crb:70:17: note: parameter type required here (generated-source anchor)\n    70 |     pub fn drop(&mut self) {\n       |                 ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_text_borrow/src/main.crb:2:21: note: value declared here (generated-source anchor)\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = &text[..]; drop(text); print(view.byte_len()); }\n       |                     ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_text_borrow/src/main.crb:2:64: note: borrow created here (generated-source anchor)\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = &text[..]; drop(text); print(view.byte_len()); }\n       |                                                                ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "live_byte_borrow",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_byte_borrow/src/main.crb:2:92: error[N5]: rule violation: access conflicts with a live borrow or outstanding synchronized branch 'text'\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = text.as_bytes(); text.push_str(\"!\"); print(view.len()); }\n       |                                                                                            ^~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_byte_borrow/src/main.crb:2:21: note: value declared here (generated-source anchor)\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = text.as_bytes(); text.push_str(\"!\"); print(view.len()); }\n       |                     ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/live_byte_borrow/src/main.crb:2:64: note: borrow created here (generated-source anchor)\n     2 | fn main() { let mut text = String::new(); text.push_str(\"ok\"); let view = text.as_bytes(); text.push_str(\"!\"); print(view.len()); }\n       |                                                                ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "moved_owner",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/moved_owner/src/main.crb:2:66: error[N6]: rule violation: use of a value after its ownership was moved 'text'\n     2 | fn main() { let text = String::new(); let received = text; print(text.byte_len()); }\n       |                                                                  ^~~~\n       = note: an inferred type name uses a generated-source anchor\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/moved_owner/src/main.crb:2:39: note: ownership moved here (generated-source anchor)\n     2 | fn main() { let text = String::new(); let received = text; print(text.byte_len()); }\n       |                                       ^\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/moved_owner/src/main.crb:2:17: note: value declared here (generated-source anchor)\n     2 | fn main() { let text = String::new(); let received = text; print(text.byte_len()); }\n       |                 ^\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "escaping_view",
+    "status": "rejected",
+    "diagnostic": "corboc: checking package\n/private/var/folders/rs/ld5jvh_n6t92p1hhs2qrmt7w0000gn/T/corbo-string-6_3uo77e/escaping_view/src/main.crb:2:77: error[E0009]: compiler limitation: cannot compile this block result: the checker does not implement this operand or dependency form\n     2 | fn main() { let view = { let mut text = String::new(); text.push_str(\"ok\"); text.as_str() }; print(view.byte_len()); }\n       |                                                                             ^~~~\n       = note: this is a compiler implementation limit, not a demonstrated language-rule violation\n       = context: function 'main'\n       = note: an inferred type name uses a generated-source anchor\n       = note: generated-code origin; the highlighted location is an enclosing source anchor\ncorboc: check failed (see compiler diagnostics)\n"
+  },
+  {
+    "case": "utf8_boundary",
+    "status": "runtime constraint rejected",
+    "diagnostic": "corbo: erreur arithmetique\n"
+  },
+  {
+    "case": "region_limit",
+    "status": "runtime constraint rejected",
+    "diagnostic": "corbo: limite de la datastack \u00e0 r\u00e9gions\n"
+  }
+]

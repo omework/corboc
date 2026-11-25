@@ -92,6 +92,16 @@ fn guess(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], types: &[i64], 
         let callee = bootstrap_callee(&source[0..source.len()], &nodes[0..nodes.len()], &graph[0..graph.len()], copy(node));
         if callee != 0 { return types[callee]; }
     }
+    if kind == 16 {
+        let receiver = guess(&source[..], &nodes[..], &graph[..], &types[..], child);
+        if receiver >= 3000000 && receiver < 5000000 {
+            let record = nominal_type(receiver);
+            let owner = &source[nodes[record].name_start..nodes[record].name_end];
+            let member = &source[nodes[node].name_start..nodes[node].name_end];
+            let method = bootstrap::calls::lookup_record_method(&source[..], &nodes[..], &graph[..], &owner[..], &member[..], true);
+            if method != 0 { return types[method]; }
+        }
+    }
     if kind == 11 {
         let mark = nodes[node].name_start;
         if source[mark] == 97 {

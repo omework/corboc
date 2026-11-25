@@ -524,3 +524,13 @@ allocation primitive. Ten executables passed fatal UBSan and six related rule
 refusals passed on macOS ARM64. Rebuilt compiler and matching STD installed.
 Other platforms and independent audits are not claimed for this cycle.
 [Report](VECTOR_OWNERSHIP_CYCLE.md), [results](VECTOR_OWNERSHIP_RESULTS.json).
+
+## Standalone String
+
+N4/N5/N6: descriptor ownership and ordinary view dependencies are preserved through
+String::new(), moves, aggregate/function returns and ranges. Parenthesized text
+expressions retain their checked origin. Existing UTF-8 boundary and region budget
+checks apply. Five executables passed fatal UBSan, four rule refusals passed, and
+two runtime constraints terminated as expected on macOS ARM64. No broad corpus
+or other-platform execution was performed. [Report](STANDALONE_STRING_CYCLE.md),
+[results](STANDALONE_STRING_RESULTS.json).

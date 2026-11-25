@@ -1,3 +1,4 @@
+use bootstrap::value_summaries::summary_callee;
 use bootstrap::verify::type_violation;
 use bootstrap::checked_state::record as record_checked;
 use bootstrap::verify::{violation_site};
@@ -108,7 +109,24 @@ pub fn read_argument_value(source: &[u8], nodes: &[AstNode], graph: &[StaticNode
 pub fn check_text(source:&[u8],nodes:&[AstNode],graph:&[StaticNode],values:&mut [CheckedValue],expression:u64,mode:i64)i64 {
     let kind=nodes[expression].kind;
     let child=graph[expression].first_child;
-    if kind==19{return check_text(&source[0..source.len()],&nodes[0..nodes.len()],&graph[0..graph.len()],&mut values[0..values.len()],child,mode);}
+    if kind == 19 {
+        let text = check_text(&source[..], &nodes[..], &graph[..], &mut values[..], child, mode);
+        if text > 0 {
+            bootstrap::tasks::copy_task_summary(&mut values[..], child, expression, text, false);
+        }
+        return text;
+    }
+    if kind == 15 || kind == 16 {
+        let callee = summary_callee(&source[..], &nodes[..], &graph[..], &values[..], expression);
+        if callee != 0 && nodes[callee].kind == 1 {
+            let mut output = graph[callee].first_child;
+            while nodes[output].kind == 3 { output = graph[output].next_sibling; }
+            if shared_text_annotation(&source[..], &nodes[..], &graph[..], output) {
+                return verify_expr(&source[..], &nodes[..], &graph[..], &mut values[..], expression, argument_text_type(), mode);
+            }
+        }
+        return 0;
+    }
     if kind==9 && source[nodes[expression].start]==34 {
         if mode==2{return 0-violation_site(5, nodes[expression].start, 402);}
         values[expression] = CheckedValue{ty:2000138,state:1,mutable:false,target:0,loan_parent:0,origin_call:0,writable:false, projection: 0,}; record_checked(&values[0..values.len()],expression);return 2000138;

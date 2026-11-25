@@ -658,3 +658,15 @@ execution not performed. [Evidence and scope](SHORTHAND_VECTORS_CYCLE.md).
 - [x] Rebuild and install matching compiler/STD at the existing PATH.
 
 [Standalone vector ownership evidence and limits](VECTOR_OWNERSHIP_CYCLE.md).
+
+## Standalone regional String
+
+- [x] Select the ordinary STD descriptor for bare String and String::new().
+- [x] Retain Pool<String> and bounded String<N> construction.
+- [x] Provide regional append, byte/text views and borrowed splitting.
+- [x] Preserve grouped text provenance and infer method-return text for slicing.
+- [x] Update EN/FR README, UTF-8/collection docs and the API catalog.
+- [x] Pass five executables under fatal UBSan, four rule refusals and two runtime constraints.
+- [x] Install matching compiler and STD at the existing PATH.
+
+[Standalone String evidence and platform limits](STANDALONE_STRING_CYCLE.md).

@@ -422,9 +422,14 @@
       "name": "String",
       "kind": "type",
       "signature": "String / String<N>",
-      "description": "String owns region-backed UTF-8 bytes and is constructed through a String pool. String<N> instead has a compile-time maximum byte size and inline storage; its source-defined implementation is BoundedString<N>. Neither permits invalid UTF-8. Allocation and borrowing obligations remain visible.",
+      "description": "String::new() creates a standalone fixed datastack descriptor owning region-backed UTF-8 bytes. Pool<String> remains optional. Moves transfer cleanup, and views retain their owner. String<N> instead stores a compile-time byte maximum inline.",
       "module": "std",
       "methods": [
+        [
+          "new",
+          "fn new() String",
+          "Constructs an empty region-backed string without a user-facing pool."
+        ],
         [
           "push_str",
           "fn push_str(&mut self, text: &str)",
@@ -444,6 +449,16 @@
           "split",
           "fn split(&self, separator: &str) std::text::Split",
           "Returns borrowed text pieces; the source must remain alive."
+        ],
+        [
+          "as_str",
+          "fn as_str(&self) &str",
+          "Borrows validated UTF-8 text, retaining the owner lifetime."
+        ],
+        [
+          "is_empty",
+          "fn is_empty(&self) bool",
+          "Reports whether the string has no encoded bytes."
         ]
       ],
       "examples": [
@@ -454,7 +469,7 @@
       "name": "Future",
       "kind": "generated type",
       "signature": "async fn name(...) R",
-      "description": "Each async definition has its own compiler-generated state type, addressed by that definition\u2019s qualified name. Construction captures immediately; .await drives it to completion and yields R. Suspension state retains live values, ownership and dependencies. The compiler/runtime polling contract uses id() and poll(ctx); this does not introduce an arbitrary dynamic trait object.",
+      "description": "Each async definition has its own compiler-generated state type, addressed by that definition’s qualified name. Construction captures immediately; .await drives it to completion and yields R. Suspension state retains live values, ownership and dependencies. The compiler/runtime polling contract uses id() and poll(ctx); this does not introduce an arbitrary dynamic trait object.",
       "module": "runtime",
       "examples": [
         "examples/features/async/src/main.crb"
@@ -498,7 +513,7 @@
       "name": "Error",
       "kind": "enum",
       "signature": "runtime::Error",
-      "description": "Execution failures are distinct from the task\u2019s business result. LaunchFailed is reported by waiting on the handle; failure paths still perform the required cleanup.",
+      "description": "Execution failures are distinct from the task’s business result. LaunchFailed is reported by waiting on the handle; failure paths still perform the required cleanup.",
       "module": "runtime",
       "variants": [
         "LaunchFailed"
@@ -676,7 +691,7 @@
       "name": "free_pages",
       "kind": "annotation",
       "signature": "#(free_pages)",
-      "description": "Requests page restitution at the annotated scope\u2019s cleanup boundary. Cleanup and cursor recovery precede OS page release.",
+      "description": "Requests page restitution at the annotated scope’s cleanup boundary. Cleanup and cursor recovery precede OS page release.",
       "module": "language"
     },
     {

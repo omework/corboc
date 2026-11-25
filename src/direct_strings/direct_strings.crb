@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Select the STD-owned String descriptor while retaining pooled and inline forms.
+use bootstrap::model::{AstNode, StaticNode, Token};
+use bootstrap::generics::expression_layout;
+use bootstrap::diagnostics::diagnostic_limitation;
+
+fn named(source: &[u8], node: &AstNode, name: &str) bool {
+    let expected = name.as_bytes();
+    let actual = &source[(*node).name_start..(*node).name_end];
+    actual.content_eq(expected)
+}
+
+fn bare_string(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) bool {
+    if nodes[point].kind != 4 || graph[point].first_child != 0
+        || !named(&source[..], &nodes[point], "String") { return false; }
+    let mut parent = nodes[point].parent;
+    while nodes[parent].kind == 4 {
+        if named(&source[..], &nodes[parent], "Pool") || named(&source[..], &nodes[parent], "A") { return false; }
+        parent = nodes[parent].parent;
+    }
+    true
+}
+
+fn new_string(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], point: u64) bool {
+    let callee = graph[point].first_child;
+    if nodes[point].kind != 15 || nodes[callee].kind != 36 || graph[callee].first_child != 0
+        || !named(&source[..], &nodes[callee], "String") { return false; }
+    let end = nodes[callee].end;
+    end >= 5 && source[end-5] == 58 && source[end-4] == 58
+        && source[end-3] == 110 && source[end-2] == 101 && source[end-1] == 119
+}
+
+/// Canonicalize standalone types/constructors and read-only text slicing.
+/// Views then use the ordinary as_str borrow and UTF-8 range checks.
+pub fn expand_direct_strings(source: &[u8], nodes: &[AstNode], graph: &[StaticNode], tokens: &[Token],
+    output: &mut [u8], offsets: &mut [u64]) (i32, u64) {
+    if source.len()+1 > offsets.len() { return (4, 0); }
+    let mut point: u64 = 1;
+    let mut implementation = false;
+    let mut simple = false;
+    while point < nodes.len() as u64 {
+        if nodes[point].kind == 28 && named(&source[..], &nodes[point], "__corbo_string_value") { implementation = true; }
+        if bare_string(&source[..], &nodes[..], &graph[..], point)
+            || new_string(&source[..], &nodes[..], &graph[..], point) { simple = true; }
+        point += 1;
+    }
+    let mut at: u64 = 0;
+    while at <= source.len() as u64 { offsets[at] = 0; at += 1; }
+    let mut changes: u64 = 0;
+    point = 1;
+    while point < nodes.len() as u64 {
+        if simple {
+            if bare_string(&source[..], &nodes[..], &graph[..], point) {
+                offsets[nodes[point].start] = point; changes += 1;
+            } else if new_string(&source[..], &nodes[..], &graph[..], point) {
+                let callee = graph[point].first_child;
+                offsets[nodes[callee].start] = callee; changes += 1;
+            }
+        } else if implementation && nodes[point].kind == 18 {
+            let base = graph[point].first_child;
+            let range = graph[base].next_sibling;
+            if nodes[range].kind == 46 {
+                let layout = expression_layout(&source[..], &nodes[..], &graph[..], &tokens[..], base);
+                if layout != 0 && named(&source[..], &nodes[layout], "__corbo_string_value") {
+                    offsets[nodes[base].start] = base; changes += 1;
+                }
+            }
+        }
+        point += 1;
+    }
+    if changes == 0 { return (0, 0); }
+    if !implementation {
+        drop(diagnostic_limitation(&nodes[..], 0, "standalone String requires importing std::String and its matching STD implementation"));
+        return (9, 0);
+    }
+    let type_text = "__corbo_string_value"; let type_name = type_text.as_bytes();
+    let constructor_text = "__corbo_string_value::new"; let constructor = constructor_text.as_bytes();
+    let begin_text = "(("; let begin = begin_text.as_bytes();
+    let finish_text = ").as_str())"; let finish = finish_text.as_bytes();
+    let mut written: u64 = 0;
+    at = 0;
+    while at < source.len() as u64 {
+        let edit = offsets[at];
+        if edit == 0 {
+            offsets[at] = written;
+            if written == output.len() as u64 { return (4, 0); }
+            output[written] = source[at]; written += 1; at += 1;
+        } else {
+            let before = written;
+            let end = nodes[edit].end;
+            let length = end - at;
+            let required = if simple { constructor.len() as u64 } else { length + begin.len() as u64 + finish.len() as u64 };
+            if required > output.len() as u64 - written { return (4, 0); }
+            let mut i: usize = 0;
+            if simple {
+                let call = nodes[edit].kind == 36;
+                if call { while i < constructor.len() { output[written] = constructor[i]; written += 1; i += 1; } }
+                else { while i < type_name.len() { output[written] = type_name[i]; written += 1; i += 1; } }
+            } else {
+                while i < begin.len() { output[written] = begin[i]; written += 1; i += 1; }
+                let mut cursor = at;
+                while cursor < end { output[written] = source[cursor]; written += 1; cursor += 1; }
+                i = 0;
+                while i < finish.len() { output[written] = finish[i]; written += 1; i += 1; }
+            }
+            while at < end { offsets[at] = before; at += 1; }
+        }
+    }
+    offsets[at] = written;
+    (0, written)
+}
